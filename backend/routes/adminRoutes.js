@@ -2,6 +2,8 @@ const express = require("express");
 const crypto = require("crypto");
 const User = require("../models/User");
 const Invitation = require("../models/Invitation");
+const Project = require("../models/Project");
+const Task = require("../models/Task");
 const authMiddleware = require("../middleware/auth");
 
 const router = express.Router();
@@ -17,11 +19,157 @@ const requireAdminOrManager = (req, res, next) => {
   next();
 };
 
+// GET /api/admin/summary - Executive Head of Office Summary View
+// Calculates high-level project KPIs without exposing micro-task details by default
+router.get("/summary", authMiddleware, async (req, res) => {
+  try {
+    const projects = await Project.find()
+      .populate("directorId", "firstName lastName email designation department")
+      .sort({ createdAt: -1 });
+
+    const today = new Date().toISOString().split("T")[0];
+    let totalProgressSum = 0;
+    let onTrackCount = 0;
+    let delayedCount = 0;
+    let completedProjectsCount = 0;
+
+    const projectSummaries = await Promise.all(
+      projects.map(async (p) => {
+        const tasks = await Task.find({ projectId: p._id });
+        const totalTasks = tasks.length;
+
+        let totalWeight = 0;
+        let weightedProgress = 0;
+        let completedCount = 0;
+        let overdueCount = 0;
+
+        for (const t of tasks) {
+          const weight = t.weight || 1;
+          totalWeight += weight;
+          const prog = t.status === "completed" ? 100 : t.progress || 0;
+          weightedProgress += weight * prog;
+
+          if (t.status === "completed") completedCount++;
+          if (t.deadline && t.deadline < today && t.status !== "completed") {
+            overdueCount++;
+          }
+        }
+
+        const progressPercentage = totalWeight > 0 ? Math.round(weightedProgress / totalWeight) : 0;
+        totalProgressSum += progressPercentage;
+
+        let calculatedStatus = "on-track";
+        if (totalTasks > 0 && completedCount === totalTasks) {
+          calculatedStatus = "completed";
+          completedProjectsCount++;
+        } else if (overdueCount > 0 || (p.deadline && p.deadline < today)) {
+          calculatedStatus = "delayed";
+          delayedCount++;
+        } else if (progressPercentage === 0) {
+          calculatedStatus = "not-started";
+        } else {
+          onTrackCount++;
+        }
+
+        const directorName = p.directorId
+          ? `${p.directorId.firstName} ${p.directorId.lastName}`
+          : p.directorName || "Unassigned";
+
+        return {
+          id: p._id,
+          name: p.name,
+          targetOutcome: p.targetOutcome,
+          directorName,
+          directorEmail: p.directorId?.email,
+          deadline: p.deadline,
+          status: calculatedStatus,
+          progressPercentage,
+          completedTasks: completedCount,
+          totalTasks,
+          overdueTasks: overdueCount,
+        };
+      })
+    );
+
+    const averageProgress =
+      projects.length > 0 ? Math.round(totalProgressSum / projects.length) : 0;
+
+    res.json({
+      totalProjects: projects.length,
+      averageProgress,
+      onTrackProjects: onTrackCount,
+      delayedProjects: delayedCount,
+      completedProjects: completedProjectsCount,
+      projectSummaries,
+    });
+  } catch (error) {
+    console.error("Admin summary error:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/admin/hierarchy - Organizational reporting hierarchy tree
+router.get("/hierarchy", authMiddleware, async (req, res) => {
+  try {
+    const users = await User.find({ status: "active" })
+      .select("firstName lastName email role designation department reportsTo")
+      .populate("reportsTo", "firstName lastName role designation");
+
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// PATCH /api/admin/hierarchy/assign-supervisor - Dynamic supervisor assignment
+router.patch("/hierarchy/assign-supervisor", authMiddleware, requireAdminOrManager, async (req, res) => {
+  try {
+    const { employeeId, supervisorId } = req.body;
+
+    if (!employeeId) {
+      return res.status(400).json({ message: "Employee ID is required." });
+    }
+
+    if (employeeId === supervisorId) {
+      return res.status(400).json({ message: "An employee cannot report to themselves." });
+    }
+
+    const employee = await User.findById(employeeId);
+    if (!employee) {
+      return res.status(404).json({ message: "Employee not found." });
+    }
+
+    employee.reportsTo = supervisorId || null;
+    await employee.save();
+
+    res.json({
+      message: "Reporting relationship updated successfully",
+      employee,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/admin/directors - Eligible Project Directors and Managers
+router.get("/directors", authMiddleware, async (req, res) => {
+  try {
+    const eligible = await User.find({
+      status: "active",
+      role: { $in: ["admin", "director", "manager"] },
+    }).select("firstName lastName email role designation department");
+
+    res.json(eligible);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // POST /api/admin/employees/invite
 // Generate a secure single-use invitation with 24-hour expiration
 router.post("/employees/invite", authMiddleware, requireAdminOrManager, async (req, res) => {
   try {
-    const { name, email, department, role } = req.body;
+    const { name, email, department, role, supervisorId } = req.body;
 
     if (!name || !email || !department || !role) {
       return res.status(400).json({
@@ -82,7 +230,7 @@ router.post("/employees/invite", authMiddleware, requireAdminOrManager, async (r
         status: invitation.status,
         expiresAt: invitation.expiresAt,
       },
-      inviteToken: rawToken, // Single-use token returned to admin / link generator
+      inviteToken: rawToken,
     });
   } catch (error) {
     console.error("Invite error:", error);
@@ -91,17 +239,14 @@ router.post("/employees/invite", authMiddleware, requireAdminOrManager, async (r
 });
 
 // GET /api/admin/employees
-// Retrieve all employees and active/pending invitations
 router.get("/employees", authMiddleware, async (req, res) => {
   try {
-    // 1. Get registered users in this company
     const users = await User.find()
       .select("-password")
+      .populate("reportsTo", "firstName lastName role designation")
       .sort({ createdAt: -1 });
 
-    // 2. Get pending invitations
-    const pendingInvites = await Invitation.find({ status: "pending" })
-      .sort({ createdAt: -1 });
+    const pendingInvites = await Invitation.find({ status: "pending" }).sort({ createdAt: -1 });
 
     res.json({
       employees: users,
@@ -113,20 +258,22 @@ router.get("/employees", authMiddleware, async (req, res) => {
 });
 
 // PATCH /api/admin/employees/:id
-// Update employee role or department
 router.patch("/employees/:id", authMiddleware, requireAdminOrManager, async (req, res) => {
   try {
-    const { role, department } = req.body;
+    const { role, department, designation, reportsTo } = req.body;
     const updateData = {};
 
     if (role) {
-      if (role.toLowerCase() === "admin") {
-        return res.status(400).json({ message: "Cannot elevate to admin role." });
-      }
       updateData.role = role;
     }
     if (department) {
       updateData.department = department.trim();
+    }
+    if (designation) {
+      updateData.designation = designation.trim();
+    }
+    if (reportsTo !== undefined) {
+      updateData.reportsTo = reportsTo || null;
     }
 
     const employee = await User.findByIdAndUpdate(req.params.id, updateData, { new: true }).select("-password");
@@ -141,7 +288,6 @@ router.patch("/employees/:id", authMiddleware, requireAdminOrManager, async (req
 });
 
 // POST /api/admin/employees/:id/disable
-// Toggle account status (active <-> disabled)
 router.post("/employees/:id/disable", authMiddleware, requireAdminOrManager, async (req, res) => {
   try {
     const employee = await User.findById(req.params.id);

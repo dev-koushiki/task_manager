@@ -45,29 +45,84 @@ const isOfflineError = (err) => {
 };
 
 const DEFAULT_DEPARTMENTS = [
-  'Engineering',
-  'Product',
-  'Design',
-  'Marketing',
-  'Sales',
-  'Operations',
-  'Human Resources',
-  'Finance',
+  'Leadership & Administration',
+  'Project Management Office',
+  'Software Engineering',
+  'Product Design & UI/UX',
+  'Quality Assurance & Testing',
+  'Operations & Infrastructure',
+  'Finance & Human Resources',
 ];
 
 const DEFAULT_ROLES = [
-  { id: 'employee', title: 'Employee', description: 'Standard task board and workspace access' },
-  { id: 'manager', title: 'Manager', description: 'Team coordination & project management' },
+  { id: 'director', title: 'Project Director', description: 'Oversees project progress, breaks down tasks, and reports to Head of Office' },
+  { id: 'manager', title: 'Manager / Team Leader', description: 'Assigns tasks to subordinates, tracks team progress, and approves work' },
+  { id: 'employee', title: 'Junior / Employee', description: 'Executes assigned tasks, updates progress percentage, and submits work' },
 ];
+
+// Helper: Calculate progress and overdue metrics from tasks
+export const calculateProjectMetrics = (tasks = [], projectDeadline = '') => {
+  const totalTasks = tasks.length;
+  if (totalTasks === 0) {
+    return {
+      totalTasks: 0,
+      completedTasks: 0,
+      overdueTasks: 0,
+      progressPercentage: 0,
+      calculatedStatus: 'not-started',
+    };
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  let totalWeight = 0;
+  let weightedProgressSum = 0;
+  let completedCount = 0;
+  let overdueCount = 0;
+
+  for (const t of tasks) {
+    const weight = Number(t.weight) || 1;
+    totalWeight += weight;
+
+    // A task is only 100% complete if status is 'completed'
+    const prog = t.status === 'completed' ? 100 : Number(t.progress) || 0;
+    weightedProgressSum += weight * prog;
+
+    if (t.status === 'completed') {
+      completedCount++;
+    }
+
+    const taskDeadline = t.deadline || t.dueDate;
+    if (taskDeadline && taskDeadline < today && t.status !== 'completed') {
+      overdueCount++;
+    }
+  }
+
+  const progressPercentage = totalWeight > 0 ? Math.round(weightedProgressSum / totalWeight) : 0;
+
+  let calculatedStatus = 'on-track';
+  if (completedCount === totalTasks) {
+    calculatedStatus = 'completed';
+  } else if (overdueCount > 0 || (projectDeadline && projectDeadline < today && progressPercentage < 100)) {
+    calculatedStatus = 'delayed';
+  } else if (progressPercentage === 0) {
+    calculatedStatus = 'not-started';
+  }
+
+  return {
+    totalTasks,
+    completedTasks: completedCount,
+    overdueTasks: overdueCount,
+    progressPercentage,
+    calculatedStatus,
+  };
+};
 
 export const api = {
   // Department Management
   getDepartments() {
     try {
       const stored = localStorage.getItem('tm_departments');
-      if (stored) {
-        return JSON.parse(stored);
-      }
+      if (stored) return JSON.parse(stored);
     } catch {
       // fallback
     }
@@ -98,9 +153,7 @@ export const api = {
   getRoles() {
     try {
       const stored = localStorage.getItem('tm_roles');
-      if (stored) {
-        return JSON.parse(stored);
-      }
+      if (stored) return JSON.parse(stored);
     } catch {
       // fallback
     }
@@ -114,7 +167,7 @@ export const api = {
     const id = title.toLowerCase().replace(/[^a-z0-9]/g, '_');
     const description = typeof roleData === 'object' && roleData.description
       ? roleData.description
-      : 'Custom workspace role';
+      : 'Custom reporting role';
 
     const current = this.getRoles();
     if (!current.some((r) => r.id === id)) {
@@ -126,15 +179,14 @@ export const api = {
   },
 
   deleteRole(roleId) {
-    // Keep employee and manager as core defaults
-    if (roleId === 'employee' || roleId === 'manager') return this.getRoles();
+    if (['director', 'manager', 'employee'].includes(roleId)) return this.getRoles();
     const current = this.getRoles();
     const updated = current.filter((r) => r.id !== roleId);
     localStorage.setItem('tm_roles', JSON.stringify(updated));
     return updated;
   },
 
-  // Auth: Register (Admin Workspace Registration)
+  // Auth: Register (Initial Workspace Admin Registration)
   async register(data) {
     try {
       const result = await safeFetchJson(`${API_BASE_URL}/auth/register`, {
@@ -160,7 +212,7 @@ export const api = {
           designation: data.designation,
           role: 'admin',
           status: 'active',
-          department: 'Leadership',
+          department: 'Leadership & Administration',
         };
         const mockToken = 'mock_jwt_token_' + Date.now();
         localStorage.setItem('tm_token', mockToken);
@@ -313,7 +365,7 @@ export const api = {
         const newUser = {
           id: 'user_' + Date.now(),
           firstName: nameParts[0] || inv.name,
-          lastName: nameParts.slice(1).join(' ') || 'Employee',
+          lastName: nameParts.slice(1).join(' ') || 'Member',
           email: inv.email,
           companyName: inv.companyName || 'Workspace',
           designation: `${inv.department} ${inv.role.replace(/_/g, ' ')}`,
@@ -334,7 +386,7 @@ export const api = {
         localStorage.setItem('tm_admin_employees', JSON.stringify(emps));
 
         return {
-          message: 'Employee account created successfully! (Offline mode)',
+          message: 'Employee account activated successfully! (Offline mode)',
           token: mockToken,
           user: newUser,
         };
@@ -354,7 +406,6 @@ export const api = {
       return data;
     } catch (err) {
       if (isOfflineError(err)) {
-        console.warn('Backend offline: generating invitation locally.');
         const rawToken = 'inv_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
         const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
         const storedUser = localStorage.getItem('tm_user');
@@ -388,7 +439,7 @@ export const api = {
     }
   },
 
-  // Admin: Get all employees & pending invitations (GET /api/admin/employees)
+  // Admin: Get all employees & pending invitations
   async getAdminEmployees() {
     try {
       const data = await safeFetchJson(`${API_BASE_URL}/admin/employees`, {
@@ -396,7 +447,6 @@ export const api = {
       });
       return data;
     } catch {
-      console.warn('Fetching admin employees locally');
       const localEmps = localStorage.getItem('tm_admin_employees');
       const localInvites = localStorage.getItem('tm_invitations');
 
@@ -417,7 +467,7 @@ export const api = {
     }
   },
 
-  // Admin: Update Employee (PATCH /api/admin/employees/:id)
+  // Admin: Update Employee
   async updateEmployee(id, updateData) {
     try {
       const data = await safeFetchJson(`${API_BASE_URL}/admin/employees/${id}`, {
@@ -435,7 +485,7 @@ export const api = {
     }
   },
 
-  // Admin: Toggle Employee Account Status (POST /api/admin/employees/:id/disable)
+  // Admin: Toggle Employee Account Status
   async toggleEmployeeStatus(id) {
     try {
       const data = await safeFetchJson(`${API_BASE_URL}/admin/employees/${id}/disable`, {
@@ -459,23 +509,122 @@ export const api = {
     }
   },
 
-  // Logout
-  logout() {
-    localStorage.removeItem('tm_token');
-    localStorage.removeItem('tm_user');
-  },
+  // ==========================================
+  // HIERARCHICAL PROJECT MANAGEMENT APIS
+  // ==========================================
 
-  // Get current logged in user from localStorage
-  getUser() {
+  // GET /api/projects
+  async getProjects() {
     try {
-      const stored = localStorage.getItem('tm_user');
-      return stored ? JSON.parse(stored) : null;
+      const data = await safeFetchJson(`${API_BASE_URL}/projects`, {
+        headers: getHeaders(),
+      });
+      return Array.isArray(data) ? data : [];
     } catch {
-      return null;
+      const local = localStorage.getItem('tm_projects');
+      const projects = local ? JSON.parse(local) : [];
+      const allTasks = await this.getTasks();
+
+      // Recalculate metrics locally
+      return projects.map((p) => {
+        const projectTasks = allTasks.filter((t) => t.projectId === p._id || t.projectId === p.id);
+        const metrics = calculateProjectMetrics(projectTasks, p.deadline);
+        return {
+          ...p,
+          metrics,
+        };
+      });
     }
   },
 
-  // Tasks: Fetch tasks
+  // POST /api/projects - Admin creates project
+  async createProject(projectData) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/projects`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(projectData),
+      });
+      return data.project;
+    } catch {
+      const local = localStorage.getItem('tm_projects');
+      const projects = local ? JSON.parse(local) : [];
+      const newProject = {
+        _id: 'proj_' + Date.now(),
+        ...projectData,
+        status: 'not-started',
+        createdAt: new Date().toISOString(),
+        metrics: {
+          totalTasks: 0,
+          completedTasks: 0,
+          overdueTasks: 0,
+          progressPercentage: 0,
+          calculatedStatus: 'not-started',
+        },
+      };
+      projects.unshift(newProject);
+      localStorage.setItem('tm_projects', JSON.stringify(projects));
+      return newProject;
+    }
+  },
+
+  // GET /api/projects/:id
+  async getProjectDetails(id) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/projects/${id}`, {
+        headers: getHeaders(),
+      });
+      return data;
+    } catch {
+      const projects = await this.getProjects();
+      const project = projects.find((p) => p._id === id || p.id === id);
+      const allTasks = await this.getTasks();
+      const tasks = allTasks.filter((t) => t.projectId === id);
+      return { project, tasks };
+    }
+  },
+
+  // PUT /api/projects/:id
+  async updateProject(id, updateData) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/projects/${id}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(updateData),
+      });
+      return data.project;
+    } catch {
+      const local = localStorage.getItem('tm_projects');
+      let projects = local ? JSON.parse(local) : [];
+      projects = projects.map((p) => (p._id === id || p.id === id ? { ...p, ...updateData } : p));
+      localStorage.setItem('tm_projects', JSON.stringify(projects));
+      return projects.find((p) => p._id === id || p.id === id);
+    }
+  },
+
+  // DELETE /api/projects/:id
+  async deleteProject(id) {
+    try {
+      await safeFetchJson(`${API_BASE_URL}/projects/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      return true;
+    } catch {
+      const local = localStorage.getItem('tm_projects');
+      if (local) {
+        const projects = JSON.parse(local).filter((p) => p._id !== id && p.id !== id);
+        localStorage.setItem('tm_projects', JSON.stringify(projects));
+      }
+      return true;
+    }
+  },
+
+  // ==========================================
+  // HIERARCHICAL TASK MANAGEMENT APIS
+  // ==========================================
+
+  // GET /api/tasks
   async getTasks() {
     try {
       const data = await safeFetchJson(`${API_BASE_URL}/tasks`, {
@@ -486,16 +635,8 @@ export const api = {
       const local = localStorage.getItem('tm_tasks');
       if (local) {
         try {
-          const parsed = JSON.parse(local);
-          const cleaned = Array.isArray(parsed)
-            ? parsed.filter((t) => !['task_1', 'task_2', 'task_3', 'task_4'].includes(t._id))
-            : [];
-          if (cleaned.length !== (parsed ? parsed.length : 0)) {
-            localStorage.setItem('tm_tasks', JSON.stringify(cleaned));
-          }
-          return cleaned;
+          return JSON.parse(local);
         } catch {
-          localStorage.removeItem('tm_tasks');
           return [];
         }
       }
@@ -503,7 +644,7 @@ export const api = {
     }
   },
 
-  // Tasks: Create task
+  // POST /api/tasks - Create task or subtask
   async createTask(taskData) {
     try {
       const data = await safeFetchJson(`${API_BASE_URL}/tasks`, {
@@ -518,6 +659,9 @@ export const api = {
       const newTask = {
         _id: 'task_' + Date.now(),
         ...taskData,
+        progress: taskData.status === 'completed' ? 100 : Number(taskData.progress) || 0,
+        weight: Number(taskData.weight) || 1,
+        status: taskData.status || 'not-started',
         createdAt: new Date().toISOString(),
       };
       tasks.unshift(newTask);
@@ -526,7 +670,72 @@ export const api = {
     }
   },
 
-  // Tasks: Update task
+  // PATCH /api/tasks/:id/progress - Employee progress update
+  async updateTaskProgress(id, progressData) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/tasks/${id}/progress`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify(progressData),
+      });
+      return data.task;
+    } catch {
+      const local = localStorage.getItem('tm_tasks');
+      let tasks = local ? JSON.parse(local) : [];
+      tasks = tasks.map((t) => {
+        if (t._id === id || t.id === id) {
+          const updated = { ...t, ...progressData };
+          if (updated.progress === 100 && updated.status === 'in-progress') {
+            updated.status = 'submitted';
+          }
+          return updated;
+        }
+        return t;
+      });
+      localStorage.setItem('tm_tasks', JSON.stringify(tasks));
+      return tasks.find((t) => t._id === id || t.id === id);
+    }
+  },
+
+  // POST /api/tasks/:id/submit - Employee submit for review
+  async submitTaskForReview(id, submissionNotes = '') {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/tasks/${id}/submit`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ submissionNotes }),
+      });
+      return data.task;
+    } catch {
+      return this.updateTask(id, {
+        status: 'submitted',
+        progress: 100,
+        submissionNotes,
+      });
+    }
+  },
+
+  // POST /api/tasks/:id/review - Supervisor approves or requests changes
+  async reviewTask(id, decision, feedback = '') {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/tasks/${id}/review`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ decision, feedback }),
+      });
+      return data.task;
+    } catch {
+      const isApproved = decision === 'approved';
+      return this.updateTask(id, {
+        status: isApproved ? 'completed' : 'in-progress',
+        progress: isApproved ? 100 : 75,
+        reviewFeedback: feedback || (isApproved ? 'Approved by supervisor' : 'Changes requested'),
+        reviewedAt: new Date().toISOString(),
+      });
+    }
+  },
+
+  // PUT /api/tasks/:id - General update
   async updateTask(id, updateData) {
     try {
       const data = await safeFetchJson(`${API_BASE_URL}/tasks/${id}`, {
@@ -538,13 +747,13 @@ export const api = {
     } catch {
       const local = localStorage.getItem('tm_tasks');
       let tasks = local ? JSON.parse(local) : [];
-      tasks = tasks.map((t) => (t._id === id ? { ...t, ...updateData } : t));
+      tasks = tasks.map((t) => (t._id === id || t.id === id ? { ...t, ...updateData } : t));
       localStorage.setItem('tm_tasks', JSON.stringify(tasks));
-      return tasks.find((t) => t._id === id);
+      return tasks.find((t) => t._id === id || t.id === id);
     }
   },
 
-  // Tasks: Delete task
+  // DELETE /api/tasks/:id
   async deleteTask(id) {
     try {
       await safeFetchJson(`${API_BASE_URL}/tasks/${id}`, {
@@ -555,10 +764,124 @@ export const api = {
     } catch {
       const local = localStorage.getItem('tm_tasks');
       if (local) {
-        const tasks = JSON.parse(local).filter((t) => t._id !== id);
+        const tasks = JSON.parse(local).filter((t) => t._id !== id && t.id !== id && t.parentTaskId !== id);
         localStorage.setItem('tm_tasks', JSON.stringify(tasks));
       }
       return true;
+    }
+  },
+
+  // ==========================================
+  // HEAD OF OFFICE & HIERARCHY APIS
+  // ==========================================
+
+  // GET /api/admin/summary
+  async getAdminSummary() {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/admin/summary`, {
+        headers: getHeaders(),
+      });
+      return data;
+    } catch {
+      const projects = await this.getProjects();
+      const allTasks = await this.getTasks();
+
+      let totalProgressSum = 0;
+      let onTrackCount = 0;
+      let delayedCount = 0;
+      let completedProjectsCount = 0;
+
+      const projectSummaries = projects.map((p) => {
+        const pTasks = allTasks.filter((t) => t.projectId === p._id || t.projectId === p.id);
+        const metrics = calculateProjectMetrics(pTasks, p.deadline);
+        totalProgressSum += metrics.progressPercentage;
+
+        if (metrics.calculatedStatus === 'completed') completedProjectsCount++;
+        else if (metrics.calculatedStatus === 'delayed') delayedCount++;
+        else onTrackCount++;
+
+        return {
+          id: p._id || p.id,
+          name: p.name,
+          targetOutcome: p.targetOutcome || 'Achieve project objectives',
+          directorName: p.directorName || 'Assigned Director',
+          deadline: p.deadline,
+          status: metrics.calculatedStatus,
+          progressPercentage: metrics.progressPercentage,
+          completedTasks: metrics.completedTasks,
+          totalTasks: metrics.totalTasks,
+          overdueTasks: metrics.overdueTasks,
+        };
+      });
+
+      const averageProgress = projects.length > 0 ? Math.round(totalProgressSum / projects.length) : 0;
+
+      return {
+        totalProjects: projects.length,
+        averageProgress,
+        onTrackProjects: onTrackCount,
+        delayedProjects: delayedCount,
+        completedProjects: completedProjectsCount,
+        projectSummaries,
+      };
+    }
+  },
+
+  // GET /api/admin/hierarchy
+  async getHierarchy() {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/admin/hierarchy`, {
+        headers: getHeaders(),
+      });
+      return Array.isArray(data) ? data : [];
+    } catch {
+      const adminData = await this.getAdminEmployees();
+      return adminData.employees || [];
+    }
+  },
+
+  // PATCH /api/admin/hierarchy/assign-supervisor
+  async assignSupervisor(employeeId, supervisorId) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/admin/hierarchy/assign-supervisor`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify({ employeeId, supervisorId }),
+      });
+      return data;
+    } catch {
+      return this.updateEmployee(employeeId, { reportsTo: supervisorId || null });
+    }
+  },
+
+  // GET /api/admin/directors
+  async getEligibleDirectors() {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/admin/directors`, {
+        headers: getHeaders(),
+      });
+      return Array.isArray(data) ? data : [];
+    } catch {
+      const adminData = await this.getAdminEmployees();
+      return (adminData.employees || []).filter((e) =>
+        ['admin', 'director', 'manager'].includes(e.role)
+      );
+    }
+  },
+
+  // Logout
+  logout() {
+    localStorage.removeItem('tm_token');
+    localStorage.removeItem('tm_user');
+  },
+
+  // Get current logged in user from localStorage
+  getUser() {
+    try {
+      const stored = localStorage.getItem('tm_user');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
     }
   },
 };

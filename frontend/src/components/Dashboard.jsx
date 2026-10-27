@@ -9,107 +9,208 @@ import {
   CalendarIcon,
   SparklesIcon,
   UsersIcon,
+  UserIcon,
   LayersIcon,
+  GitBranchIcon,
+  TrendingUpIcon,
+  CheckCircleIcon,
+  AlertTriangleIcon,
 } from './Icons';
 import { TaskModal } from './TaskModal';
+import { ProjectModal } from './ProjectModal';
+import { TaskReviewModal } from './TaskReviewModal';
+import { SubmitWorkModal } from './SubmitWorkModal';
+import { ProjectInspectModal } from './ProjectInspectModal';
+import { AdminSummaryView } from './AdminSummaryView';
+import { ProjectDirectorView } from './ProjectDirectorView';
+import { ManagerTeamView } from './ManagerTeamView';
+import { EmployeeWorkView } from './EmployeeWorkView';
+import { OrganizationHierarchyView } from './OrganizationHierarchyView';
 import { AdminEmployeePanel } from './AdminEmployeePanel';
 import { ThemeToggle } from './ThemeToggle';
 import { api } from '../services/api';
 
 export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptInvite }) => {
-  const [activeTab, setActiveTab] = useState('tasks'); // 'tasks' | 'team' | 'profile'
+  // Role-based view mode: defaults to user's authenticated role with interactive simulation switcher
+  const [activeRole, setActiveRole] = useState(() => user?.role || 'admin');
+
+  // Active navigation tab
+  const [activeTab, setActiveTab] = useState(() => {
+    const role = user?.role || 'admin';
+    if (role === 'admin') return 'summary';
+    if (role === 'director') return 'director_view';
+    if (role === 'manager') return 'manager_view';
+    return 'employee_view';
+  });
+
+  // Data states
+  const [projects, setProjects] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Filter and display states for general tasks view
   const [searchQuery, setSearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [viewMode, setViewMode] = useState('kanban'); // 'kanban' | 'list'
 
-  // Task modal state
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Modal states
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState(null);
+
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [taskModalProjectId, setTaskModalProjectId] = useState('');
+  const [taskModalParentId, setTaskModalParentId] = useState(null);
+
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [reviewingTask, setReviewingTask] = useState(null);
+
+  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [submittingTask, setSubmittingTask] = useState(null);
+
+  const [isInspectModalOpen, setIsInspectModalOpen] = useState(false);
+  const [inspectingProject, setInspectingProject] = useState(null);
+
+  // Sync tab when switching role view
+  const handleRoleChange = (newRole) => {
+    setActiveRole(newRole);
+    if (newRole === 'admin') setActiveTab('summary');
+    else if (newRole === 'director') setActiveTab('director_view');
+    else if (newRole === 'manager') setActiveTab('manager_view');
+    else setActiveTab('employee_view');
+  };
 
   useEffect(() => {
-    let ignore = false;
-    const fetchTasks = async () => {
-      try {
-        const data = await api.getTasks();
-        if (!ignore) {
-          setTasks(data);
-        }
-      } catch (err) {
-        console.error('Failed to fetch tasks:', err);
-      } finally {
-        if (!ignore) {
+    let active = true;
+    Promise.all([
+      api.getProjects(),
+      api.getTasks(),
+      api.getAdminEmployees(),
+    ])
+      .then(([projectsData, tasksData, adminData]) => {
+        if (active) {
+          setProjects(projectsData || []);
+          setTasks(tasksData || []);
+          setEmployees(adminData?.employees || []);
           setLoading(false);
         }
-      }
-    };
+      })
+      .catch((err) => {
+        console.error('Failed to load dashboard data:', err);
+        if (active) setLoading(false);
+      });
 
-    fetchTasks();
     return () => {
-      ignore = true;
+      active = false;
     };
   }, []);
 
-  const refreshTasks = async () => {
+  const refreshAllData = async () => {
     try {
-      const data = await api.getTasks();
-      setTasks(data);
+      const [projectsData, tasksData, adminData] = await Promise.all([
+        api.getProjects(),
+        api.getTasks(),
+        api.getAdminEmployees(),
+      ]);
+      setProjects(projectsData || []);
+      setTasks(tasksData || []);
+      setEmployees(adminData?.employees || []);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to refresh dashboard data:', err);
     }
   };
 
-  const handleCreateOrUpdateTask = async (taskData) => {
-    try {
-      if (editingTask) {
-        await api.updateTask(editingTask._id, taskData);
-      } else {
-        await api.createTask(taskData);
-      }
-      setIsModalOpen(false);
-      setEditingTask(null);
-      refreshTasks();
-    } catch (err) {
-      alert(err.message || 'Operation failed');
+  // Project Actions
+  const handleSaveProject = async (projectData) => {
+    if (editingProject) {
+      await api.updateProject(editingProject._id || editingProject.id, projectData);
+    } else {
+      await api.createProject(projectData);
     }
+    setEditingProject(null);
+    setIsProjectModalOpen(false);
+    refreshAllData();
+  };
+
+  // Task Actions
+  const handleOpenNewTask = (projectId = '', parentTaskId = null) => {
+    setEditingTask(null);
+    setTaskModalProjectId(projectId || (projects.length > 0 ? (projects[0]._id || projects[0].id) : ''));
+    setTaskModalParentId(parentTaskId || null);
+    setIsTaskModalOpen(true);
+  };
+
+  const handleSaveTask = async (taskData) => {
+    if (editingTask) {
+      await api.updateTask(editingTask._id || editingTask.id, taskData);
+    } else {
+      await api.createTask({
+        ...taskData,
+        projectId: taskData.projectId || taskModalProjectId,
+        parentTaskId: taskData.parentTaskId || taskModalParentId,
+      });
+    }
+    setEditingTask(null);
+    setIsTaskModalOpen(false);
+    refreshAllData();
   };
 
   const handleDeleteTask = async (id) => {
     if (!window.confirm('Are you sure you want to delete this task?')) return;
     try {
       await api.deleteTask(id);
-      refreshTasks();
+      refreshAllData();
     } catch (err) {
       alert(err.message || 'Failed to delete task');
     }
   };
 
-  const handleStatusChange = async (task, newStatus) => {
+  // Progress update from Employee view or quick changer
+  const handleUpdateProgress = async (taskId, progressData) => {
     try {
-      await api.updateTask(task._id, { status: newStatus });
-      refreshTasks();
+      await api.updateTaskProgress(taskId, progressData);
+      refreshAllData();
     } catch (err) {
-      console.error(err);
+      console.error('Progress update failed:', err);
     }
   };
 
-  // Filter tasks
+  // Submit deliverable for review
+  const handleSubmitWork = async (taskId, submissionNotes) => {
+    try {
+      await api.submitTaskForReview(taskId, submissionNotes);
+      refreshAllData();
+    } catch (err) {
+      alert(err.message || 'Submission failed');
+    }
+  };
+
+  // Supervisor review action (approve or request revisions)
+  const handleReviewSubmit = async (taskId, decision, feedback) => {
+    try {
+      await api.reviewTask(taskId, decision, feedback);
+      refreshAllData();
+    } catch (err) {
+      alert(err.message || 'Review action failed');
+    }
+  };
+
+  const handleInspectProject = (project) => {
+    setInspectingProject(project);
+    setIsInspectModalOpen(true);
+  };
+
+  // Filter tasks for general task view
   const filteredTasks = tasks.filter((t) => {
     const matchesSearch =
       t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (t.assignedTo && t.assignedTo.toLowerCase().includes(searchQuery.toLowerCase()));
+      (t.assignedToName && t.assignedToName.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesPriority = priorityFilter === 'all' || t.priority === priorityFilter;
     return matchesSearch && matchesPriority;
   });
-
-  // Calculate metrics
-  const totalTasks = tasks.length;
-  const inProgressCount = tasks.filter((t) => t.status === 'in_progress').length;
-  const completedCount = tasks.filter((t) => t.status === 'completed').length;
-  const urgentCount = tasks.filter((t) => t.priority === 'urgent' || t.priority === 'high').length;
 
   const userInitials =
     user && user.firstName && user.lastName
@@ -117,9 +218,9 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
       : 'U';
 
   const columns = [
-    { id: 'todo', title: 'To Do', color: 'badge-todo' },
-    { id: 'in_progress', title: 'In Progress', color: 'badge-progress' },
-    { id: 'review', title: 'Review', color: 'badge-review' },
+    { id: 'not-started', title: 'Not Started', color: 'badge-todo' },
+    { id: 'in-progress', title: 'In Progress', color: 'badge-progress' },
+    { id: 'submitted', title: 'Pending Review', color: 'badge-review' },
     { id: 'completed', title: 'Completed', color: 'badge-completed' },
   ];
 
@@ -134,35 +235,154 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           </div>
 
           <nav className="nav-tabs">
-            <button
-              type="button"
-              className={`nav-tab-btn ${activeTab === 'tasks' ? 'active' : ''}`}
-              onClick={() => setActiveTab('tasks')}
-            >
-              <LayersIcon size={16} />
-              <span>Tasks & Projects</span>
-            </button>
-            <button
-              type="button"
-              className={`nav-tab-btn ${activeTab === 'team' ? 'active' : ''}`}
-              onClick={() => setActiveTab('team')}
-            >
-              <UsersIcon size={16} />
-              <span>{user?.role === 'admin' ? 'Admin Panel / Employees' : 'Team Directory'}</span>
-            </button>
+            {/* Admin Tabs */}
+            {activeRole === 'admin' && (
+              <>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'summary' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('summary')}
+                >
+                  <TrendingUpIcon size={16} />
+                  <span>Executive Summary</span>
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'hierarchy' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('hierarchy')}
+                >
+                  <GitBranchIcon size={16} />
+                  <span>Hierarchy & Reporting</span>
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'all_tasks' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('all_tasks')}
+                >
+                  <LayersIcon size={16} />
+                  <span>All Office Tasks</span>
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('admin')}
+                >
+                  <UsersIcon size={16} />
+                  <span>Admin & Employees</span>
+                </button>
+              </>
+            )}
+
+            {/* Project Director Tabs */}
+            {activeRole === 'director' && (
+              <>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'director_view' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('director_view')}
+                >
+                  <LayersIcon size={16} />
+                  <span>Project Milestones</span>
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'all_tasks' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('all_tasks')}
+                >
+                  <TrendingUpIcon size={16} />
+                  <span>Subordinate Tasks</span>
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'hierarchy' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('hierarchy')}
+                >
+                  <GitBranchIcon size={16} />
+                  <span>Office Hierarchy</span>
+                </button>
+              </>
+            )}
+
+            {/* Manager Tabs */}
+            {activeRole === 'manager' && (
+              <>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'manager_view' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('manager_view')}
+                >
+                  <UsersIcon size={16} />
+                  <span>Team Work & Subtasks</span>
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'all_tasks' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('all_tasks')}
+                >
+                  <LayersIcon size={16} />
+                  <span>Team Board</span>
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'hierarchy' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('hierarchy')}
+                >
+                  <GitBranchIcon size={16} />
+                  <span>Reporting Tree</span>
+                </button>
+              </>
+            )}
+
+            {/* Employee Tabs */}
+            {activeRole === 'employee' && (
+              <>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'employee_view' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('employee_view')}
+                >
+                  <CheckCircleIcon size={16} />
+                  <span>My Assigned Work</span>
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'hierarchy' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('hierarchy')}
+                >
+                  <GitBranchIcon size={16} />
+                  <span>My Reporting Line</span>
+                </button>
+              </>
+            )}
+
             <button
               type="button"
               className={`nav-tab-btn ${activeTab === 'profile' ? 'active' : ''}`}
               onClick={() => setActiveTab('profile')}
             >
               <BriefcaseIcon size={16} />
-              <span>My Profile</span>
+              <span>Profile</span>
             </button>
           </nav>
         </div>
 
-        {/* User profile capsule & Logout */}
+        {/* Right side: Role Switcher Simulation Capsule & User */}
         <div className="header-right">
+          {/* Interactive Role Switcher for instant simulation */}
+          <div className="role-switcher-capsule" title="Switch view perspective according to organizational hierarchy">
+            <span className="role-switcher-label">View Perspective:</span>
+            <select
+              value={activeRole}
+              onChange={(e) => handleRoleChange(e.target.value)}
+              className="role-switcher-select"
+            >
+              <option value="admin">👑 Head of Office (Admin)</option>
+              <option value="director">📁 Project Director</option>
+              <option value="manager">👥 Manager / Team Lead</option>
+              <option value="employee">💼 Junior / Employee</option>
+            </select>
+          </div>
+
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
 
           <div className="user-profile-capsule">
@@ -176,7 +396,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                   <BuildingIcon size={12} /> {user?.companyName}
                 </span>
                 <span className="subtag-pill role-subtag">
-                  🛡️ {user?.role ? user.role.toUpperCase() : 'ADMIN'}
+                  {activeRole.toUpperCase()}
                 </span>
               </div>
             </div>
@@ -196,96 +416,82 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
       {/* Main Content Area */}
       <main className="dashboard-main">
-        {activeTab === 'team' && (
+        {/* 1. Head of Office / Admin Summary View */}
+        {activeTab === 'summary' && (
+          <AdminSummaryView
+            projects={projects}
+            loading={loading}
+            onOpenNewProject={() => {
+              setEditingProject(null);
+              setIsProjectModalOpen(true);
+            }}
+            onInspectProject={handleInspectProject}
+          />
+        )}
+
+        {/* 2. Project Director View */}
+        {activeTab === 'director_view' && (
+          <ProjectDirectorView
+            projects={projects}
+            tasks={tasks}
+            onOpenNewTask={(projId, parentId) => handleOpenNewTask(projId, parentId)}
+            onOpenReview={(task) => {
+              setReviewingTask(task);
+              setIsReviewModalOpen(true);
+            }}
+            onInspectProject={handleInspectProject}
+          />
+        )}
+
+        {/* 3. Manager Team View */}
+        {activeTab === 'manager_view' && (
+          <ManagerTeamView
+            tasks={tasks}
+            projects={projects}
+            employees={employees}
+            onOpenNewTask={(projId, parentId) => handleOpenNewTask(projId, parentId)}
+            onOpenReview={(task) => {
+              setReviewingTask(task);
+              setIsReviewModalOpen(true);
+            }}
+          />
+        )}
+
+        {/* 4. Junior / Employee My Work View */}
+        {activeTab === 'employee_view' && (
+          <EmployeeWorkView
+            tasks={tasks}
+            onUpdateProgress={handleUpdateProgress}
+            onOpenSubmitModal={(task) => {
+              setSubmittingTask(task);
+              setIsSubmitModalOpen(true);
+            }}
+          />
+        )}
+
+        {/* 5. Organizational Hierarchy Tree */}
+        {activeTab === 'hierarchy' && (
+          <OrganizationHierarchyView user={user} />
+        )}
+
+        {/* 6. Admin Panel (Employee invitations, custom departments & roles) */}
+        {activeTab === 'admin' && (
           <AdminEmployeePanel
             companyName={user?.companyName}
             onTestAcceptInvite={onTestAcceptInvite}
           />
         )}
 
-        {activeTab === 'profile' && (
-          <div className="profile-container animate-fade-in">
-            <div className="profile-card">
-              <div className="profile-header-banner">
-                <div className="profile-avatar-lg">{userInitials}</div>
-              </div>
-              <div className="profile-body">
-                <h2>
-                  {user?.firstName} {user?.lastName}
-                </h2>
-                <p className="profile-mail">{user?.email}</p>
-
-                <div className="profile-info-grid">
-                  <div className="info-box">
-                    <span className="info-label">Company</span>
-                    <span className="info-val">
-                      <BuildingIcon size={16} /> {user?.companyName}
-                    </span>
-                  </div>
-                  <div className="info-box">
-                    <span className="info-label">Designation</span>
-                    <span className="info-val">
-                      <BriefcaseIcon size={16} /> {user?.designation}
-                    </span>
-                  </div>
-                  <div className="info-box">
-                    <span className="info-label">Assigned Workspace</span>
-                    <span className="info-val">Enterprise Task Board</span>
-                  </div>
-                  <div className="info-box">
-                    <span className="info-label">Account Status</span>
-                    <span className="status-badge-active">● Active Member</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'tasks' && (
-          <>
-            {/* KPI Metric Summary Bar */}
-            <div className="metrics-grid">
-              <div className="metric-card animate-scale-up">
-                <div className="metric-info">
-                  <span className="metric-title">Total Tasks</span>
-                  <span className="metric-number">{totalTasks}</span>
-                </div>
-                <div className="metric-badge bg-blue-subtle">All Active</div>
-              </div>
-
-              <div className="metric-card animate-scale-up delay-1">
-                <div className="metric-info">
-                  <span className="metric-title">In Progress</span>
-                  <span className="metric-number text-accent">{inProgressCount}</span>
-                </div>
-                <div className="metric-badge bg-purple-subtle">Working</div>
-              </div>
-
-              <div className="metric-card animate-scale-up delay-2">
-                <div className="metric-info">
-                  <span className="metric-title">Completed</span>
-                  <span className="metric-number text-success">{completedCount}</span>
-                </div>
-                <div className="metric-badge bg-emerald-subtle">Done</div>
-              </div>
-
-              <div className="metric-card animate-scale-up delay-3">
-                <div className="metric-info">
-                  <span className="metric-title">Urgent / High</span>
-                  <span className="metric-number text-danger">{urgentCount}</span>
-                </div>
-                <div className="metric-badge bg-red-subtle">Priority</div>
-              </div>
-            </div>
-
-            {/* Filter and Control Bar */}
+        {/* 7. Detailed Kanban / List Tasks View */}
+        {activeTab === 'all_tasks' && (
+          <div className="all-tasks-section animate-fade-in">
+            {/* Control & Filter Bar */}
             <div className="control-bar">
               <div className="search-input-wrapper">
                 <SearchIcon size={18} className="search-icon" />
                 <input
                   type="text"
-                  placeholder="Search tasks by title, description, assignee..."
+                  placeholder="Search tasks, descriptions, or assignees..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -312,7 +518,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                     type="button"
                     className={`toggle-btn ${viewMode === 'kanban' ? 'active' : ''}`}
                     onClick={() => setViewMode('kanban')}
-                    title="Kanban Board View"
                   >
                     Kanban
                   </button>
@@ -320,7 +525,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                     type="button"
                     className={`toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
                     onClick={() => setViewMode('list')}
-                    title="List Table View"
                   >
                     List
                   </button>
@@ -329,10 +533,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={() => {
-                    setEditingTask(null);
-                    setIsModalOpen(true);
-                  }}
+                  onClick={() => handleOpenNewTask()}
                 >
                   <PlusIcon size={18} />
                   <span>New Task</span>
@@ -340,38 +541,29 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               </div>
             </div>
 
-            {/* Loading indicator */}
             {loading ? (
               <div className="loading-state">
                 <div className="spinner"></div>
-                <p>Loading your tasks...</p>
+                <p>Loading office tasks...</p>
               </div>
             ) : filteredTasks.length === 0 ? (
               <div className="empty-state animate-fade-in">
                 <SparklesIcon size={40} className="empty-icon text-accent" />
                 <h3>No tasks found</h3>
-                <p>
-                  {searchQuery || priorityFilter !== 'all'
-                    ? 'Try clearing your search or priority filter.'
-                    : 'Start organizing your workflow by creating your first task!'}
-                </p>
+                <p>Create your first task or subtask to organize work across the organization.</p>
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={() => {
-                    setEditingTask(null);
-                    setIsModalOpen(true);
-                  }}
+                  onClick={() => handleOpenNewTask()}
+                  style={{ marginTop: '10px' }}
                 >
-                  <PlusIcon size={18} />
-                  <span>Create First Task</span>
+                  <PlusIcon size={18} /> New Task
                 </button>
               </div>
             ) : viewMode === 'kanban' ? (
-              /* Kanban View */
               <div className="kanban-board">
                 {columns.map((col) => {
-                  const colTasks = filteredTasks.filter((t) => t.status === col.id);
+                  const colTasks = filteredTasks.filter((t) => (t.status || 'not-started') === col.id);
                   return (
                     <div key={col.id} className="kanban-column">
                       <div className="column-header">
@@ -383,63 +575,52 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                       </div>
 
                       <div className="column-body">
-                        {colTasks.map((task) => (
-                          <div key={task._id} className="task-card animate-slide-up">
+                        {colTasks.map((t) => (
+                          <div key={t._id || t.id} className="task-card animate-scale-up">
                             <div className="task-card-top">
-                              <span className={`priority-tag priority-${task.priority}`}>
-                                {task.priority}
+                              <span className={`priority-tag priority-${t.priority || 'medium'}`}>
+                                {t.priority || 'medium'} · {t.weight || 1}x
                               </span>
                               <div className="task-actions">
                                 <button
                                   type="button"
-                                  className="action-icon-btn"
-                                  onClick={() => {
-                                    setEditingTask(task);
-                                    setIsModalOpen(true);
-                                  }}
-                                  title="Edit Task"
-                                >
-                                  ✏️
-                                </button>
-                                <button
-                                  type="button"
                                   className="action-icon-btn danger"
-                                  onClick={() => handleDeleteTask(task._id)}
-                                  title="Delete Task"
+                                  onClick={() => handleDeleteTask(t._id || t.id)}
+                                  title="Delete task"
                                 >
                                   <TrashIcon size={14} />
                                 </button>
                               </div>
                             </div>
 
-                            <h4 className="task-title">{task.title}</h4>
-                            {task.description && (
-                              <p className="task-desc">{task.description}</p>
+                            <strong className="task-title">{t.title}</strong>
+                            {t.description && <p className="task-desc">{t.description}</p>}
+                            {t.blocker && (
+                              <div className="blocker-warning-tag">
+                                <AlertTriangleIcon size={12} /> {t.blocker}
+                              </div>
                             )}
 
                             <div className="task-footer">
-                              {task.dueDate && (
-                                <span className="task-meta">
-                                  <CalendarIcon size={13} /> {task.dueDate}
-                                </span>
-                              )}
-                              {task.assignedTo && (
-                                <span className="task-meta assignee">
-                                  👤 {task.assignedTo}
-                                </span>
-                              )}
+                              <span className="task-meta assignee">
+                                <UserIcon size={12} />
+                                {t.assignedToName || 'Unassigned'}
+                              </span>
+                              <span className="task-meta">
+                                <CalendarIcon size={12} />
+                                {t.deadline || t.dueDate || 'Flexible'}
+                              </span>
                             </div>
 
-                            {/* Move status select */}
                             <div className="status-quick-change">
-                              <label>Status:</label>
+                              <span>Status:</span>
                               <select
-                                value={task.status}
-                                onChange={(e) => handleStatusChange(task, e.target.value)}
+                                value={t.status || 'not-started'}
+                                onChange={(e) => handleUpdateProgress(t._id || t.id, { status: e.target.value })}
                               >
-                                <option value="todo">To Do</option>
-                                <option value="in_progress">In Progress</option>
-                                <option value="review">Review</option>
+                                <option value="not-started">Not Started</option>
+                                <option value="in-progress">In Progress</option>
+                                <option value="submitted">Submitted</option>
                                 <option value="completed">Completed</option>
                               </select>
                             </div>
@@ -451,65 +632,58 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 })}
               </div>
             ) : (
-              /* List Table View */
-              <div className="table-wrapper animate-fade-in">
+              <div className="table-wrapper">
                 <table className="task-table">
                   <thead>
                     <tr>
-                      <th>Title & Description</th>
-                      <th>Status</th>
-                      <th>Priority</th>
-                      <th>Due Date</th>
+                      <th>Title</th>
                       <th>Assigned To</th>
+                      <th>Priority</th>
+                      <th>Weight</th>
+                      <th>Deadline</th>
+                      <th>Status</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredTasks.map((task) => (
-                      <tr key={task._id}>
+                    {filteredTasks.map((t) => (
+                      <tr key={t._id || t.id}>
                         <td>
-                          <strong>{task.title}</strong>
-                          {task.description && (
-                            <p className="table-desc">{task.description}</p>
+                          <strong>{t.title}</strong>
+                          {t.blocker && (
+                            <span className="blocker-warning-tag">
+                              <AlertTriangleIcon size={12} /> {t.blocker}
+                            </span>
                           )}
                         </td>
+                        <td>{t.assignedToName || 'Unassigned'}</td>
+                        <td>
+                          <span className={`priority-tag priority-${t.priority || 'medium'}`}>
+                            {t.priority || 'medium'}
+                          </span>
+                        </td>
+                        <td>{t.weight || 1}x</td>
+                        <td>{t.deadline || t.dueDate || 'Flexible'}</td>
                         <td>
                           <select
                             className="table-status-select"
-                            value={task.status}
-                            onChange={(e) => handleStatusChange(task, e.target.value)}
+                            value={t.status || 'not-started'}
+                            onChange={(e) => handleUpdateProgress(t._id || t.id, { status: e.target.value })}
                           >
-                            <option value="todo">To Do</option>
-                            <option value="in_progress">In Progress</option>
-                            <option value="review">Review</option>
+                            <option value="not-started">Not Started</option>
+                            <option value="in-progress">In Progress</option>
+                            <option value="submitted">Submitted</option>
                             <option value="completed">Completed</option>
                           </select>
                         </td>
-                        <td>
-                          <span className={`priority-tag priority-${task.priority}`}>
-                            {task.priority}
-                          </span>
-                        </td>
-                        <td>{task.dueDate || '—'}</td>
-                        <td>{task.assignedTo || 'Unassigned'}</td>
                         <td style={{ textAlign: 'right' }}>
                           <button
                             type="button"
-                            className="btn btn-sm btn-secondary"
-                            onClick={() => {
-                              setEditingTask(task);
-                              setIsModalOpen(true);
-                            }}
-                            style={{ marginRight: '6px' }}
+                            className="action-icon-btn danger"
+                            onClick={() => handleDeleteTask(t._id || t.id)}
+                            title="Delete task"
                           >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline-danger"
-                            onClick={() => handleDeleteTask(task._id)}
-                          >
-                            Delete
+                            <TrashIcon size={16} />
                           </button>
                         </td>
                       </tr>
@@ -518,23 +692,102 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 </table>
               </div>
             )}
-          </>
+          </div>
+        )}
+
+        {/* 8. Profile View */}
+        {activeTab === 'profile' && (
+          <div className="profile-container animate-fade-in">
+            <div className="profile-card">
+              <div className="profile-header-banner">
+                <div className="profile-avatar-lg">{userInitials}</div>
+              </div>
+              <div className="profile-body">
+                <h2>
+                  {user?.firstName} {user?.lastName}
+                </h2>
+                <p className="profile-mail">{user?.email}</p>
+
+                <div className="profile-info-grid">
+                  <div className="info-box">
+                    <span className="info-label">Company</span>
+                    <span className="info-val">{user?.companyName}</span>
+                  </div>
+                  <div className="info-box">
+                    <span className="info-label">Current Role / Perspective</span>
+                    <span className="info-val" style={{ textTransform: 'uppercase' }}>
+                      {activeRole}
+                    </span>
+                  </div>
+                  <div className="info-box">
+                    <span className="info-label">Department</span>
+                    <span className="info-val">{user?.department || 'Leadership & Administration'}</span>
+                  </div>
+                  <div className="info-box">
+                    <span className="info-label">Designation</span>
+                    <span className="info-val">{user?.designation}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </main>
 
-      {/* Task Creation / Edit Modal */}
-      {isModalOpen && (
-        <TaskModal
-          key={editingTask ? editingTask._id : 'new_task'}
-          isOpen={isModalOpen}
-          onClose={() => {
-            setIsModalOpen(false);
-            setEditingTask(null);
-          }}
-          onSave={handleCreateOrUpdateTask}
-          editingTask={editingTask}
-        />
-      )}
+      {/* Modals */}
+      <ProjectModal
+        isOpen={isProjectModalOpen}
+        onClose={() => {
+          setIsProjectModalOpen(false);
+          setEditingProject(null);
+        }}
+        onSave={handleSaveProject}
+        editingProject={editingProject}
+      />
+
+      <TaskModal
+        isOpen={isTaskModalOpen}
+        onClose={() => {
+          setIsTaskModalOpen(false);
+          setEditingTask(null);
+        }}
+        onSave={handleSaveTask}
+        editingTask={editingTask}
+        projects={projects}
+        employees={employees}
+        defaultProjectId={taskModalProjectId}
+        parentTaskId={taskModalParentId}
+      />
+
+      <TaskReviewModal
+        isOpen={isReviewModalOpen}
+        onClose={() => {
+          setIsReviewModalOpen(false);
+          setReviewingTask(null);
+        }}
+        task={reviewingTask}
+        onReviewSubmit={handleReviewSubmit}
+      />
+
+      <SubmitWorkModal
+        isOpen={isSubmitModalOpen}
+        onClose={() => {
+          setIsSubmitModalOpen(false);
+          setSubmittingTask(null);
+        }}
+        task={submittingTask}
+        onSubmitWork={handleSubmitWork}
+      />
+
+      <ProjectInspectModal
+        isOpen={isInspectModalOpen}
+        onClose={() => {
+          setIsInspectModalOpen(false);
+          setInspectingProject(null);
+        }}
+        project={inspectingProject}
+        tasks={tasks}
+      />
     </div>
   );
 };

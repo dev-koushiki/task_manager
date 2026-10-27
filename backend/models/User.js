@@ -42,7 +42,13 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
+      enum: ["admin", "director", "manager", "employee"],
       default: "admin",
+    },
+    reportsTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
     },
     status: {
       type: String,
