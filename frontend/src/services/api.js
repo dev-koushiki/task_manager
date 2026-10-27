@@ -864,8 +864,386 @@ export const api = {
     } catch {
       const adminData = await this.getAdminEmployees();
       return (adminData.employees || []).filter((e) =>
-        ['admin', 'director', 'manager'].includes(e.role)
+        ['admin', 'director', 'manager'].includes(e.role) || (e.hierarchyLevel && e.hierarchyLevel <= 2)
       );
+    }
+  },
+
+  // ==========================================
+  // DYNAMIC ORGANIZATION & PERMISSION APIS
+  // ==========================================
+
+  // GET /api/organization
+  async getOrganization() {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization`, {
+        headers: getHeaders(),
+      });
+      if (data) {
+        localStorage.setItem('tm_organization', JSON.stringify(data));
+      }
+      return data;
+    } catch {
+      const local = localStorage.getItem('tm_organization');
+      if (local) {
+        try {
+          return JSON.parse(local);
+        } catch {
+          // fallback
+        }
+      }
+      const user = this.getUser();
+      const defaultOrg = {
+        name: user?.companyName || 'Company Workspace',
+        departments: [
+          'Executive Leadership',
+          'Project Management Office',
+          'Engineering & Technology',
+          'Product & Design',
+          'Operations & Quality',
+          'Human Resources & Finance',
+        ],
+        levels: [
+          { level: 1, name: 'Executive / Leadership', description: 'Strategic oversight and organization-wide KPIs' },
+          { level: 2, name: 'Department Heads / Directors', description: 'Project milestone planning and departmental governance' },
+          { level: 3, name: 'Managers & Team Leads', description: 'Task delegation, blocker resolution, and quality approval' },
+          { level: 4, name: 'Specialists & Contributors', description: 'Operational task execution and deliverable submissions' },
+        ],
+        positions: [
+          {
+            id: 'pos_1',
+            title: 'Chief Executive / Head of Office',
+            level: 1,
+            department: 'Executive Leadership',
+            permissions: {
+              canCreateProjects: true,
+              canAssignTasks: true,
+              canApproveWork: true,
+              canViewExecutiveSummary: true,
+              canViewTeamTasks: true,
+              canViewAllTasks: true,
+              canManageStructure: true,
+            },
+          },
+          {
+            id: 'pos_2',
+            title: 'Project Director',
+            level: 2,
+            department: 'Project Management Office',
+            permissions: {
+              canCreateProjects: true,
+              canAssignTasks: true,
+              canApproveWork: true,
+              canViewExecutiveSummary: true,
+              canViewTeamTasks: true,
+              canViewAllTasks: false,
+              canManageStructure: false,
+            },
+          },
+          {
+            id: 'pos_3',
+            title: 'Team Leader / Manager',
+            level: 3,
+            department: 'Engineering & Technology',
+            permissions: {
+              canCreateProjects: false,
+              canAssignTasks: true,
+              canApproveWork: true,
+              canViewExecutiveSummary: false,
+              canViewTeamTasks: true,
+              canViewAllTasks: false,
+              canManageStructure: false,
+            },
+          },
+          {
+            id: 'pos_4',
+            title: 'Specialist / Employee',
+            level: 4,
+            department: 'Engineering & Technology',
+            permissions: {
+              canCreateProjects: false,
+              canAssignTasks: false,
+              canApproveWork: false,
+              canViewExecutiveSummary: false,
+              canViewTeamTasks: false,
+              canViewAllTasks: false,
+              canManageStructure: false,
+            },
+          },
+        ],
+      };
+      localStorage.setItem('tm_organization', JSON.stringify(defaultOrg));
+      return defaultOrg;
+    }
+  },
+
+  // PUT /api/organization
+  async updateOrganization(orgData) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(orgData),
+      });
+      return data.organization;
+    } catch {
+      const org = await this.getOrganization();
+      const updated = { ...org, ...orgData };
+      localStorage.setItem('tm_organization', JSON.stringify(updated));
+      return updated;
+    }
+  },
+
+  // POST /api/organization/departments
+  async addOrgDepartment(name) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/departments`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ name }),
+      });
+      if (Array.isArray(data.departments)) {
+        localStorage.setItem('tm_departments', JSON.stringify(data.departments));
+      }
+      return data.departments;
+    } catch {
+      const org = await this.getOrganization();
+      const depts = org.departments || [];
+      if (!depts.includes(name)) {
+        depts.push(name);
+        org.departments = depts;
+        localStorage.setItem('tm_organization', JSON.stringify(org));
+        localStorage.setItem('tm_departments', JSON.stringify(depts));
+      }
+      return depts;
+    }
+  },
+
+  // DELETE /api/organization/departments/:name
+  async deleteOrgDepartment(name) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/departments/${encodeURIComponent(name)}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      if (Array.isArray(data.departments)) {
+        localStorage.setItem('tm_departments', JSON.stringify(data.departments));
+      }
+      return data.departments;
+    } catch {
+      const org = await this.getOrganization();
+      org.departments = (org.departments || []).filter((d) => d !== name);
+      localStorage.setItem('tm_organization', JSON.stringify(org));
+      localStorage.setItem('tm_departments', JSON.stringify(org.departments));
+      return org.departments;
+    }
+  },
+
+  // PUT /api/organization/levels
+  async updateHierarchyLevels(levels) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/levels`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify({ levels }),
+      });
+      return data.levels;
+    } catch {
+      const org = await this.getOrganization();
+      org.levels = levels;
+      localStorage.setItem('tm_organization', JSON.stringify(org));
+      return levels;
+    }
+  },
+
+  // POST /api/organization/positions
+  async createPosition(posData) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/positions`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(posData),
+      });
+      return data.position;
+    } catch {
+      const org = await this.getOrganization();
+      const newPos = {
+        id: 'pos_' + Date.now(),
+        ...posData,
+        level: Number(posData.level) || 4,
+        permissions: posData.permissions || {},
+      };
+      org.positions = org.positions || [];
+      org.positions.push(newPos);
+      localStorage.setItem('tm_organization', JSON.stringify(org));
+      return newPos;
+    }
+  },
+
+  // PUT /api/organization/positions/:id
+  async updatePosition(id, posData) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/positions/${id}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(posData),
+      });
+      return data.position;
+    } catch {
+      const org = await this.getOrganization();
+      org.positions = (org.positions || []).map((p) => (p.id === id ? { ...p, ...posData } : p));
+      localStorage.setItem('tm_organization', JSON.stringify(org));
+      return org.positions.find((p) => p.id === id);
+    }
+  },
+
+  // DELETE /api/organization/positions/:id
+  async deletePosition(id) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/positions/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      return data.positions;
+    } catch {
+      const org = await this.getOrganization();
+      org.positions = (org.positions || []).filter((p) => p.id !== id);
+      localStorage.setItem('tm_organization', JSON.stringify(org));
+      return org.positions;
+    }
+  },
+
+  // POST /api/organization/apply-template
+  async applyOrganizationTemplate(templateType) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/apply-template`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ templateType }),
+      });
+      if (data.organization) {
+        localStorage.setItem('tm_organization', JSON.stringify(data.organization));
+      }
+      return data.organization;
+    } catch {
+      let org = await this.getOrganization();
+      if (templateType === 'tech_startup') {
+        org.levels = [
+          { level: 1, name: 'Founders & Executive', description: 'Strategic direction and company vision' },
+          { level: 2, name: 'Engineering & Product Leads', description: 'Architecture, sprint milestones, and roadmaps' },
+          { level: 3, name: 'Senior Engineers & Designers', description: 'Feature development and code/design reviews' },
+          { level: 4, name: 'Associates & Interns', description: 'Sprint tickets and component execution' },
+        ];
+        org.departments = ['Product & Engineering', 'UI/UX Design', 'Growth & Marketing', 'Customer Success', 'Operations'];
+        org.positions = [
+          {
+            id: 'pos_startup_1',
+            title: 'Chief Technology Officer / Co-Founder',
+            level: 1,
+            department: 'Product & Engineering',
+            permissions: { canCreateProjects: true, canAssignTasks: true, canApproveWork: true, canViewExecutiveSummary: true, canViewTeamTasks: true, canViewAllTasks: true, canManageStructure: true },
+          },
+          {
+            id: 'pos_startup_2',
+            title: 'Engineering Lead / Architect',
+            level: 2,
+            department: 'Product & Engineering',
+            permissions: { canCreateProjects: true, canAssignTasks: true, canApproveWork: true, canViewExecutiveSummary: true, canViewTeamTasks: true, canViewAllTasks: false, canManageStructure: false },
+          },
+          {
+            id: 'pos_startup_3',
+            title: 'Senior Full-Stack Engineer',
+            level: 3,
+            department: 'Product & Engineering',
+            permissions: { canCreateProjects: false, canAssignTasks: true, canApproveWork: true, canViewExecutiveSummary: false, canViewTeamTasks: true, canViewAllTasks: false, canManageStructure: false },
+          },
+          {
+            id: 'pos_startup_4',
+            title: 'Software Developer',
+            level: 4,
+            department: 'Product & Engineering',
+            permissions: { canCreateProjects: false, canAssignTasks: false, canApproveWork: false, canViewExecutiveSummary: false, canViewTeamTasks: false, canViewAllTasks: false, canManageStructure: false },
+          },
+        ];
+      } else if (templateType === 'academic') {
+        org.levels = [
+          { level: 1, name: 'Chancellor & Deans', description: 'Institution governance and institutional milestones' },
+          { level: 2, name: 'Department Chairs', description: 'Curriculum oversight and department programs' },
+          { level: 3, name: 'Principal Investigators / Professors', description: 'Research labs and course coordination' },
+          { level: 4, name: 'Lecturers & Research Assistants', description: 'Course instruction and lab deliverables' },
+        ];
+        org.departments = ['Computer Science', 'Biological Sciences', 'Dean of Students', 'Research Administration', 'Finance & Grants'];
+        org.positions = [
+          {
+            id: 'pos_acad_1',
+            title: 'Dean of Faculty',
+            level: 1,
+            department: 'Dean of Students',
+            permissions: { canCreateProjects: true, canAssignTasks: true, canApproveWork: true, canViewExecutiveSummary: true, canViewTeamTasks: true, canViewAllTasks: true, canManageStructure: true },
+          },
+          {
+            id: 'pos_acad_2',
+            title: 'Department Chair',
+            level: 2,
+            department: 'Computer Science',
+            permissions: { canCreateProjects: true, canAssignTasks: true, canApproveWork: true, canViewExecutiveSummary: true, canViewTeamTasks: true, canViewAllTasks: false, canManageStructure: false },
+          },
+          {
+            id: 'pos_acad_3',
+            title: 'Principal Investigator / Professor',
+            level: 3,
+            department: 'Computer Science',
+            permissions: { canCreateProjects: false, canAssignTasks: true, canApproveWork: true, canViewExecutiveSummary: false, canViewTeamTasks: true, canViewAllTasks: false, canManageStructure: false },
+          },
+          {
+            id: 'pos_acad_4',
+            title: 'Research Assistant',
+            level: 4,
+            department: 'Computer Science',
+            permissions: { canCreateProjects: false, canAssignTasks: false, canApproveWork: false, canViewExecutiveSummary: false, canViewTeamTasks: false, canViewAllTasks: false, canManageStructure: false },
+          },
+        ];
+      } else {
+        org.levels = [
+          { level: 1, name: 'Executive / C-Suite', description: 'Strategic direction and enterprise KPIs' },
+          { level: 2, name: 'Vice Presidents & Directors', description: 'Business unit governance and major projects' },
+          { level: 3, name: 'Managers & Team Leaders', description: 'Operational execution and quality review' },
+          { level: 4, name: 'Specialists & Associates', description: 'Task fulfillment and delivery' },
+        ];
+        org.departments = ['Executive Leadership', 'Project Management Office', 'Information Technology', 'Sales & Marketing', 'Human Resources', 'Finance'];
+        org.positions = [
+          {
+            id: 'pos_corp_1',
+            title: 'Chief Executive Officer / General Manager',
+            level: 1,
+            department: 'Executive Leadership',
+            permissions: { canCreateProjects: true, canAssignTasks: true, canApproveWork: true, canViewExecutiveSummary: true, canViewTeamTasks: true, canViewAllTasks: true, canManageStructure: true },
+          },
+          {
+            id: 'pos_corp_2',
+            title: 'Director of Operations',
+            level: 2,
+            department: 'Project Management Office',
+            permissions: { canCreateProjects: true, canAssignTasks: true, canApproveWork: true, canViewExecutiveSummary: true, canViewTeamTasks: true, canViewAllTasks: false, canManageStructure: false },
+          },
+          {
+            id: 'pos_corp_3',
+            title: 'Operations Team Lead',
+            level: 3,
+            department: 'Operations',
+            permissions: { canCreateProjects: false, canAssignTasks: true, canApproveWork: true, canViewExecutiveSummary: false, canViewTeamTasks: true, canViewAllTasks: false, canManageStructure: false },
+          },
+          {
+            id: 'pos_corp_4',
+            title: 'Operations Associate',
+            level: 4,
+            department: 'Operations',
+            permissions: { canCreateProjects: false, canAssignTasks: false, canApproveWork: false, canViewExecutiveSummary: false, canViewTeamTasks: false, canViewAllTasks: false, canManageStructure: false },
+          },
+        ];
+      }
+      localStorage.setItem('tm_organization', JSON.stringify(org));
+      return org;
     }
   },
 

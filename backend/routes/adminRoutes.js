@@ -112,8 +112,8 @@ router.get("/summary", authMiddleware, async (req, res) => {
 router.get("/hierarchy", authMiddleware, async (req, res) => {
   try {
     const users = await User.find({ status: "active" })
-      .select("firstName lastName email role designation department reportsTo")
-      .populate("reportsTo", "firstName lastName role designation");
+      .select("firstName lastName email role designation department reportsTo positionTitle hierarchyLevel permissions")
+      .populate("reportsTo", "firstName lastName role designation positionTitle hierarchyLevel");
 
     res.json(users);
   } catch (error) {
@@ -151,13 +151,17 @@ router.patch("/hierarchy/assign-supervisor", authMiddleware, requireAdminOrManag
   }
 });
 
-// GET /api/admin/directors - Eligible Project Directors and Managers
+// GET /api/admin/directors - Eligible Project Directors, Leaders, and Managers
 router.get("/directors", authMiddleware, async (req, res) => {
   try {
     const eligible = await User.find({
       status: "active",
-      role: { $in: ["admin", "director", "manager"] },
-    }).select("firstName lastName email role designation department");
+      $or: [
+        { role: { $in: ["admin", "director", "manager"] } },
+        { hierarchyLevel: { $lte: 2 } },
+        { "permissions.canCreateProjects": true },
+      ],
+    }).select("firstName lastName email role designation department positionTitle hierarchyLevel");
 
     res.json(eligible);
   } catch (error) {
@@ -169,7 +173,7 @@ router.get("/directors", authMiddleware, async (req, res) => {
 // Generate a secure single-use invitation with 24-hour expiration
 router.post("/employees/invite", authMiddleware, requireAdminOrManager, async (req, res) => {
   try {
-    const { name, email, department, role, supervisorId } = req.body;
+    const { name, email, department, role, positionTitle, hierarchyLevel, permissions } = req.body;
 
     if (!name || !email || !department || !role) {
       return res.status(400).json({
@@ -212,6 +216,9 @@ router.post("/employees/invite", authMiddleware, requireAdminOrManager, async (r
       email: normalizedEmail,
       department: department.trim(),
       role,
+      positionTitle: positionTitle || `${department.trim()} ${role === "manager" ? "Manager" : "Specialist"}`,
+      hierarchyLevel: Number(hierarchyLevel) || (role === "director" ? 2 : role === "manager" ? 3 : 4),
+      permissions: permissions || {},
       companyName: req.user.companyName || "Company",
       tokenHash,
       status: "pending",
@@ -260,7 +267,7 @@ router.get("/employees", authMiddleware, async (req, res) => {
 // PATCH /api/admin/employees/:id
 router.patch("/employees/:id", authMiddleware, requireAdminOrManager, async (req, res) => {
   try {
-    const { role, department, designation, reportsTo } = req.body;
+    const { role, department, designation, reportsTo, positionTitle, hierarchyLevel, permissions } = req.body;
     const updateData = {};
 
     if (role) {
@@ -271,6 +278,15 @@ router.patch("/employees/:id", authMiddleware, requireAdminOrManager, async (req
     }
     if (designation) {
       updateData.designation = designation.trim();
+    }
+    if (positionTitle) {
+      updateData.positionTitle = positionTitle.trim();
+    }
+    if (hierarchyLevel !== undefined) {
+      updateData.hierarchyLevel = Number(hierarchyLevel);
+    }
+    if (permissions) {
+      updateData.permissions = permissions;
     }
     if (reportsTo !== undefined) {
       updateData.reportsTo = reportsTo || null;

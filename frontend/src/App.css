@@ -3783,3 +3783,433 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* ==========================================================================
+   12. ORGANIZATION STRUCTURE & CUSTOM PERMISSIONS BUILDER
+   ========================================================================== */
+
+.org-builder-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.org-builder-header-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.template-pills-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.template-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.org-subtabs-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 2px solid var(--border-color);
+  padding-bottom: 2px;
+  overflow-x: auto;
+}
+
+.org-subtab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.org-subtab-btn:hover {
+  color: var(--text-main);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.org-subtab-btn.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.pane-header-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.pane-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  max-width: 800px;
+}
+
+.positions-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.level-group-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.level-group-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.level-tag {
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+[data-theme="dark"] .level-tag {
+  background: rgba(37, 99, 235, 0.2);
+  color: #93c5fd;
+}
+
+.level-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.level-count {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.empty-level-hint {
+  padding: 18px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+  background: var(--bg-main);
+  border-radius: var(--radius-sm);
+}
+
+.positions-cards-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.position-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.position-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.position-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.position-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 4px;
+}
+
+.position-dept-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.position-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.icon-action-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.icon-action-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-main);
+}
+
+[data-theme="dark"] .icon-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.icon-action-btn.text-danger:hover {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
+[data-theme="dark"] .icon-action-btn.text-danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.permissions-badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.perm-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.perm-active {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+[data-theme="dark"] .perm-active {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.perm-contributor {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+[data-theme="dark"] .perm-contributor {
+  background: rgba(255, 255, 255, 0.05);
+  color: #94a3b8;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Hierarchy Levels Designer */
+.levels-builder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.level-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.level-rank-badge {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 12px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .level-rank-badge {
+  background: rgba(37, 99, 235, 0.2);
+  color: #93c5fd;
+}
+
+.level-fields-col {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.level-fields-col .input-desc {
+  flex: 1.5;
+}
+
+/* Department Manager */
+.add-dept-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 600px;
+  margin-bottom: 20px;
+}
+
+.departments-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.department-badge-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.dept-icon-wrapper {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: #eff6ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+[data-theme="dark"] .dept-icon-wrapper {
+  background: rgba(37, 99, 235, 0.2);
+}
+
+.dept-info {
+  flex: 1;
+}
+
+.dept-info h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 2px;
+}
+
+.dept-info span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Permissions Modal Matrix */
+.permissions-config-box {
+  background: var(--bg-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-top: 14px;
+}
+
+.perm-checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.perm-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.perm-checkbox-row:hover {
+  border-color: var(--primary);
+}
+
+.perm-checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.perm-checkbox-row div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.perm-checkbox-row strong {
+  font-size: 13px;
+  color: var(--text-main);
+}
+
+.perm-checkbox-row span {
+  font-size: 11px;
+  color: var(--text-muted);
+}

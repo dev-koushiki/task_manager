@@ -15,6 +15,7 @@ import {
   TrendingUpIcon,
   CheckCircleIcon,
   AlertTriangleIcon,
+  ShieldIcon,
 } from './Icons';
 import { TaskModal } from './TaskModal';
 import { ProjectModal } from './ProjectModal';
@@ -26,6 +27,7 @@ import { ProjectDirectorView } from './ProjectDirectorView';
 import { ManagerTeamView } from './ManagerTeamView';
 import { EmployeeWorkView } from './EmployeeWorkView';
 import { OrganizationHierarchyView } from './OrganizationHierarchyView';
+import { OrganizationStructureBuilder } from './OrganizationStructureBuilder';
 import { AdminEmployeePanel } from './AdminEmployeePanel';
 import { ThemeToggle } from './ThemeToggle';
 import { api } from '../services/api';
@@ -270,6 +272,14 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                   <UsersIcon size={16} />
                   <span>Admin & Employees</span>
                 </button>
+                <button
+                  type="button"
+                  className={`nav-tab-btn ${activeTab === 'org_structure' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('org_structure')}
+                >
+                  <ShieldIcon size={16} />
+                  <span>Structure & Permissions</span>
+                </button>
               </>
             )}
 
@@ -479,6 +489,14 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           <AdminEmployeePanel
             companyName={user?.companyName}
             onTestAcceptInvite={onTestAcceptInvite}
+          />
+        )}
+
+        {/* 6.1 Organization Structure & Custom Permissions Builder */}
+        {activeTab === 'org_structure' && (
+          <OrganizationStructureBuilder
+            employees={employees}
+            onHierarchyUpdated={refreshAllData}
           />
         )}
 

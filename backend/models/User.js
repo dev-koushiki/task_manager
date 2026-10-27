@@ -45,6 +45,29 @@ const userSchema = new mongoose.Schema(
       enum: ["admin", "director", "manager", "employee"],
       default: "admin",
     },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+    },
+    positionTitle: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    hierarchyLevel: {
+      type: Number,
+      default: 1,
+    },
+    permissions: {
+      canCreateProjects: { type: Boolean, default: false },
+      canAssignTasks: { type: Boolean, default: false },
+      canApproveWork: { type: Boolean, default: false },
+      canViewExecutiveSummary: { type: Boolean, default: false },
+      canViewTeamTasks: { type: Boolean, default: false },
+      canViewAllTasks: { type: Boolean, default: false },
+      canManageStructure: { type: Boolean, default: false },
+    },
     reportsTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

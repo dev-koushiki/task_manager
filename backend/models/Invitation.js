@@ -23,6 +23,19 @@ const invitationSchema = new mongoose.Schema(
       default: "employee",
       required: true,
     },
+    positionTitle: {
+      type: String,
+      default: "Specialist / Employee",
+      trim: true,
+    },
+    hierarchyLevel: {
+      type: Number,
+      default: 4,
+    },
+    permissions: {
+      type: Object,
+      default: {},
+    },
     companyName: {
       type: String,
       default: "Workspace",

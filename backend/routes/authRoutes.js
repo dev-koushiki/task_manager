@@ -4,6 +4,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const Invitation = require("../models/Invitation");
+const Organization = require("../models/Organization");
 const authMiddleware = require("../middleware/auth");
 
 const router = express.Router();
@@ -37,6 +38,11 @@ router.post("/register", async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // Create Organization workspace for company
+    const newOrg = await Organization.create({
+      name: companyName.trim(),
+    });
+
     const newUser = await User.create({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
@@ -45,9 +51,25 @@ router.post("/register", async (req, res) => {
       companyName: companyName.trim(),
       designation: designation.trim(),
       role: "admin", // Initial registrant is the Workspace Admin
+      organizationId: newOrg._id,
+      positionTitle: designation.trim() || "Chief Executive / Administrator",
+      hierarchyLevel: 1,
+      permissions: {
+        canCreateProjects: true,
+        canAssignTasks: true,
+        canApproveWork: true,
+        canViewExecutiveSummary: true,
+        canViewTeamTasks: true,
+        canViewAllTasks: true,
+        canManageStructure: true,
+      },
       status: "active",
-      department: "Leadership",
+      department: "Executive Leadership",
     });
+
+    // Update org adminId
+    newOrg.adminId = newUser._id;
+    await newOrg.save();
 
     const token = jwt.sign(
       {
@@ -59,6 +81,8 @@ router.post("/register", async (req, res) => {
         designation: newUser.designation,
         role: newUser.role,
         department: newUser.department,
+        positionTitle: newUser.positionTitle,
+        hierarchyLevel: newUser.hierarchyLevel,
       },
       JWT_SECRET,
       { expiresIn: "7d" }
@@ -76,6 +100,10 @@ router.post("/register", async (req, res) => {
         designation: newUser.designation,
         role: newUser.role,
         department: newUser.department,
+        positionTitle: newUser.positionTitle,
+        hierarchyLevel: newUser.hierarchyLevel,
+        permissions: newUser.permissions,
+        organizationId: newOrg._id,
       },
     });
   } catch (error) {
@@ -160,16 +188,38 @@ router.post("/register/accept-invite", async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create Employee User — role is strictly taken from invitation!
+    // Create Employee User — position, level, and permissions are taken from invitation
+    const role = invitation.role || "employee";
+    const level = invitation.hierarchyLevel || (role === "director" ? 2 : role === "manager" ? 3 : 4);
+    const positionTitle = invitation.positionTitle || `${invitation.department} ${role === "manager" ? "Manager" : "Specialist"}`;
+
+    const defaultPermissions = {
+      canCreateProjects: role === "director" || role === "admin",
+      canAssignTasks: role === "director" || role === "manager" || role === "admin",
+      canApproveWork: role === "director" || role === "manager" || role === "admin",
+      canViewExecutiveSummary: role === "director" || role === "admin",
+      canViewTeamTasks: role === "director" || role === "manager" || role === "admin",
+      canViewAllTasks: role === "admin",
+      canManageStructure: role === "admin",
+    };
+
+    const userPermissions = {
+      ...defaultPermissions,
+      ...(invitation.permissions || {}),
+    };
+
     const newUser = await User.create({
       firstName,
       lastName,
       email: invitation.email,
       password: hashedPassword,
       companyName: invitation.companyName,
-      designation: `${invitation.department} ${invitation.role === "manager" ? "Manager" : "Specialist"}`,
+      designation: positionTitle,
       department: invitation.department,
-      role: invitation.role, // strictly "employee" or "manager" from the invitation
+      role,
+      positionTitle,
+      hierarchyLevel: level,
+      permissions: userPermissions,
       status: "active",
       mfaEnabled: Boolean(mfaEnabled),
     });
@@ -189,6 +239,8 @@ router.post("/register/accept-invite", async (req, res) => {
         designation: newUser.designation,
         role: newUser.role,
         department: newUser.department,
+        positionTitle: newUser.positionTitle,
+        hierarchyLevel: newUser.hierarchyLevel,
       },
       JWT_SECRET,
       { expiresIn: "7d" }
@@ -206,6 +258,9 @@ router.post("/register/accept-invite", async (req, res) => {
         designation: newUser.designation,
         role: newUser.role,
         department: newUser.department,
+        positionTitle: newUser.positionTitle,
+        hierarchyLevel: newUser.hierarchyLevel,
+        permissions: newUser.permissions,
         mfaEnabled: newUser.mfaEnabled,
       },
     });
@@ -256,6 +311,25 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    const role = user.role || "employee";
+    const level = user.hierarchyLevel || (role === "admin" ? 1 : role === "director" ? 2 : role === "manager" ? 3 : 4);
+    const positionTitle = user.positionTitle || user.designation;
+
+    const defaultPermissions = {
+      canCreateProjects: role === "director" || role === "admin",
+      canAssignTasks: role === "director" || role === "manager" || role === "admin",
+      canApproveWork: role === "director" || role === "manager" || role === "admin",
+      canViewExecutiveSummary: role === "director" || role === "admin",
+      canViewTeamTasks: role === "director" || role === "manager" || role === "admin",
+      canViewAllTasks: role === "admin",
+      canManageStructure: role === "admin",
+    };
+
+    const permissions = {
+      ...defaultPermissions,
+      ...(user.permissions ? (user.permissions.toObject ? user.permissions.toObject() : user.permissions) : {}),
+    };
+
     const token = jwt.sign(
       {
         id: user._id,
@@ -264,8 +338,10 @@ router.post("/login", async (req, res) => {
         lastName: user.lastName,
         companyName: user.companyName,
         designation: user.designation,
-        role: user.role || "employee",
+        role,
         department: user.department || "General",
+        positionTitle,
+        hierarchyLevel: level,
       },
       JWT_SECRET,
       { expiresIn: "7d" }
@@ -281,8 +357,12 @@ router.post("/login", async (req, res) => {
         email: user.email,
         companyName: user.companyName,
         designation: user.designation,
-        role: user.role || "employee",
+        role,
         department: user.department || "General",
+        positionTitle,
+        hierarchyLevel: level,
+        permissions,
+        organizationId: user.organizationId,
         mfaEnabled: user.mfaEnabled,
       },
     });

@@ -8,6 +8,7 @@ const projectRoutes = require("./routes/projectRoutes");
 const taskRoutes = require("./routes/taskRoutes");
 const employeeRoutes = require("./routes/employeeRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const organizationRoutes = require("./routes/organizationRoutes");
 
 const app = express();
 
@@ -21,6 +22,7 @@ app.use("/api/projects", projectRoutes);
 app.use("/api/tasks", taskRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/organization", organizationRoutes);
 
 // Test & Health route
 app.get("/", (req, res) => {
