@@ -1,76 +1,89 @@
 :root {
-  --primary: #6366f1;
-  --primary-hover: #4f46e5;
-  --primary-glow: rgba(99, 102, 241, 0.35);
-  --accent: #8b5cf6;
-  --accent-light: #a855f7;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --danger: #ef4444;
+  /* Brand Accents - Modern Indigo & Slate */
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-light: #eef2ff;
+  --primary-glow: rgba(79, 70, 229, 0.16);
 
-  /* Dark Mode Defaults */
-  --bg-dark: #0d1117;
-  --bg-radial: radial-gradient(circle at 50% 10%, #1a1e2e 0%, #0d1117 70%);
-  --bg-card: rgba(22, 27, 34, 0.78);
-  --bg-card-hover: rgba(30, 37, 46, 0.9);
-  --bg-card-task: rgba(30, 37, 46, 0.88);
-  --bg-column: rgba(22, 27, 34, 0.6);
-  --bg-header: rgba(22, 27, 34, 0.85);
-  --bg-input: rgba(13, 17, 23, 0.75);
-  --bg-input-focus: rgba(13, 17, 23, 0.98);
-  --border-color: rgba(255, 255, 255, 0.1);
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-focus: #818cf8;
+  --accent: #6366f1;
+  --accent-light: #818cf8;
+  --accent-subtle: #f5f3ff;
 
-  --text-main: #f3f4f6;
-  --text-muted: #9ca3af;
-  --text-faint: #6b7280;
+  --success: #059669;
+  --success-bg: #ecfdf5;
+  --success-border: #a7f3d0;
 
-  --blob-opacity: 0.35;
+  --warning: #d97706;
+  --warning-bg: #fffbeb;
+  --warning-border: #fde68a;
 
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+
+  /* Executive White-Based Foundation (Default) */
+  --bg-dark: #f8fafc;
+  --bg-radial: radial-gradient(circle at 50% 0%, #f1f5f9 0%, #f8fafc 100%);
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8fafc;
+  --bg-card-task: #ffffff;
+  --bg-column: #f1f5f9;
+  --bg-header: rgba(255, 255, 255, 0.94);
+  --bg-input: #ffffff;
+  --bg-input-focus: #ffffff;
+  --border-color: #e2e8f0;
+  --border-subtle: #edf2f7;
+  --border-focus: #4f46e5;
+
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-faint: #64748b;
+
+  --blob-opacity: 0.05;
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
   --radius-full: 9999px;
+
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 14px -2px rgba(15, 23, 42, 0.08), 0 2px 6px -2px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 28px -4px rgba(15, 23, 42, 0.1), 0 4px 12px -2px rgba(15, 23, 42, 0.05);
+}
+
+/* Optional Dark Mode Override (Only if user specifically toggles to Dark) */
+[data-theme="dark"],
+.dark-mode {
+  --bg-dark: #0f172a;
+  --bg-radial: radial-gradient(circle at 50% 10%, #1e293b 0%, #0f172a 75%);
+  --bg-card: #1e293b;
+  --bg-card-hover: #334155;
+  --bg-card-task: #1e293b;
+  --bg-column: #162032;
+  --bg-header: rgba(30, 41, 59, 0.92);
+  --bg-input: #0f172a;
+  --bg-input-focus: #1e293b;
+  --border-color: rgba(255, 255, 255, 0.12);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-focus: #818cf8;
+
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-faint: #64748b;
+
+  --blob-opacity: 0.25;
 
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.5);
 }
 
-/* Light Mode Overrides */
-[data-theme="light"],
-.light-mode {
-  --bg-dark: #f8fafc;
-  --bg-radial: radial-gradient(circle at 50% 0%, #f1f5f9 0%, #f8fafc 70%);
-  --bg-card: rgba(255, 255, 255, 0.92);
-  --bg-card-hover: #ffffff;
-  --bg-card-task: #ffffff;
-  --bg-column: #f1f5f9;
-  --bg-header: rgba(255, 255, 255, 0.9);
-  --bg-input: #ffffff;
-  --bg-input-focus: #ffffff;
-  --border-color: rgba(0, 0, 0, 0.1);
-  --border-subtle: rgba(0, 0, 0, 0.05);
-  --border-focus: #6366f1;
-
-  --text-main: #0f172a;
-  --text-muted: #475569;
-  --text-faint: #94a3b8;
-
-  --blob-opacity: 0.15;
-
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.1);
-}
-
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 body {
@@ -80,6 +93,7 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {

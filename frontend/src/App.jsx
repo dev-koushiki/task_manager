@@ -29,11 +29,18 @@ function App() {
   const [successNotice, setSuccessNotice] = useState('');
 
   // Dark & Light theme state
-  const [theme, setTheme] = useState(() => localStorage.getItem('tm_theme') || 'dark');
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem('tm_theme_v2');
+    if (saved) return saved;
+    localStorage.setItem('tm_theme_v2', 'light');
+    localStorage.setItem('tm_theme', 'light');
+    return 'light';
+  });
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('tm_theme', theme);
+    localStorage.setItem('tm_theme_v2', theme);
   }, [theme]);
 
   // Purge any old placeholder dummy tasks from previous sessions
