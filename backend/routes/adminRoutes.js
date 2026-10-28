@@ -300,6 +300,7 @@ router.post("/employees/invite", authMiddleware, requireAdminOrEmployeeManager, 
       permissions,
       accessScopes,
       reportingRelationships,
+      reportsTo,
     } = req.body;
 
     if (!name || !email || !department || !role) {
@@ -338,6 +339,13 @@ router.post("/employees/invite", authMiddleware, requireAdminOrEmployeeManager, 
       { status: "revoked" }
     );
 
+    let initialRelationships = [];
+    if (Array.isArray(reportingRelationships) && reportingRelationships.length > 0) {
+      initialRelationships = reportingRelationships;
+    } else if (reportsTo) {
+      initialRelationships = [{ managerId: reportsTo, relationshipType: "direct" }];
+    }
+
     const invitation = await Invitation.create({
       name: name.trim(),
       email: normalizedEmail,
@@ -353,7 +361,7 @@ router.post("/employees/invite", authMiddleware, requireAdminOrEmployeeManager, 
         employeeScope: role === "director" ? "department" : role === "manager" ? "team" : "own",
         reportScope: "own",
       },
-      reportingRelationships: Array.isArray(reportingRelationships) ? reportingRelationships : [],
+      reportingRelationships: initialRelationships,
       companyName: req.user.companyName || "Company",
       organizationId: orgId,
       tokenHash,

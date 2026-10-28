@@ -224,7 +224,7 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
   const handleApplyTemplate = async (templateKey) => {
     if (
       !window.confirm(
-        'Applying a template will configure standardized hierarchy levels, departments, and job roles. Proceed?'
+        'Applying a template will configure standardized job roles, departments, and teams. Proceed?'
       )
     ) {
       return;
@@ -266,32 +266,6 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
     } catch (err) {
       showError(err.message || 'Failed to remove department');
     }
-  };
-
-  // Save Hierarchy Levels
-  const handleSaveLevels = async () => {
-    try {
-      const updatedLevels = await api.updateHierarchyLevels(levelsDraft);
-      setOrg((prev) => ({ ...prev, levels: updatedLevels }));
-      showSuccess('Custom hierarchy levels saved successfully.');
-      if (onHierarchyUpdated) onHierarchyUpdated();
-    } catch (err) {
-      showError(err.message || 'Failed to save hierarchy levels');
-    }
-  };
-
-  // Add Hierarchy Level
-  const handleAddLevel = () => {
-    const nextLevelNum =
-      (levelsDraft.length > 0 ? Math.max(...levelsDraft.map((l) => l.level)) : 0) + 1;
-    setLevelsDraft([
-      ...levelsDraft,
-      {
-        level: nextLevelNum,
-        name: `Level ${nextLevelNum} Tier`,
-        description: 'Custom organizational responsibility tier',
-      },
-    ]);
   };
 
   // ======================== TEAMS HANDLERS ========================
@@ -404,11 +378,10 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
             <ShieldIcon size={24} className="text-accent" />
           </div>
           <div>
-            <h2>Dynamic Organization Hierarchy, Job Roles & RBAC Governance</h2>
+            <h2>Dynamic Organization Structure, Job Roles & RBAC Governance</h2>
             <p className="section-desc">
-              Allow each company to configure custom hierarchy levels, job roles, departments, and
-              teams without changing code. Granular permissions and access scopes are strictly enforced
-              on the backend.
+              Allow each company to configure custom job roles, departments, teams, and reporting connections
+              without changing code. Granular permissions and access scopes are strictly enforced on the backend.
             </p>
           </div>
         </div>
@@ -468,14 +441,6 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
         </button>
         <button
           type="button"
-          className={`org-subtab-btn ${activeSubTab === 'levels' ? 'active' : ''}`}
-          onClick={() => setActiveSubTab('levels')}
-        >
-          <LayersIcon size={16} />
-          <span>Hierarchy Levels ({levels.length})</span>
-        </button>
-        <button
-          type="button"
           className={`org-subtab-btn ${activeSubTab === 'departments' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('departments')}
         >
@@ -523,23 +488,44 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
           </div>
 
           <div className="positions-grid">
-            {levels.map((lvl) => {
-              const lvlPositions = positions.filter((p) => Number(p.level) === Number(lvl.level));
+            {[
+              {
+                key: 'leadership',
+                title: 'Executive & Department Leadership',
+                desc: 'Senior leaders authorized to direct projects, approve initiatives, and govern departments',
+                filter: (p) => Number(p.level) <= 2,
+              },
+              {
+                key: 'management',
+                title: 'Management & Team Leads',
+                desc: 'Managers and squad leads responsible for assigning subtasks, monitoring progress, and reviewing work',
+                filter: (p) => Number(p.level) === 3,
+              },
+              {
+                key: 'specialists',
+                title: 'Specialists & Core Contributors',
+                desc: 'Individual contributors and specialists executing assigned deliverables',
+                filter: (p) => Number(p.level) >= 4,
+              },
+            ].map((cat) => {
+              const catPositions = positions.filter(cat.filter);
               return (
-                <div key={lvl.level} className="level-group-box">
+                <div key={cat.key} className="level-group-box">
                   <div className="level-group-header">
-                    <span className="level-tag">LEVEL {lvl.level}</span>
-                    <span className="level-name">{lvl.name}</span>
-                    <span className="level-count">{lvlPositions.length} Role(s)</span>
+                    <span className="level-name" style={{ fontWeight: 700 }}>{cat.title}</span>
+                    <span className="level-count">{catPositions.length} Role(s)</span>
                   </div>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 12px 0' }}>
+                    {cat.desc}
+                  </p>
 
-                  {lvlPositions.length === 0 ? (
+                  {catPositions.length === 0 ? (
                     <div className="empty-level-hint">
-                      <span>No job roles defined under this hierarchy level yet.</span>
+                      <span>No custom job roles defined in this category yet.</span>
                     </div>
                   ) : (
                     <div className="positions-cards-list">
-                      {lvlPositions.map((pos) => {
+                      {catPositions.map((pos) => {
                         const p = pos.permissions || {};
                         const s = pos.accessScopes || {};
                         return (
@@ -593,7 +579,7 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
                               {p.canDeleteTasks && <span className="perm-pill perm-active"><CheckIcon size={12} /> Delete Tasks</span>}
                               {p.canManageEmployees && <span className="perm-pill perm-active"><CheckIcon size={12} /> Manage Employees</span>}
                               {p.canCreateProjects && <span className="perm-pill perm-active"><CheckIcon size={12} /> Create Projects</span>}
-                              {p.canManageStructure && <span className="perm-pill perm-active"><CheckIcon size={12} /> Hierarchy Governance</span>}
+                              {p.canManageStructure && <span className="perm-pill perm-active"><CheckIcon size={12} /> Structure Governance</span>}
                               {p.canViewExecutiveSummary && <span className="perm-pill perm-active"><CheckIcon size={12} /> Executive Summary</span>}
                               {!Object.values(p).some(Boolean) && (
                                 <span className="perm-pill perm-contributor">
@@ -613,75 +599,7 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
         </div>
       )}
 
-      {/* TAB 2: Hierarchy Levels Designer */}
-      {activeSubTab === 'levels' && (
-        <div className="tab-pane animate-fade-in">
-          <div className="pane-header-actions">
-            <div>
-              <h3>Custom Hierarchy Levels Architecture</h3>
-              <p className="pane-desc">
-                Customize the organizational ladder (e.g. Level 1 = Executive, Level 2 = Director, Level 3 = Team Lead, Level 4 = Contributor). Lower level members report to higher level supervisors.
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button type="button" className="btn btn-secondary" onClick={handleAddLevel}>
-                <PlusIcon size={16} /> Add Hierarchy Tier
-              </button>
-              <button type="button" className="btn btn-primary" onClick={handleSaveLevels}>
-                <CheckIcon size={16} /> Save Levels
-              </button>
-            </div>
-          </div>
-
-          <div className="levels-builder-list">
-            {levelsDraft.map((lvl, index) => (
-              <div key={lvl.level} className="level-edit-row">
-                <div className="level-rank-badge">
-                  <span>Level {lvl.level}</span>
-                </div>
-                <div className="level-fields-col">
-                  <input
-                    type="text"
-                    className="input-field"
-                    value={lvl.name}
-                    placeholder="Tier Name (e.g., Executive / C-Suite)"
-                    onChange={(e) => {
-                      const updated = [...levelsDraft];
-                      updated[index].name = e.target.value;
-                      setLevelsDraft(updated);
-                    }}
-                  />
-                  <input
-                    type="text"
-                    className="input-field input-desc"
-                    value={lvl.description}
-                    placeholder="Description of responsibilities"
-                    onChange={(e) => {
-                      const updated = [...levelsDraft];
-                      updated[index].description = e.target.value;
-                      setLevelsDraft(updated);
-                    }}
-                  />
-                </div>
-                {levelsDraft.length > 2 && (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-secondary text-danger"
-                    title="Remove Level"
-                    onClick={() => {
-                      setLevelsDraft(levelsDraft.filter((_, idx) => idx !== index));
-                    }}
-                  >
-                    <TrashIcon size={15} />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: Departments */}
+      {/* TAB 2: Departments */}
       {activeSubTab === 'departments' && (
         <div className="tab-pane animate-fade-in">
           <div className="pane-header-actions">
@@ -896,17 +814,16 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
 
               <div className="form-row-2">
                 <div className="form-group">
-                  <label className="form-label">Hierarchy Level Tier *</label>
+                  <label className="form-label">Role Responsibility Tier *</label>
                   <select
                     className="input-field"
                     value={posForm.level}
                     onChange={(e) => setPosForm({ ...posForm, level: Number(e.target.value) })}
                   >
-                    {levels.map((lvl) => (
-                      <option key={lvl.level} value={lvl.level}>
-                        Level {lvl.level}: {lvl.name}
-                      </option>
-                    ))}
+                    <option value={1}>Executive Leadership / C-Suite</option>
+                    <option value={2}>Director / Department Head</option>
+                    <option value={3}>Manager / Team Lead</option>
+                    <option value={4}>Specialist / Individual Contributor</option>
                   </select>
                 </div>
 
@@ -1187,8 +1104,8 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
                       }
                     />
                     <div>
-                      <strong>Govern Organization Hierarchy & RBAC</strong>
-                      <span>Allows editing hierarchy levels, custom positions, teams, and departments.</span>
+                      <strong>Govern Organization Structure & RBAC</strong>
+                      <span>Allows managing custom job roles, teams, and departments.</span>
                     </div>
                   </label>
                 </div>

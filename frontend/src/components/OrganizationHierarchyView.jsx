@@ -1,41 +1,41 @@
 import { useState, useEffect } from 'react';
 import {
   GitBranchIcon,
-  CheckIcon,
+  CheckCircleIcon,
+  AlertTriangleIcon,
+  BuildingIcon,
+  UsersIcon,
   PlusIcon,
   TrashIcon,
   EditIcon,
-  AlertTriangleIcon,
-  UsersIcon,
+  SearchIcon,
   BriefcaseIcon,
-  BuildingIcon,
-  XCircleIcon,
-  CheckCircleIcon,
 } from './Icons';
 import { api } from '../services/api';
 
 export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
   const [employees, setEmployees] = useState([]);
-  const [org, setOrg] = useState(null);
+  const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
   const [notice, setNotice] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Search and filter states
+  // Filters & View Mode
   const [searchQuery, setSearchQuery] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
+  const [viewMode, setViewMode] = useState('tree'); // 'tree' | 'directory'
 
-  // Modal State for managing multiple managers with relationship types
+  // Modal for Multiple Managers
   const [isManagerModalOpen, setIsManagerModalOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [managerDraft, setManagerDraft] = useState([]);
   const [newMgrId, setNewMgrId] = useState('');
-  const [newRelType, setNewRelType] = useState('direct');
+  const [newRelType, setNewRelType] = useState('project');
   const [modalError, setModalError] = useState('');
   const [savingManagers, setSavingManagers] = useState(false);
 
-  const canManageHierarchy =
+  const canManageReporting =
     user?.role === 'admin' ||
     user?.permissions?.canManageStructure ||
     user?.permissions?.canManageEmployees;
@@ -47,9 +47,11 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
         api.getOrganization(),
       ]);
       setEmployees(Array.isArray(hierarchyData) ? hierarchyData : []);
-      setOrg(orgData || null);
+      if (orgData?.departments) {
+        setDepartments(orgData.departments);
+      }
     } catch (err) {
-      console.error('Failed to load organizational hierarchy:', err);
+      console.error('Failed to load employee reporting lines:', err);
     } finally {
       setLoading(false);
     }
@@ -71,58 +73,25 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
     setTimeout(() => setErrorMessage(''), 5000);
   };
 
-  // Quick 1-click single Direct supervisor change
-  const handleSupervisorChange = async (employeeId, supervisorId) => {
+  // Simple 1-Click "Reports To" Dropdown Handler
+  const handleSimpleReportsToChange = async (employeeId, supervisorId) => {
     try {
       setUpdatingId(employeeId);
       await api.assignSupervisor(employeeId, supervisorId || null, 'direct');
-      showSuccess('Direct supervisor updated successfully.');
+      showSuccess('Reporting relationship updated successfully.');
       await loadData();
       if (onHierarchyUpdated) onHierarchyUpdated();
     } catch (err) {
-      showError(err.message || 'Failed to update supervisor.');
+      showError(err.message || 'Failed to update manager.');
     } finally {
       setUpdatingId(null);
     }
   };
 
-  // Open Manage Managers Modal
-  const handleOpenManagerModal = (emp) => {
-    setSelectedEmployee(emp);
-    const existing = Array.isArray(emp.reportingRelationships) && emp.reportingRelationships.length > 0
-      ? emp.reportingRelationships.map((r) => ({
-          managerId: r.managerId?._id || r.managerId || r.id,
-          managerName: r.managerId?.firstName
-            ? `${r.managerId.firstName} ${r.managerId.lastName}`
-            : (employees.find((e) => (e._id || e.id) === (r.managerId?._id || r.managerId))
-                ? `${employees.find((e) => (e._id || e.id) === (r.managerId?._id || r.managerId)).firstName} ${employees.find((e) => (e._id || e.id) === (r.managerId?._id || r.managerId)).lastName}`
-                : 'Manager'),
-          relationshipType: r.relationshipType || 'direct',
-        }))
-      : emp.reportsTo
-      ? [
-          {
-            managerId: emp.reportsTo._id || emp.reportsTo,
-            managerName: emp.reportsTo.firstName
-              ? `${emp.reportsTo.firstName} ${emp.reportsTo.lastName}`
-              : 'Manager',
-            relationshipType: 'direct',
-          },
-        ]
-      : [];
-
-    setManagerDraft(existing);
-    setNewMgrId('');
-    setNewRelType('direct');
-    setModalError('');
-    setIsManagerModalOpen(true);
-  };
-
-  // Client-side quick check for cycle prevention
+  // Client-Side Circular Reporting Check
   const wouldCreateCycle = (empId, targetMgrId) => {
     if (empId === targetMgrId) return true;
 
-    // Check if empId is an ancestor of targetMgrId
     const visited = new Set();
     const queue = [targetMgrId];
 
@@ -153,9 +122,40 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
     return false;
   };
 
+  // Open Multi-Manager Modal
+  const handleOpenManagerModal = (emp) => {
+    setSelectedEmployee(emp);
+    const existing =
+      Array.isArray(emp.reportingRelationships) && emp.reportingRelationships.length > 0
+        ? emp.reportingRelationships.map((r) => ({
+            managerId: r.managerId?._id || r.managerId || r.id,
+            managerName: r.managerId?.firstName
+              ? `${r.managerId.firstName} ${r.managerId.lastName}`
+              : 'Manager',
+            relationshipType: r.relationshipType || 'direct',
+          }))
+        : emp.reportsTo
+        ? [
+            {
+              managerId: emp.reportsTo._id || emp.reportsTo,
+              managerName: emp.reportsTo.firstName
+                ? `${emp.reportsTo.firstName} ${emp.reportsTo.lastName}`
+                : 'Manager',
+              relationshipType: 'direct',
+            },
+          ]
+        : [];
+
+    setManagerDraft(existing);
+    setNewMgrId('');
+    setNewRelType('project');
+    setModalError('');
+    setIsManagerModalOpen(true);
+  };
+
   const handleAddManagerToDraft = () => {
     if (!newMgrId) {
-      setModalError('Please select a manager from the list.');
+      setModalError('Please select a manager to add.');
       return;
     }
 
@@ -172,7 +172,9 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
     }
 
     if (wouldCreateCycle(empId, newMgrId)) {
-      setModalError('Circular reporting detected! This person directly or indirectly reports to this employee.');
+      setModalError(
+        'Circular reporting loop detected! This person directly or indirectly reports to this employee.'
+      );
       return;
     }
 
@@ -217,7 +219,9 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
       }));
 
       await api.updateEmployeeManagers(empId, payload);
-      showSuccess(`Reporting relationships updated for ${selectedEmployee.firstName}!`);
+      showSuccess(
+        `Reporting relationships updated for ${selectedEmployee.firstName} ${selectedEmployee.lastName}!`
+      );
       setIsManagerModalOpen(false);
       await loadData();
       if (onHierarchyUpdated) onHierarchyUpdated();
@@ -228,34 +232,21 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
     }
   };
 
-  // Helper for relationship badge styling
-  const getRelBadgeClass = (type) => {
+  // Helper for Relationship Type Labels
+  const getRelBadge = (type) => {
     switch (type) {
       case 'direct':
-        return 'badge-rel-direct';
+        return { label: 'Direct Manager', cls: 'badge-rel-direct' };
       case 'project':
-        return 'badge-rel-project';
+        return { label: 'Project Manager', cls: 'badge-rel-project' };
       case 'functional':
-        return 'badge-rel-functional';
+        return { label: 'Functional Manager', cls: 'badge-rel-functional' };
       default:
-        return 'badge-rel-default';
+        return { label: 'Manager', cls: 'badge-rel-default' };
     }
   };
 
-  const getRelLabel = (type) => {
-    switch (type) {
-      case 'direct':
-        return 'Direct Manager';
-      case 'project':
-        return 'Project Manager';
-      case 'functional':
-        return 'Functional Manager';
-      default:
-        return 'Manager';
-    }
-  };
-
-  // Filtered employees
+  // Filter Employees
   const filteredEmployees = employees.filter((e) => {
     const fullName = `${e.firstName} ${e.lastName}`.toLowerCase();
     const query = searchQuery.toLowerCase();
@@ -270,23 +261,62 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
     return matchesSearch && matchesDept;
   });
 
-  // Group by Levels dynamically based on organization settings
-  const orgLevels = org?.levels && org.levels.length > 0
-    ? [...org.levels].sort((a, b) => a.level - b.level)
-    : [
-        { level: 1, name: 'Executive Leadership', description: 'Overall governance & strategic oversight' },
-        { level: 2, name: 'Project Directors & Heads', description: 'Milestone delivery & departmental direction' },
-        { level: 3, name: 'Managers & Team Leads', description: 'Operational delegation & review approval' },
-        { level: 4, name: 'Specialists & Contributors', description: 'Execution and deliverable submissions' },
-      ];
+  // Automatically Build Hierarchy from "Reports To"
+  // 1. Top Leaders (Report to no one or Admin/CEO)
+  const leaders = filteredEmployees.filter((e) => {
+    const hasManagers =
+      (Array.isArray(e.reportingRelationships) && e.reportingRelationships.length > 0) ||
+      e.reportsTo;
+    return !hasManagers || e.role === 'admin';
+  });
 
-  const departmentsList = org?.departments || [
-    'Executive Leadership',
-    'Project Management Office',
-    'Engineering & Technology',
-    'Product & Design',
-    'Operations & Quality',
-    'Marketing & Sales',
+  // 2. Managers (Have people reporting to them)
+  const managersWithReports = filteredEmployees.filter((e) => {
+    const isLeader = leaders.some((l) => (l._id || l.id) === (e._id || e.id));
+    if (isLeader) return false;
+
+    // Check if anyone reports to this employee
+    const empId = (e._id || e.id).toString();
+    return employees.some((other) => {
+      if (other.reportsTo?._id?.toString() === empId || other.reportsTo?.toString() === empId) {
+        return true;
+      }
+      if (Array.isArray(other.reportingRelationships)) {
+        return other.reportingRelationships.some(
+          (r) => (r.managerId?._id || r.managerId)?.toString() === empId
+        );
+      }
+      return false;
+    });
+  });
+
+  // 3. Team Members (Report to a manager, don't manage others)
+  const teamMembers = filteredEmployees.filter((e) => {
+    const isLeader = leaders.some((l) => (l._id || l.id) === (e._id || e.id));
+    const isManager = managersWithReports.some((m) => (m._id || m.id) === (e._id || e.id));
+    return !isLeader && !isManager;
+  });
+
+  // Group sections naturally: Leadership, Managers, Team Members
+  const naturalGroups = [
+    {
+      key: 'leadership',
+      title: 'Company Leadership & Executives',
+      description: 'Heads of office, directors, and executives overseeing company strategy and milestones.',
+      members: leaders,
+    },
+    {
+      key: 'managers',
+      title: 'Team Managers & Supervisors',
+      description: 'Supervisors responsible for assigning tasks, coordinating teams, and approving work.',
+      members: managersWithReports,
+    },
+    {
+      key: 'members',
+      title: 'Team Members & Specialists',
+      description: 'Specialists and contributors executing deliverables and reporting to team managers.',
+      members: teamMembers,
+    },
   ];
 
   return (
@@ -299,12 +329,30 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
         <div style={{ flex: 1 }}>
           <div className="header-row-between">
             <div>
-              <h2>Dynamic Organizational Hierarchy & Reporting Lines</h2>
+              <h2>Employee Reporting System & Organizational Structure</h2>
               <p className="section-desc">
-                Configure who reports to whom with multi-manager relationships (Direct, Project,
-                Functional). Enforces strict multi-company isolation, RBAC permissions, and circular
-                dependency prevention.
+                Simply select who each employee reports to using the dropdown. The system automatically
+                builds the organizational hierarchy, connects teams, and enforces task delegation and
+                approval access.
               </p>
+            </div>
+
+            {/* View Mode Toggle */}
+            <div className="btn-group" style={{ display: 'inline-flex', gap: '6px' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${viewMode === 'tree' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setViewMode('tree')}
+              >
+                Organizational Hierarchy
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${viewMode === 'directory' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setViewMode('directory')}
+              >
+                Department Directory
+              </button>
             </div>
           </div>
 
@@ -312,7 +360,7 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
           <div className="hierarchy-filter-bar">
             <input
               type="text"
-              placeholder="Search by employee name, role, or team..."
+              placeholder="Search by employee name, job title, or team..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="form-control form-control-sm"
@@ -325,7 +373,7 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
               style={{ maxWidth: '240px' }}
             >
               <option value="all">All Departments</option>
-              {departmentsList.map((d) => (
+              {departments.map((d) => (
                 <option key={d} value={d}>
                   {d}
                 </option>
@@ -352,48 +400,56 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
       {loading ? (
         <div className="loading-state">
           <div className="spinner"></div>
-          <p>Mapping organizational structure and reporting relationships...</p>
+          <p>Loading employee reporting connections...</p>
         </div>
       ) : (
         <div className="hierarchy-tree-view">
-          {orgLevels.map((lvl, index) => {
-            const members = filteredEmployees.filter(
-              (e) => (e.hierarchyLevel || (e.role === 'admin' ? 1 : e.role === 'director' ? 2 : e.role === 'manager' ? 3 : 4)) === lvl.level
-            );
-
-            return (
-              <div key={lvl.level} className="hierarchy-level-wrapper">
+          {viewMode === 'tree' ? (
+            naturalGroups.map((grp, gIdx) => (
+              <div key={grp.key} className="hierarchy-level-wrapper">
                 <div className="hierarchy-level-section">
                   <div className="level-badge-header">
-                    <span className="level-rank">Level {lvl.level}</span>
-                    <h3>{lvl.name}</h3>
-                    <p>{lvl.description || 'Organizational functional layer'}</p>
+                    <h3>{grp.title}</h3>
+                    <p>{grp.description}</p>
                   </div>
 
                   <div className="hierarchy-grid">
-                    {members.length === 0 ? (
+                    {grp.members.length === 0 ? (
                       <div className="empty-level-box">
-                        <p>No employees currently assigned to {lvl.name}.</p>
+                        <p>No employees in this group.</p>
                       </div>
                     ) : (
-                      members.map((emp) => {
-                        const managers = Array.isArray(emp.reportingRelationships) && emp.reportingRelationships.length > 0
-                          ? emp.reportingRelationships
-                          : emp.reportsTo
-                          ? [{ managerId: emp.reportsTo, relationshipType: 'direct' }]
-                          : [];
+                      grp.members.map((emp) => {
+                        const empId = emp._id || emp.id;
+                        const managers =
+                          Array.isArray(emp.reportingRelationships) &&
+                          emp.reportingRelationships.length > 0
+                            ? emp.reportingRelationships
+                            : emp.reportsTo
+                            ? [{ managerId: emp.reportsTo, relationshipType: 'direct' }]
+                            : [];
+
+                        const directManagerId =
+                          emp.reportsTo?._id ||
+                          emp.reportsTo ||
+                          managers.find((m) => m.relationshipType === 'direct')?.managerId?._id ||
+                          '';
+
+                        // Eligible supervisors (excluding self and anything that would create a cycle)
+                        const eligibleManagers = employees.filter(
+                          (m) => (m._id || m.id) !== empId && !wouldCreateCycle(empId, m._id || m.id)
+                        );
 
                         return (
-                          <div
-                            key={emp._id || emp.id}
-                            className={`hierarchy-card level-${emp.role || 'employee'}`}
-                          >
+                          <div key={empId} className="hierarchy-card">
                             <div className="card-top-row">
                               <div className="avatar-circle-sm">
                                 {emp.firstName ? emp.firstName[0].toUpperCase() : 'U'}
                               </div>
-                              <span className={`role-tag-sm role-tag-${emp.role || 'employee'}`}>
-                                {(emp.role || 'specialist').toUpperCase()}
+                              <span className="role-tag-sm">
+                                {emp.role === 'admin'
+                                  ? 'EXECUTIVE LEAD'
+                                  : (emp.role || 'EMPLOYEE').toUpperCase()}
                               </span>
                             </div>
 
@@ -401,7 +457,9 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
                               <strong>
                                 {emp.firstName} {emp.lastName}
                               </strong>
-                              <span>{emp.positionTitle || emp.designation || 'Team Member'}</span>
+                              <span className="job-title-text">
+                                {emp.positionTitle || emp.designation || 'Specialist'}
+                              </span>
                               <div className="hierarchy-tags-line">
                                 <span className="tag-dept">
                                   <BuildingIcon size={11} /> {emp.department || 'General'}
@@ -414,10 +472,33 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
                               </div>
                             </div>
 
-                            {/* Multiple Reporting Managers Display */}
-                            <div className="reporting-relationships-block">
+                            {/* Simple "Reports To" Dropdown */}
+                            {emp.role !== 'admin' && canManageReporting ? (
+                              <div className="supervisor-assign-box" style={{ marginTop: '12px' }}>
+                                <label style={{ fontWeight: 600, fontSize: '11px', color: 'var(--text-muted)' }}>
+                                  Reports Directly To:
+                                </label>
+                                <select
+                                  value={directManagerId}
+                                  onChange={(e) => handleSimpleReportsToChange(empId, e.target.value)}
+                                  disabled={updatingId === empId}
+                                  className="form-control form-control-sm"
+                                  style={{ marginTop: '4px' }}
+                                >
+                                  <option value="">-- No Direct Manager Assigned --</option>
+                                  {eligibleManagers.map((m) => (
+                                    <option key={m._id || m.id} value={m._id || m.id}>
+                                      {m.firstName} {m.lastName} ({m.positionTitle || m.designation || m.role}) · {m.department}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ) : null}
+
+                            {/* Additional Reporting Managers List */}
+                            <div className="reporting-relationships-block" style={{ marginTop: '10px' }}>
                               <div className="rel-header-row">
-                                <span className="rel-title">Reports To:</span>
+                                <span className="rel-title">Reporting Lines:</span>
                                 <span className="rel-count-badge">
                                   {managers.length} {managers.length === 1 ? 'manager' : 'managers'}
                                 </span>
@@ -426,8 +507,8 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
                               {managers.length === 0 ? (
                                 <div className="no-managers-text">
                                   {emp.role === 'admin'
-                                    ? '👑 Head of Office (Top Level)'
-                                    : '⚠️ No managers assigned yet'}
+                                    ? '👑 Top Authority (Reports to none)'
+                                    : '⚠️ Reports to nobody yet'}
                                 </div>
                               ) : (
                                 <div className="rel-pill-list">
@@ -435,11 +516,13 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
                                     const mgrObj = rel.managerId;
                                     const mgrName = mgrObj?.firstName
                                       ? `${mgrObj.firstName} ${mgrObj.lastName}`
-                                      : 'Supervisor';
+                                      : 'Manager';
+                                    const badge = getRelBadge(rel.relationshipType);
+
                                     return (
                                       <div key={rIdx} className="rel-pill-item">
-                                        <span className={`rel-type-pill ${getRelBadgeClass(rel.relationshipType)}`}>
-                                          {getRelLabel(rel.relationshipType)}
+                                        <span className={`rel-type-pill ${badge.cls}`}>
+                                          {badge.label}
                                         </span>
                                         <span className="rel-mgr-name">{mgrName}</span>
                                       </div>
@@ -448,18 +531,17 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
                                 </div>
                               )}
 
-                              {/* Manage Managers Action Button */}
-                              {canManageHierarchy && emp.role !== 'admin' && (
-                                <div className="card-actions-row" style={{ marginTop: '10px' }}>
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline-primary btn-xs w-100"
-                                    onClick={() => handleOpenManagerModal(emp)}
-                                  >
-                                    <EditIcon size={13} />
-                                    <span>Manage Reporting Lines</span>
-                                  </button>
-                                </div>
+                              {/* Multi-Manager Management Button */}
+                              {canManageReporting && emp.role !== 'admin' && (
+                                <button
+                                  type="button"
+                                  className="btn btn-outline-primary btn-xs w-100"
+                                  style={{ marginTop: '8px' }}
+                                  onClick={() => handleOpenManagerModal(emp)}
+                                >
+                                  <PlusIcon size={13} />
+                                  <span>Manage Multiple Managers</span>
+                                </button>
                               )}
                             </div>
                           </div>
@@ -469,28 +551,102 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
                   </div>
                 </div>
 
-                {index < orgLevels.length - 1 && (
+                {gIdx < naturalGroups.length - 1 && (
                   <div className="hierarchy-connector-line"></div>
                 )}
               </div>
-            );
-          })}
+            ))
+          ) : (
+            /* Directory View by Department */
+            <div className="department-directory-view">
+              {departments.map((dept) => {
+                const deptMembers = filteredEmployees.filter((e) => e.department === dept);
+                if (deptMembers.length === 0) return null;
+
+                return (
+                  <div key={dept} className="dept-directory-card" style={{ marginBottom: '24px' }}>
+                    <div className="dept-directory-header">
+                      <h3>
+                        <BuildingIcon size={20} className="text-accent" /> {dept}
+                      </h3>
+                      <span className="count-tag">{deptMembers.length} Members</span>
+                    </div>
+
+                    <div className="hierarchy-grid" style={{ marginTop: '14px' }}>
+                      {deptMembers.map((emp) => {
+                        const empId = emp._id || emp.id;
+                        const managers =
+                          Array.isArray(emp.reportingRelationships) &&
+                          emp.reportingRelationships.length > 0
+                            ? emp.reportingRelationships
+                            : emp.reportsTo
+                            ? [{ managerId: emp.reportsTo, relationshipType: 'direct' }]
+                            : [];
+
+                        return (
+                          <div key={empId} className="hierarchy-card">
+                            <div className="card-top-row">
+                              <div className="avatar-circle-sm">
+                                {emp.firstName ? emp.firstName[0].toUpperCase() : 'U'}
+                              </div>
+                              <span className="role-tag-sm">
+                                {emp.positionTitle || emp.designation || 'Specialist'}
+                              </span>
+                            </div>
+
+                            <div className="hierarchy-person-info">
+                              <strong>
+                                {emp.firstName} {emp.lastName}
+                              </strong>
+                              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                {emp.email}
+                              </span>
+                              {emp.team && (
+                                <span className="tag-team" style={{ marginTop: '4px' }}>
+                                  <UsersIcon size={11} /> {emp.team}
+                                </span>
+                              )}
+                            </div>
+
+                            <div style={{ marginTop: '10px', fontSize: '12px' }}>
+                              <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>
+                                Reports To:{' '}
+                              </span>
+                              {managers.length === 0 ? (
+                                <span style={{ color: 'var(--text-muted)' }}>Unassigned</span>
+                              ) : (
+                                managers.map((m, mIdx) => (
+                                  <span key={mIdx} style={{ display: 'block', marginTop: '2px' }}>
+                                    • {m.managerId?.firstName ? `${m.managerId.firstName} ${m.managerId.lastName}` : 'Manager'} ({m.relationshipType})
+                                  </span>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Modal: Manage Multiple Managers with Relationship Types */}
+      {/* Modal: Multiple Reporting Managers with Relationship Types */}
       {isManagerModalOpen && selectedEmployee && (
         <div className="modal-overlay animate-fade-in" onClick={() => setIsManagerModalOpen(false)}>
           <div
             className="modal-card modal-lg"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: '640px' }}
+            style={{ maxWidth: '620px' }}
           >
             <div className="modal-header">
               <div className="modal-title-with-icon">
                 <GitBranchIcon size={20} className="text-accent" />
                 <h3>
-                  Reporting Lines for {selectedEmployee.firstName} {selectedEmployee.lastName}
+                  Reporting Managers for {selectedEmployee.firstName} {selectedEmployee.lastName}
                 </h3>
               </div>
               <button
@@ -504,8 +660,8 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
 
             <div className="modal-body">
               <p className="modal-subtitle">
-                Assign direct, project, or functional managers to this employee. All reporting
-                relationships are verified to prevent circular dependencies.
+                Support multiple managers (Direct Manager, Project Manager, or Functional Manager).
+                The system prevents circular reporting loops and guarantees multi-company isolation.
               </p>
 
               {modalError && (
@@ -515,11 +671,11 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
                 </div>
               )}
 
-              {/* Current Assigned Managers Table */}
+              {/* Current Assigned Managers List */}
               <div className="manager-draft-section">
-                <h4 className="section-label">Assigned Managers ({managerDraft.length}):</h4>
+                <h4 className="section-label">Current Managers ({managerDraft.length}):</h4>
                 {managerDraft.length === 0 ? (
-                  <p className="empty-hint">No managers assigned. Use the form below to add one.</p>
+                  <p className="empty-hint">No managers assigned yet.</p>
                 ) : (
                   <div className="manager-draft-list">
                     {managerDraft.map((item, idx) => (
@@ -552,12 +708,12 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
                 )}
               </div>
 
-              {/* Add New Manager Form */}
-              <div className="add-manager-form-card" style={{ marginTop: '20px' }}>
+              {/* Add Manager Form */}
+              <div className="add-manager-form-card" style={{ marginTop: '18px' }}>
                 <h4 className="section-label">Add a Manager:</h4>
                 <div className="add-mgr-grid">
                   <div className="form-group">
-                    <label>Select Supervisor:</label>
+                    <label>Select Manager:</label>
                     <select
                       value={newMgrId}
                       onChange={(e) => {
@@ -566,7 +722,7 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
                       }}
                       className="form-control"
                     >
-                      <option value="">-- Choose Eligible Manager --</option>
+                      <option value="">-- Choose Colleague / Supervisor --</option>
                       {employees
                         .filter(
                           (e) =>
@@ -574,7 +730,7 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
                         )
                         .map((e) => (
                           <option key={e._id || e.id} value={e._id || e.id}>
-                            {e.firstName} {e.lastName} ({e.designation || e.role}) · {e.department}
+                            {e.firstName} {e.lastName} ({e.positionTitle || e.designation || e.role}) · {e.department}
                           </option>
                         ))}
                     </select>
@@ -587,9 +743,9 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
                       onChange={(e) => setNewRelType(e.target.value)}
                       className="form-control"
                     >
-                      <option value="direct">Direct Manager (Core line supervisor)</option>
-                      <option value="project">Project Manager (Deliverables & projects)</option>
-                      <option value="functional">Functional Manager (Discipline/Chapter lead)</option>
+                      <option value="direct">Direct Manager (Line supervisor)</option>
+                      <option value="project">Project Manager (Milestones & tasks)</option>
+                      <option value="functional">Functional Manager (Domain mentor)</option>
                     </select>
                   </div>
                 </div>
@@ -601,7 +757,7 @@ export const OrganizationHierarchyView = ({ user, onHierarchyUpdated }) => {
                   style={{ marginTop: '10px' }}
                 >
                   <PlusIcon size={15} />
-                  <span>Add Manager to List</span>
+                  <span>Add to List</span>
                 </button>
               </div>
             </div>

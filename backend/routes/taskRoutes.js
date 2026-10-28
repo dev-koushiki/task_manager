@@ -5,80 +5,111 @@ const TaskReview = require("../models/TaskReview");
 const User = require("../models/User");
 const Project = require("../models/Project");
 const authMiddleware = require("../middleware/auth");
-const { getEffectiveSubordinateIds, canUserApproveTask, requirePermission } = require("../middleware/rbac");
+const { getEffectiveSubordinateIds, canUserApproveTask } = require("../middleware/rbac");
 
 const router = express.Router();
 
-// GET /api/tasks - Hierarchical & scope-filtered task list (strict multi-company isolation)
+// Helper to check if assigner is authorized to assign task to assignee
+async function isAuthorizedToAssign(assigner, assigneeUser, parentTaskId, orgId) {
+  if (assigner.role === "admin") return true;
+  if (!assigneeUser) return true; // Unassigned task
+
+  const assignerIdStr = assigner.id.toString();
+  const assigneeIdStr = assigneeUser._id.toString();
+
+  // 1. Assign to self
+  if (assignerIdStr === assigneeIdStr) return true;
+
+  // 2. Assign to subordinates (direct, project, or functional manager)
+  const subordinateIds = await getEffectiveSubordinateIds(assigner.id, orgId);
+  const isSubordinate = subordinateIds.some((id) => id.toString() === assigneeIdStr);
+  if (isSubordinate) return true;
+
+  // 3. Subtask delegation: When CEO/manager assigns a task to a user, that user can delegate subtasks
+  if (parentTaskId) {
+    const parentTask = await Task.findOne({ _id: parentTaskId, organizationId: orgId });
+    if (parentTask) {
+      const isParentAssignee = parentTask.assignedTo && parentTask.assignedTo.toString() === assignerIdStr;
+      const isParentAssigner = parentTask.assignedBy && parentTask.assignedBy.toString() === assignerIdStr;
+
+      if (isParentAssignee || isParentAssigner) {
+        // Can delegate to peers in the same team or department
+        const inSameDept = assigneeUser.department && assigneeUser.department === assigner.department;
+        const inSameTeam = assigneeUser.team && assigneeUser.team === assigner.team;
+        if (inSameDept || inSameTeam || isSubordinate || assigner.permissions?.canAssignTasks) {
+          return true;
+        }
+      }
+    }
+  }
+
+  // 4. Authorized via canAssignTasks permission within scope
+  if (assigner.permissions?.canAssignTasks) {
+    const taskScope = assigner.accessScopes?.taskScope || "own";
+    if (taskScope === "company") return true;
+    if (taskScope === "department" && assigneeUser.department === assigner.department) return true;
+    if (taskScope === "team" && assigneeUser.team && assigneeUser.team === assigner.team) return true;
+  }
+
+  return false;
+}
+
+// GET /api/tasks - Reporting-based task listing (strict multi-company data isolation)
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const currentUser = req.user;
     const orgId = currentUser.organizationId;
 
-    // Base query ALWAYS ensures multi-company isolation
     let query = { organizationId: orgId };
 
-    const taskScope = currentUser.accessScopes?.taskScope || (
-      currentUser.role === "admin"
-        ? "company"
-        : currentUser.role === "director"
-        ? "project"
-        : currentUser.role === "manager"
-        ? "team"
-        : "own"
-    );
+    const isAdmin = currentUser.role === "admin";
+    const perms = currentUser.permissions || {};
+    const taskScope = currentUser.accessScopes?.taskScope || (isAdmin ? "company" : "own");
 
-    if (currentUser.role !== "admin" && taskScope !== "company") {
-      if (taskScope === "department" && currentUser.department) {
-        // Find users in same department
-        const deptUsers = await User.find({ organizationId: orgId, department: currentUser.department }).select("_id");
-        const deptUserIds = deptUsers.map((u) => u._id);
-        query.$or = [
-          { department: currentUser.department },
-          { assignedTo: { $in: deptUserIds } },
-          { assignedBy: { $in: deptUserIds } },
-        ];
-      } else if (taskScope === "team" && currentUser.team) {
-        // Find users in same team
-        const teamUsers = await User.find({ organizationId: orgId, team: currentUser.team }).select("_id");
-        const teamUserIds = teamUsers.map((u) => u._id);
-        query.$or = [
-          { team: currentUser.team },
-          { assignedTo: { $in: teamUserIds } },
-          { assignedBy: { $in: teamUserIds } },
-        ];
-      } else if (taskScope === "project") {
-        // Director / project scope: tasks under user's projects or assigned to/by user
-        const directorProjects = await Project.find({
-          organizationId: orgId,
-          $or: [{ directorId: currentUser.id }, { createdBy: currentUser.id }],
-        }).select("_id");
-        const projectIds = directorProjects.map((p) => p._id);
+    if (!isAdmin && taskScope !== "company" && !perms.canViewAllTasks) {
+      // Find all direct & indirect subordinates in the reporting tree
+      const subordinateIds = await getEffectiveSubordinateIds(currentUser.id, orgId);
 
-        const subordinateIds = await getEffectiveSubordinateIds(currentUser.id, orgId);
+      // Tasks where currentUser is the parent task assignee (for monitoring subtasks delegated to team)
+      const managedParentTasks = await Task.find({
+        organizationId: orgId,
+        $or: [{ assignedTo: currentUser.id }, { assignedBy: currentUser.id }, { user: currentUser.id }],
+      }).select("_id");
+      const parentTaskIds = managedParentTasks.map((t) => t._id);
 
-        query.$or = [
-          { projectId: { $in: projectIds } },
-          { assignedBy: currentUser.id },
-          { assignedTo: currentUser.id },
-          { assignedTo: { $in: subordinateIds } },
-        ];
-      } else {
-        // "own" scope: assigned to user, assigned by user, or assigned to subordinates
-        const subordinateIds = await getEffectiveSubordinateIds(currentUser.id, orgId);
+      const visibilityConditions = [
+        { assignedTo: currentUser.id },
+        { assignedBy: currentUser.id },
+        { user: currentUser.id },
+        { assignedTo: { $in: subordinateIds } },
+        { parentTaskId: { $in: parentTaskIds } },
+      ];
 
-        query.$or = [
-          { assignedTo: currentUser.id },
-          { assignedBy: currentUser.id },
-          { user: currentUser.id },
-          { assignedTo: { $in: subordinateIds } },
-        ];
+      // Relevant team / department visibility if authorized
+      if (perms.canViewTeamTasks || taskScope === "team") {
+        if (currentUser.team) {
+          const teamUsers = await User.find({ organizationId: orgId, team: currentUser.team }).select("_id");
+          const teamUserIds = teamUsers.map((u) => u._id);
+          visibilityConditions.push({ team: currentUser.team });
+          visibilityConditions.push({ assignedTo: { $in: teamUserIds } });
+        }
       }
+
+      if (taskScope === "department") {
+        if (currentUser.department) {
+          const deptUsers = await User.find({ organizationId: orgId, department: currentUser.department }).select("_id");
+          const deptUserIds = deptUsers.map((u) => u._id);
+          visibilityConditions.push({ department: currentUser.department });
+          visibilityConditions.push({ assignedTo: { $in: deptUserIds } });
+        }
+      }
+
+      query.$or = visibilityConditions;
     }
 
     const tasks = await Task.find(query)
-      .populate("assignedTo", "firstName lastName email designation role department team")
-      .populate("assignedBy", "firstName lastName email role")
+      .populate("assignedTo", "firstName lastName email designation positionTitle role department team")
+      .populate("assignedBy", "firstName lastName email role designation positionTitle")
       .populate("projectId", "name deadline status priority")
       .populate("parentTaskId", "title")
       .sort({ createdAt: -1 });
@@ -90,17 +121,11 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/tasks - Create task or subtask with RBAC and company isolation
+// POST /api/tasks - Create task or subtask with hierarchical reporting and delegation
 router.post("/", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
     const orgId = user.organizationId;
-
-    // RBAC permission check
-    const canCreate = user.role === "admin" || user.permissions?.canCreateTasks || user.permissions?.canAssignTasks;
-    if (!canCreate) {
-      return res.status(403).json({ message: "Access denied. You do not have permission to create or assign tasks." });
-    }
 
     const {
       title,
@@ -128,16 +153,24 @@ router.post("/", authMiddleware, async (req, res) => {
       // Must belong to the same company
       assignedToUser = await User.findOne({ _id: assignedTo, organizationId: orgId });
       if (!assignedToUser) {
-        return res.status(400).json({ message: "Assignee not found in your organization." });
+        return res.status(400).json({ message: "Assignee not found in your company." });
       }
       assignedToName = `${assignedToUser.firstName} ${assignedToUser.lastName}`;
+
+      // Prevent unauthorized task assignments
+      const authorized = await isAuthorizedToAssign(user, assignedToUser, parentTaskId, orgId);
+      if (!authorized) {
+        return res.status(403).json({
+          message: "Unauthorized task assignment: You can only assign tasks to your team members, subordinates, or yourself.",
+        });
+      }
     }
 
-    // Verify projectId belongs to this organization
+    // Verify projectId belongs to this company
     if (projectId) {
       const proj = await Project.findOne({ _id: projectId, organizationId: orgId });
       if (!proj) {
-        return res.status(400).json({ message: "Specified project does not belong to your organization." });
+        return res.status(400).json({ message: "Specified project does not belong to your company." });
       }
     }
 
@@ -165,12 +198,12 @@ router.post("/", authMiddleware, async (req, res) => {
     });
 
     const populated = await Task.findById(task._id)
-      .populate("assignedTo", "firstName lastName email designation role")
+      .populate("assignedTo", "firstName lastName email designation positionTitle role")
       .populate("assignedBy", "firstName lastName email role")
       .populate("projectId", "name deadline status");
 
     res.status(201).json({
-      message: "Task successfully created and assigned",
+      message: parentTaskId ? "Subtask delegated successfully" : "Task created and assigned successfully",
       task: populated,
     });
   } catch (error) {
@@ -185,7 +218,7 @@ router.patch("/:id/progress", authMiddleware, async (req, res) => {
     const orgId = req.user.organizationId;
     const task = await Task.findOne({ _id: req.params.id, organizationId: orgId });
     if (!task) {
-      return res.status(404).json({ message: "Task not found in your organization." });
+      return res.status(404).json({ message: "Task not found in your company." });
     }
 
     const { progress, status, blocker, comment } = req.body;
@@ -225,13 +258,13 @@ router.patch("/:id/progress", authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/tasks/:id/submit - Employee submits deliverable for review
+// POST /api/tasks/:id/submit - Employee submits deliverable for manager review
 router.post("/:id/submit", authMiddleware, async (req, res) => {
   try {
     const orgId = req.user.organizationId;
     const task = await Task.findOne({ _id: req.params.id, organizationId: orgId });
     if (!task) {
-      return res.status(404).json({ message: "Task not found in your organization." });
+      return res.status(404).json({ message: "Task not found in your company." });
     }
 
     const { submissionNotes } = req.body;
@@ -259,24 +292,26 @@ router.post("/:id/submit", authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/tasks/:id/review - Supervisor approves or requests changes (RBAC enforced)
+// POST /api/tasks/:id/review - Manager approves or requests changes
 router.post("/:id/review", authMiddleware, async (req, res) => {
   try {
     const orgId = req.user.organizationId;
     const task = await Task.findOne({ _id: req.params.id, organizationId: orgId });
     if (!task) {
-      return res.status(404).json({ message: "Task not found in your organization." });
+      return res.status(404).json({ message: "Task not found in your company." });
     }
 
-    // Check approval permission across role, scopes, and reporting relationships
-    const canApprove = await canUserApproveTask(req.user, task.assignedTo, orgId);
+    // Check review authorization: Admin, Task Assigner, Assignee's manager, or authorized approver
+    const isAssigner = task.assignedBy && task.assignedBy.toString() === req.user.id.toString();
+    const canApprove = isAssigner || (await canUserApproveTask(req.user, task.assignedTo, orgId));
+
     if (!canApprove) {
       return res.status(403).json({
-        message: "Access denied. You do not have permission or supervisory relationship to approve this task.",
+        message: "Access denied. You do not have permission or a managerial relationship to approve this work.",
       });
     }
 
-    const { decision, feedback } = req.body; // "approved" | "changes_requested"
+    const { decision, feedback } = req.body;
     if (!decision || !["approved", "changes_requested"].includes(decision)) {
       return res.status(400).json({ message: "Decision must be 'approved' or 'changes_requested'." });
     }
@@ -286,13 +321,13 @@ router.post("/:id/review", authMiddleware, async (req, res) => {
     if (decision === "approved") {
       task.status = "completed";
       task.progress = 100;
-      task.reviewFeedback = feedback ? feedback.trim() : "Approved by supervisor.";
+      task.reviewFeedback = feedback ? feedback.trim() : "Approved by manager.";
       task.reviewedBy = req.user.id;
       task.reviewedAt = new Date();
     } else {
-      task.status = "in-progress"; // Returned for revision
+      task.status = "in-progress";
       task.progress = Math.min(task.progress, 80);
-      task.reviewFeedback = feedback ? feedback.trim() : "Changes requested by supervisor.";
+      task.reviewFeedback = feedback ? feedback.trim() : "Changes requested by manager.";
       task.reviewedBy = req.user.id;
       task.reviewedAt = new Date();
     }
@@ -308,7 +343,7 @@ router.post("/:id/review", authMiddleware, async (req, res) => {
     });
 
     res.json({
-      message: decision === "approved" ? "Work approved successfully" : "Returned to subordinate for revision",
+      message: decision === "approved" ? "Work approved successfully" : "Returned to team member for revision",
       task,
     });
   } catch (error) {
@@ -317,7 +352,7 @@ router.post("/:id/review", authMiddleware, async (req, res) => {
   }
 });
 
-// PUT /api/tasks/:id - Update task details (RBAC enforced)
+// PUT /api/tasks/:id - Update task details with authorization check
 router.put("/:id", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
@@ -325,10 +360,9 @@ router.put("/:id", authMiddleware, async (req, res) => {
 
     const task = await Task.findOne({ _id: req.params.id, organizationId: orgId });
     if (!task) {
-      return res.status(404).json({ message: "Task not found in your organization." });
+      return res.status(404).json({ message: "Task not found in your company." });
     }
 
-    // Check permission to edit
     const isAssignee = task.assignedTo && task.assignedTo.toString() === user.id.toString();
     const isAssigner = task.assignedBy && task.assignedBy.toString() === user.id.toString();
     const hasPerm = user.role === "admin" || user.permissions?.canEditTasks || isAssigner || isAssignee;
@@ -353,8 +387,17 @@ router.put("/:id", authMiddleware, async (req, res) => {
       if (assignedTo) {
         const u = await User.findOne({ _id: assignedTo, organizationId: orgId });
         if (!u) {
-          return res.status(400).json({ message: "Assignee does not belong to your organization." });
+          return res.status(400).json({ message: "Assignee does not belong to your company." });
         }
+
+        // Prevent unauthorized re-assignment
+        const authorized = await isAuthorizedToAssign(user, u, task.parentTaskId, orgId);
+        if (!authorized) {
+          return res.status(403).json({
+            message: "Unauthorized task assignment: You can only assign tasks to your team members or subordinates.",
+          });
+        }
+
         task.assignedTo = u._id;
         task.assignedToName = `${u.firstName} ${u.lastName}`;
       } else {
@@ -370,7 +413,7 @@ router.put("/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// DELETE /api/tasks/:id - Delete task and its subtasks (RBAC enforced)
+// DELETE /api/tasks/:id - Delete task and subtasks
 router.delete("/:id", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
@@ -378,7 +421,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 
     const task = await Task.findOne({ _id: req.params.id, organizationId: orgId });
     if (!task) {
-      return res.status(404).json({ message: "Task not found in your organization." });
+      return res.status(404).json({ message: "Task not found in your company." });
     }
 
     const hasPerm = user.role === "admin" || user.permissions?.canDeleteTasks || (task.assignedBy && task.assignedBy.toString() === user.id.toString());
@@ -389,7 +432,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
     await Task.deleteMany({ parentTaskId: task._id, organizationId: orgId });
     await Task.findByIdAndDelete(task._id);
 
-    res.json({ message: "Task and subtasks deleted successfully." });
+    res.json({ message: "Task and all subtasks deleted successfully." });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

@@ -35,6 +35,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
     team: '',
     positionId: '',
     role: 'employee',
+    reportsTo: '',
     hierarchyLevel: 4,
     permissions: {},
     accessScopes: {
@@ -63,6 +64,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
     team: '',
     positionTitle: '',
     role: 'employee',
+    reportsTo: '',
     hierarchyLevel: 4,
     permissions: {},
     accessScopes: {
@@ -174,7 +176,8 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
         team: formData.team,
         role: formData.role,
         positionTitle,
-        hierarchyLevel: formData.hierarchyLevel,
+        reportsTo: formData.reportsTo || null,
+        hierarchyLevel: formData.role === 'director' ? 2 : formData.role === 'manager' ? 3 : 4,
         permissions: formData.permissions,
         accessScopes: formData.accessScopes,
       };
@@ -244,11 +247,17 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
     const p = emp.permissions || {};
     const s = emp.accessScopes || {};
 
+    const directRel = Array.isArray(emp.reportingRelationships)
+      ? emp.reportingRelationships.find((r) => r.relationshipType === 'direct')
+      : null;
+    const currentReportsTo = directRel?.managerId?._id || directRel?.managerId || emp.reportsTo?._id || emp.reportsTo || '';
+
     setEditForm({
       department: emp.department || 'General',
       team: emp.team || '',
       positionTitle: emp.positionTitle || emp.designation || 'Specialist',
       role: emp.role || 'employee',
+      reportsTo: currentReportsTo,
       hierarchyLevel: emp.hierarchyLevel || 4,
       permissions: {
         canCreateTasks: Boolean(p.canCreateTasks || p.canAssignTasks),
@@ -290,7 +299,8 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
         positionTitle: editForm.positionTitle,
         designation: editForm.positionTitle,
         role: editForm.role,
-        hierarchyLevel: Number(editForm.hierarchyLevel),
+        reportsTo: editForm.reportsTo || null,
+        hierarchyLevel: editForm.role === 'director' ? 2 : editForm.role === 'manager' ? 3 : 4,
         permissions: editForm.permissions,
         accessScopes: editForm.accessScopes,
       });
@@ -413,7 +423,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                 <option value="">-- Standard Role (Select Below) --</option>
                 {positions.map((pos) => (
                   <option key={pos.id} value={pos.id}>
-                    {pos.title} · Level {pos.level} ({pos.department})
+                    {pos.title} ({pos.department || 'General'})
                   </option>
                 ))}
               </select>
@@ -431,22 +441,30 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                   className="form-control"
                 >
-                  <option value="employee">Specialist / Employee (Level 4)</option>
-                  <option value="manager">Manager / Team Lead (Level 3)</option>
-                  <option value="director">Project Director (Level 2)</option>
+                  <option value="employee">Specialist / Contributor</option>
+                  <option value="manager">Manager / Team Lead</option>
+                  <option value="director">Project Director / Executive</option>
                 </select>
               </div>
 
               <div className="form-group">
-                <label>Hierarchy Level</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={6}
-                  value={formData.hierarchyLevel}
-                  onChange={(e) => setFormData({ ...formData, hierarchyLevel: Number(e.target.value) })}
+                <label>Reports To (Manager)</label>
+                <select
+                  value={formData.reportsTo}
+                  onChange={(e) => setFormData({ ...formData, reportsTo: e.target.value })}
                   className="form-control"
-                />
+                >
+                  <option value="">-- Reports to Head of Office / CEO --</option>
+                  {employees.map((emp) => {
+                    const empName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || emp.email;
+                    const pos = emp.positionTitle || emp.role;
+                    return (
+                      <option key={emp._id || emp.id} value={emp._id || emp.id}>
+                        {empName} — {pos} ({emp.department || 'General'})
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
             </div>
 
@@ -602,8 +620,8 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                     <tr>
                       <th>Employee</th>
                       <th>Department & Team</th>
-                      <th>Role & Level</th>
-                      <th>Reporting Managers</th>
+                      <th>Job Role</th>
+                      <th>Reports To</th>
                       <th>Status</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
@@ -644,14 +662,20 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                                 {emp.positionTitle || emp.role}
                               </span>
                               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                Level {emp.hierarchyLevel || 4}
+                                {emp.role === 'admin'
+                                  ? 'Executive Leadership'
+                                  : emp.role === 'director'
+                                  ? 'Director / Executive'
+                                  : emp.role === 'manager'
+                                  ? 'Manager / Team Lead'
+                                  : 'Specialist'}
                               </div>
                             </div>
                           </td>
                           <td>
                             {managers.length === 0 ? (
                               <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                                {emp.role === 'admin' ? '👑 Head of Office' : 'None'}
+                                {emp.role === 'admin' ? '👑 Head of Office / CEO' : 'Reports to Head of Office'}
                               </span>
                             ) : (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -660,7 +684,8 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                                   const mName = mObj?.firstName ? `${mObj.firstName} ${mObj.lastName}` : 'Manager';
                                   return (
                                     <span key={mIdx} style={{ fontSize: '11px' }}>
-                                      • {mName} ({m.relationshipType})
+                                      • <strong>{mName}</strong>{' '}
+                                      <span style={{ color: 'var(--text-muted)' }}>({m.relationshipType})</span>
                                     </span>
                                   );
                                 })}
@@ -756,16 +781,17 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Hierarchy Level</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={6}
+                  <label className="form-label">Role Tier</label>
+                  <select
                     className="form-control"
-                    value={editForm.hierarchyLevel}
-                    onChange={(e) => setEditForm({ ...editForm, hierarchyLevel: Number(e.target.value) })}
-                    required
-                  />
+                    value={editForm.role}
+                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                  >
+                    <option value="employee">Specialist / Contributor</option>
+                    <option value="manager">Manager / Team Lead</option>
+                    <option value="director">Project Director / Executive</option>
+                    {editingEmployee.role === 'admin' && <option value="admin">Administrator / CEO</option>}
+                  </select>
                 </div>
               </div>
 
@@ -800,6 +826,31 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div className="form-group" style={{ marginTop: '8px' }}>
+                <label className="form-label">Reports To (Direct Manager)</label>
+                <select
+                  className="form-control"
+                  value={editForm.reportsTo}
+                  onChange={(e) => setEditForm({ ...editForm, reportsTo: e.target.value })}
+                  disabled={editingEmployee.role === 'admin'}
+                >
+                  <option value="">-- No Direct Manager (Reports to Head of Office / CEO) --</option>
+                  {employees
+                    .filter((e) => (e._id || e.id) !== (editingEmployee._id || editingEmployee.id))
+                    .map((mgr) => {
+                      const mgrName = `${mgr.firstName || ''} ${mgr.lastName || ''}`.trim() || mgr.email;
+                      return (
+                        <option key={mgr._id || mgr.id} value={mgr._id || mgr.id}>
+                          {mgrName} — {mgr.positionTitle || mgr.role} ({mgr.department || 'General'})
+                        </option>
+                      );
+                    })}
+                </select>
+                <small style={{ color: 'var(--text-muted)', fontSize: '11px', display: 'block', marginTop: '4px' }}>
+                  Direct reporting connection. Circular reporting dependencies are prevented automatically.
+                </small>
               </div>
 
               {/* Access Scopes */}
