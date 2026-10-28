@@ -66,12 +66,13 @@ router.post("/departments", authMiddleware, requirePermission("canManageStructur
     const org = await getUserOrg(req.user);
     const trimmed = name.trim();
 
-    if (!org.departments.includes(trimmed)) {
+    if (!org.departments.some((d) => d && d.trim().toLowerCase() === trimmed.toLowerCase())) {
       org.departments.push(trimmed);
+      org.markModified("departments");
       await org.save();
     }
 
-    res.status(201).json({ message: "Department added", departments: org.departments });
+    res.status(201).json({ message: "Department added", departments: org.departments, organization: org });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -80,13 +81,44 @@ router.post("/departments", authMiddleware, requirePermission("canManageStructur
 // DELETE /api/organization/departments/:name - Remove department
 router.delete("/departments/:name", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
   try {
-    const deptName = decodeURIComponent(req.params.name);
+    let deptName = req.params.name;
+    try {
+      deptName = decodeURIComponent(deptName);
+    } catch {
+      // Keep as-is if already decoded or malformed
+    }
     const org = await getUserOrg(req.user);
+    const target = deptName.trim().toLowerCase();
 
-    org.departments = org.departments.filter((d) => d !== deptName);
-    await org.save();
+    const updatedDepartments = (org.departments || []).filter((d) => d && d.trim().toLowerCase() !== target);
+    const updatedOrg = await Organization.findByIdAndUpdate(
+      org._id,
+      { $set: { departments: updatedDepartments } },
+      { new: true }
+    );
 
-    res.json({ message: "Department removed", departments: org.departments });
+    // Reassign any users belonging to this department to General
+    await User.updateMany(
+      { organizationId: org._id, department: { $regex: new RegExp(`^${deptName.trim()}$`, "i") } },
+      { department: "General" }
+    );
+
+    res.json({ message: "Department removed", departments: updatedOrg.departments, organization: updatedOrg });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/organization/clear-departments - Remove all departments
+router.post("/clear-departments", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const org = await getUserOrg(req.user);
+    const updatedOrg = await Organization.findByIdAndUpdate(
+      org._id,
+      { $set: { departments: [] } },
+      { new: true }
+    );
+    res.json({ message: "All departments cleared", departments: [], organization: updatedOrg });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -125,6 +157,7 @@ router.post("/teams", authMiddleware, requirePermission("canManageStructure"), a
     };
 
     org.teams.push(newTeam);
+    org.markModified("teams");
     await org.save();
 
     // If members provided, update their team field
@@ -141,7 +174,7 @@ router.post("/teams", authMiddleware, requirePermission("canManageStructure"), a
       );
     }
 
-    res.status(201).json({ message: "Team created successfully", team: newTeam, teams: org.teams });
+    res.status(201).json({ message: "Team created successfully", team: newTeam, teams: org.teams, organization: org });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -154,7 +187,8 @@ router.put("/teams/:id", authMiddleware, requirePermission("canManageStructure")
     const { name, department, description, leadId, leadName, memberIds } = req.body;
 
     const org = await getUserOrg(req.user);
-    const teamIndex = org.teams.findIndex((t) => t.id === id);
+    const targetId = id.toString().trim();
+    const teamIndex = org.teams.findIndex((t) => t.id === targetId || t._id?.toString() === targetId);
     if (teamIndex === -1) {
       return res.status(404).json({ message: "Team not found" });
     }
@@ -167,6 +201,7 @@ router.put("/teams/:id", authMiddleware, requirePermission("canManageStructure")
     if (leadName !== undefined) team.leadName = leadName.trim();
     if (Array.isArray(memberIds)) team.memberIds = memberIds;
 
+    org.markModified("teams");
     await org.save();
 
     // Sync member teams
@@ -177,7 +212,7 @@ router.put("/teams/:id", authMiddleware, requirePermission("canManageStructure")
       );
     }
 
-    res.json({ message: "Team updated successfully", team, teams: org.teams });
+    res.json({ message: "Team updated successfully", team, teams: org.teams, organization: org });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -188,14 +223,22 @@ router.delete("/teams/:id", authMiddleware, requirePermission("canManageStructur
   try {
     const { id } = req.params;
     const org = await getUserOrg(req.user);
+    const targetId = id.toString().trim();
 
-    org.teams = org.teams.filter((t) => t.id !== id);
-    await org.save();
+    const updatedTeams = (org.teams || []).filter((t) => t.id !== targetId && t._id?.toString() !== targetId);
+    const updatedOrg = await Organization.findByIdAndUpdate(
+      org._id,
+      { $set: { teams: updatedTeams } },
+      { new: true }
+    );
 
     // Clear team reference from users in this team
-    await User.updateMany({ teamId: id, organizationId: org._id }, { team: "", teamId: "" });
+    await User.updateMany(
+      { organizationId: org._id, $or: [{ teamId: targetId }, { team: targetId }] },
+      { team: "", teamId: "" }
+    );
 
-    res.json({ message: "Team removed successfully", teams: org.teams });
+    res.json({ message: "Team removed successfully", teams: updatedOrg.teams, organization: updatedOrg });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -207,20 +250,45 @@ router.delete("/teams/:id", authMiddleware, requirePermission("canManageStructur
 router.put("/levels", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
   try {
     const { levels } = req.body;
-    if (!Array.isArray(levels) || levels.length === 0) {
-      return res.status(400).json({ message: "Levels must be a non-empty array" });
+    if (!Array.isArray(levels)) {
+      return res.status(400).json({ message: "Levels must be an array" });
     }
 
     const org = await getUserOrg(req.user);
 
-    org.levels = levels.map((l, index) => ({
+    const formattedLevels = levels.map((l, index) => ({
       level: Number(l.level) || index + 1,
       name: l.name || `Level ${index + 1}`,
       description: l.description || "",
     }));
 
-    await org.save();
-    res.json({ message: "Hierarchy levels updated", levels: org.levels });
+    const updatedOrg = await Organization.findByIdAndUpdate(
+      org._id,
+      { $set: { levels: formattedLevels } },
+      { new: true }
+    );
+    res.json({ message: "Hierarchy levels updated", levels: updatedOrg.levels, organization: updatedOrg });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/organization/clear-hierarchy - Remove all hierarchy tiers and roles to start clean
+router.post("/clear-hierarchy", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const org = await getUserOrg(req.user);
+    const updatedOrg = await Organization.findByIdAndUpdate(
+      org._id,
+      { $set: { levels: [], positions: [] } },
+      { new: true }
+    );
+
+    res.json({
+      message: "All hierarchy levels and roles cleared successfully",
+      levels: [],
+      positions: [],
+      organization: updatedOrg,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -271,12 +339,14 @@ router.post("/positions", authMiddleware, requirePermission("canManageStructure"
     };
 
     org.positions.push(newPosition);
+    org.markModified("positions");
     await org.save();
 
     res.status(201).json({
       message: "Custom job role / position created",
       position: newPosition,
       positions: org.positions,
+      organization: org,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -290,7 +360,8 @@ router.put("/positions/:id", authMiddleware, requirePermission("canManageStructu
     const { title, level, department, permissions, accessScopes } = req.body;
 
     const org = await getUserOrg(req.user);
-    const posIndex = org.positions.findIndex((p) => p.id === id);
+    const targetId = id.toString().trim();
+    const posIndex = org.positions.findIndex((p) => p.id === targetId || p._id?.toString() === targetId);
     if (posIndex === -1) {
       return res.status(404).json({ message: "Position not found" });
     }
@@ -329,11 +400,13 @@ router.put("/positions/:id", authMiddleware, requirePermission("canManageStructu
       };
     }
 
+    org.markModified("positions");
     await org.save();
     res.json({
       message: "Position updated",
       position: org.positions[posIndex],
       positions: org.positions,
+      organization: org,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -345,11 +418,16 @@ router.delete("/positions/:id", authMiddleware, requirePermission("canManageStru
   try {
     const { id } = req.params;
     const org = await getUserOrg(req.user);
+    const targetId = id.toString().trim();
 
-    org.positions = org.positions.filter((p) => p.id !== id);
-    await org.save();
+    const updatedPositions = (org.positions || []).filter((p) => p.id !== targetId && p._id?.toString() !== targetId);
+    const updatedOrg = await Organization.findByIdAndUpdate(
+      org._id,
+      { $set: { positions: updatedPositions } },
+      { new: true }
+    );
 
-    res.json({ message: "Position deleted", positions: org.positions });
+    res.json({ message: "Position deleted", positions: updatedOrg.positions, organization: updatedOrg });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -378,19 +456,81 @@ router.post("/relationship-types", authMiddleware, requirePermission("canManageS
     const org = await getUserOrg(req.user);
     const key = (id || name.trim().toLowerCase().replace(/\s+/g, "_")).replace(/[^a-z0-9_]/g, "");
 
-    const exists = org.relationshipTypes.some((r) => r.id === key);
+    const exists = (org.relationshipTypes || []).some((r) => r.id === key);
     if (!exists) {
-      org.relationshipTypes.push({
-        id: key,
-        name: name.trim(),
-        description: description ? description.trim() : "",
+      const updatedList = [
+        ...(org.relationshipTypes || []),
+        {
+          id: key,
+          name: name.trim(),
+          description: description ? description.trim() : "",
+        },
+      ];
+      const updatedOrg = await Organization.findByIdAndUpdate(
+        org._id,
+        { $set: { relationshipTypes: updatedList } },
+        { new: true }
+      );
+      return res.status(201).json({
+        message: "Relationship type added",
+        relationshipTypes: updatedOrg.relationshipTypes,
+        organization: updatedOrg,
       });
-      await org.save();
     }
 
     res.status(201).json({
-      message: "Relationship type added",
+      message: "Relationship type exists",
       relationshipTypes: org.relationshipTypes,
+      organization: org,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// DELETE /api/organization/relationship-types/:id - Delete custom relationship type
+router.delete("/relationship-types/:id", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const org = await getUserOrg(req.user);
+    const targetId = id.toString().trim().toLowerCase();
+
+    const updatedRelationshipTypes = (org.relationshipTypes || []).filter(
+      (r) =>
+        (r.id && r.id.toString().trim().toLowerCase() !== targetId) &&
+        (!r._id || r._id.toString() !== targetId)
+    );
+
+    const updatedOrg = await Organization.findByIdAndUpdate(
+      org._id,
+      { $set: { relationshipTypes: updatedRelationshipTypes } },
+      { new: true }
+    );
+
+    res.json({
+      message: "Relationship type deleted",
+      relationshipTypes: updatedOrg.relationshipTypes,
+      organization: updatedOrg,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/organization/clear-relationship-types - Remove all relationship types
+router.post("/clear-relationship-types", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const org = await getUserOrg(req.user);
+    const updatedOrg = await Organization.findByIdAndUpdate(
+      org._id,
+      { $set: { relationshipTypes: [] } },
+      { new: true }
+    );
+
+    res.json({
+      message: "All relationship types cleared",
+      relationshipTypes: [],
+      organization: updatedOrg,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -539,6 +679,10 @@ router.post("/apply-template", authMiddleware, requirePermission("canManageStruc
       ];
     }
 
+    org.markModified("levels");
+    org.markModified("departments");
+    org.markModified("teams");
+    org.markModified("positions");
     await org.save();
     res.json({ message: "Organization structure template applied", organization: org });
   } catch (error) {

@@ -11,7 +11,6 @@ import {
   UsersIcon,
   UserIcon,
   LayersIcon,
-  GitBranchIcon,
   TrendingUpIcon,
   CheckCircleIcon,
   AlertTriangleIcon,
@@ -26,7 +25,6 @@ import { AdminSummaryView } from './AdminSummaryView';
 import { ProjectDirectorView } from './ProjectDirectorView';
 import { ManagerTeamView } from './ManagerTeamView';
 import { EmployeeWorkView } from './EmployeeWorkView';
-import { OrganizationHierarchyView } from './OrganizationHierarchyView';
 import { OrganizationStructureBuilder } from './OrganizationStructureBuilder';
 import { AdminEmployeePanel } from './AdminEmployeePanel';
 import { ThemeToggle } from './ThemeToggle';
@@ -284,14 +282,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               <span>Task Board</span>
             </button>
 
-            <button
-              type="button"
-              className={`nav-tab-btn ${activeTab === 'hierarchy' ? 'active' : ''}`}
-              onClick={() => setActiveTab('hierarchy')}
-            >
-              <GitBranchIcon size={16} />
-              <span>Hierarchy & Reporting</span>
-            </button>
 
             {canManageEmployees && (
               <button
@@ -419,10 +409,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           />
         )}
 
-        {/* 5. Organizational Hierarchy Tree */}
-        {activeTab === 'hierarchy' && (
-          <OrganizationHierarchyView user={user} onHierarchyUpdated={refreshAllData} />
-        )}
 
         {/* 6. Admin Panel (Employee invitations, custom departments & roles) */}
         {activeTab === 'admin' && (

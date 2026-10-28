@@ -122,12 +122,11 @@ export const api = {
   getDepartments() {
     try {
       const stored = localStorage.getItem('tm_departments');
-      if (stored) return JSON.parse(stored);
+      if (stored !== null) return JSON.parse(stored);
     } catch {
       // fallback
     }
-    localStorage.setItem('tm_departments', JSON.stringify(DEFAULT_DEPARTMENTS));
-    return DEFAULT_DEPARTMENTS;
+    return [];
   },
 
   addDepartment(name) {
@@ -153,12 +152,11 @@ export const api = {
   getRoles() {
     try {
       const stored = localStorage.getItem('tm_roles');
-      if (stored) return JSON.parse(stored);
+      if (stored !== null) return JSON.parse(stored);
     } catch {
       // fallback
     }
-    localStorage.setItem('tm_roles', JSON.stringify(DEFAULT_ROLES));
-    return DEFAULT_ROLES;
+    return [];
   },
 
   addRole(roleData) {
@@ -885,15 +883,21 @@ export const api = {
       const data = await safeFetchJson(`${API_BASE_URL}/organization`, {
         headers: getHeaders(),
       });
-      if (data) {
+      if (data && typeof data === 'object') {
         localStorage.setItem('tm_organization', JSON.stringify(data));
+        if (Array.isArray(data.departments)) {
+          localStorage.setItem('tm_departments', JSON.stringify(data.departments));
+        }
       }
       return data;
     } catch {
       const local = localStorage.getItem('tm_organization');
       if (local) {
         try {
-          return JSON.parse(local);
+          const parsed = JSON.parse(local);
+          if (parsed && typeof parsed === 'object') {
+            return parsed;
+          }
         } catch {
           // fallback
         }
@@ -901,86 +905,52 @@ export const api = {
       const user = this.getUser();
       const defaultOrg = {
         name: user?.companyName || 'Company Workspace',
-        departments: [
-          'Executive Leadership',
-          'Project Management Office',
-          'Engineering & Technology',
-          'Product & Design',
-          'Operations & Quality',
-          'Human Resources & Finance',
-        ],
-        levels: [
-          { level: 1, name: 'Executive / Leadership', description: 'Strategic oversight and organization-wide KPIs' },
-          { level: 2, name: 'Department Heads / Directors', description: 'Project milestone planning and departmental governance' },
-          { level: 3, name: 'Managers & Team Leads', description: 'Task delegation, blocker resolution, and quality approval' },
-          { level: 4, name: 'Specialists & Contributors', description: 'Operational task execution and deliverable submissions' },
-        ],
-        positions: [
-          {
-            id: 'pos_1',
-            title: 'Chief Executive / Head of Office',
-            level: 1,
-            department: 'Executive Leadership',
-            permissions: {
-              canCreateProjects: true,
-              canAssignTasks: true,
-              canApproveWork: true,
-              canViewExecutiveSummary: true,
-              canViewTeamTasks: true,
-              canViewAllTasks: true,
-              canManageStructure: true,
-            },
-          },
-          {
-            id: 'pos_2',
-            title: 'Project Director',
-            level: 2,
-            department: 'Project Management Office',
-            permissions: {
-              canCreateProjects: true,
-              canAssignTasks: true,
-              canApproveWork: true,
-              canViewExecutiveSummary: true,
-              canViewTeamTasks: true,
-              canViewAllTasks: false,
-              canManageStructure: false,
-            },
-          },
-          {
-            id: 'pos_3',
-            title: 'Team Leader / Manager',
-            level: 3,
-            department: 'Engineering & Technology',
-            permissions: {
-              canCreateProjects: false,
-              canAssignTasks: true,
-              canApproveWork: true,
-              canViewExecutiveSummary: false,
-              canViewTeamTasks: true,
-              canViewAllTasks: false,
-              canManageStructure: false,
-            },
-          },
-          {
-            id: 'pos_4',
-            title: 'Specialist / Employee',
-            level: 4,
-            department: 'Engineering & Technology',
-            permissions: {
-              canCreateProjects: false,
-              canAssignTasks: false,
-              canApproveWork: false,
-              canViewExecutiveSummary: false,
-              canViewTeamTasks: false,
-              canViewAllTasks: false,
-              canManageStructure: false,
-            },
-          },
-        ],
+        departments: [],
+        levels: [],
+        positions: [],
+        teams: [],
+        relationshipTypes: [],
       };
       localStorage.setItem('tm_organization', JSON.stringify(defaultOrg));
+      localStorage.setItem('tm_departments', JSON.stringify([]));
       return defaultOrg;
     }
+  },
+
+  // POST /api/organization/clear-hierarchy
+  async clearHierarchy() {
+    let orgData = null;
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/clear-hierarchy`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+      if (data && data.organization) orgData = data.organization;
+    } catch {
+      // offline fallback
+    }
+    const org = orgData || (await this.getOrganization());
+    org.levels = [];
+    org.positions = [];
+    localStorage.setItem('tm_organization', JSON.stringify(org));
+    return org;
+  },
+
+  // POST /api/organization/clear-departments
+  async clearDepartments() {
+    try {
+      await safeFetchJson(`${API_BASE_URL}/organization/clear-departments`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+    } catch {
+      // offline fallback
+    }
+    const org = await this.getOrganization();
+    org.departments = [];
+    localStorage.setItem('tm_departments', JSON.stringify([]));
+    localStorage.setItem('tm_organization', JSON.stringify(org));
+    return [];
   },
 
   // PUT /api/organization
@@ -991,58 +961,77 @@ export const api = {
         headers: getHeaders(),
         body: JSON.stringify(orgData),
       });
-      return data.organization;
-    } catch {
-      const org = await this.getOrganization();
-      const updated = { ...org, ...orgData };
-      localStorage.setItem('tm_organization', JSON.stringify(updated));
-      return updated;
+      if (data.organization) {
+        localStorage.setItem('tm_organization', JSON.stringify(data.organization));
+        return data.organization;
+      }
+      return data;
+    } catch (err) {
+      if (isOfflineError(err)) {
+        const org = await this.getOrganization();
+        const updated = { ...org, ...orgData };
+        localStorage.setItem('tm_organization', JSON.stringify(updated));
+        return updated;
+      }
+      throw err;
     }
   },
 
   // POST /api/organization/departments
   async addOrgDepartment(name) {
+    const trimmed = name ? name.trim() : '';
+    if (!trimmed) {
+      const org = await this.getOrganization();
+      return org.departments || [];
+    }
+    let serverDepts = null;
     try {
       const data = await safeFetchJson(`${API_BASE_URL}/organization/departments`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name: trimmed }),
       });
       if (Array.isArray(data.departments)) {
-        localStorage.setItem('tm_departments', JSON.stringify(data.departments));
+        serverDepts = data.departments;
       }
-      return data.departments;
     } catch {
-      const org = await this.getOrganization();
-      const depts = org.departments || [];
-      if (!depts.includes(name)) {
-        depts.push(name);
-        org.departments = depts;
-        localStorage.setItem('tm_organization', JSON.stringify(org));
-        localStorage.setItem('tm_departments', JSON.stringify(depts));
-      }
-      return depts;
+      // offline fallback
     }
+    const org = await this.getOrganization();
+    const depts = serverDepts !== null ? serverDepts : (Array.isArray(org.departments) ? org.departments : []);
+    if (!depts.some((d) => d && d.trim().toLowerCase() === trimmed.toLowerCase())) {
+      depts.push(trimmed);
+    }
+    org.departments = depts;
+    localStorage.setItem('tm_departments', JSON.stringify(depts));
+    localStorage.setItem('tm_organization', JSON.stringify(org));
+    return depts;
   },
 
   // DELETE /api/organization/departments/:name
   async deleteOrgDepartment(name) {
+    const trimmed = name ? name.trim() : '';
+    let serverDepts = null;
     try {
-      const data = await safeFetchJson(`${API_BASE_URL}/organization/departments/${encodeURIComponent(name)}`, {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/departments/${encodeURIComponent(trimmed)}`, {
         method: 'DELETE',
         headers: getHeaders(),
       });
       if (Array.isArray(data.departments)) {
-        localStorage.setItem('tm_departments', JSON.stringify(data.departments));
+        serverDepts = data.departments;
       }
-      return data.departments;
     } catch {
-      const org = await this.getOrganization();
-      org.departments = (org.departments || []).filter((d) => d !== name);
-      localStorage.setItem('tm_organization', JSON.stringify(org));
-      localStorage.setItem('tm_departments', JSON.stringify(org.departments));
-      return org.departments;
+      // offline fallback
     }
+    const org = await this.getOrganization();
+    const target = trimmed.toLowerCase();
+    const updated = serverDepts !== null
+      ? serverDepts
+      : (org.departments || []).filter((d) => d && d.trim().toLowerCase() !== target);
+    org.departments = updated;
+    localStorage.setItem('tm_departments', JSON.stringify(updated));
+    localStorage.setItem('tm_organization', JSON.stringify(org));
+    return updated;
   },
 
   // ======================== TEAMS ========================
@@ -1061,31 +1050,100 @@ export const api = {
 
   // POST /api/organization/teams
   async createTeam(teamData) {
-    const data = await safeFetchJson(`${API_BASE_URL}/organization/teams`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify(teamData),
-    });
-    return data;
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/teams`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(teamData),
+      });
+      if (Array.isArray(data.teams)) {
+        try {
+          const org = JSON.parse(localStorage.getItem('tm_organization') || '{}');
+          org.teams = data.teams;
+          localStorage.setItem('tm_organization', JSON.stringify(org));
+        } catch {}
+      }
+      return data;
+    } catch (err) {
+      if (isOfflineError(err)) {
+        const org = await this.getOrganization();
+        const newTeam = {
+          id: 'team_' + Date.now(),
+          ...teamData,
+          department: teamData.department || (org.departments?.[0] || 'General'),
+          memberIds: Array.isArray(teamData.memberIds) ? teamData.memberIds : [],
+        };
+        org.teams = org.teams || [];
+        org.teams.push(newTeam);
+        localStorage.setItem('tm_organization', JSON.stringify(org));
+        return { message: 'Team created successfully (offline)', team: newTeam, teams: org.teams };
+      }
+      throw err;
+    }
   },
 
   // PUT /api/organization/teams/:id
   async updateTeam(id, teamData) {
-    const data = await safeFetchJson(`${API_BASE_URL}/organization/teams/${id}`, {
-      method: 'PUT',
-      headers: getHeaders(),
-      body: JSON.stringify(teamData),
-    });
-    return data;
+    const targetId = id.toString().trim();
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/teams/${encodeURIComponent(targetId)}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(teamData),
+      });
+      if (Array.isArray(data.teams)) {
+        try {
+          const org = JSON.parse(localStorage.getItem('tm_organization') || '{}');
+          org.teams = data.teams;
+          localStorage.setItem('tm_organization', JSON.stringify(org));
+        } catch {}
+      }
+      return data;
+    } catch (err) {
+      if (isOfflineError(err)) {
+        const org = await this.getOrganization();
+        org.teams = (org.teams || []).map((t) =>
+          (t.id && t.id.toString() === targetId) || (t._id && t._id.toString() === targetId)
+            ? { ...t, ...teamData }
+            : t
+        );
+        localStorage.setItem('tm_organization', JSON.stringify(org));
+        const updated = org.teams.find(
+          (t) => (t.id && t.id.toString() === targetId) || (t._id && t._id.toString() === targetId)
+        );
+        return { message: 'Team updated successfully (offline)', team: updated, teams: org.teams };
+      }
+      throw err;
+    }
   },
 
   // DELETE /api/organization/teams/:id
   async deleteTeam(id) {
-    const data = await safeFetchJson(`${API_BASE_URL}/organization/teams/${id}`, {
-      method: 'DELETE',
-      headers: getHeaders(),
-    });
-    return data;
+    const targetId = id.toString().trim();
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/teams/${encodeURIComponent(targetId)}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      if (Array.isArray(data.teams)) {
+        try {
+          const org = JSON.parse(localStorage.getItem('tm_organization') || '{}');
+          org.teams = data.teams;
+          localStorage.setItem('tm_organization', JSON.stringify(org));
+        } catch {}
+      }
+      return data;
+    } catch (err) {
+      if (isOfflineError(err)) {
+        const org = await this.getOrganization();
+        org.teams = (org.teams || []).filter(
+          (t) => (t.id && t.id.toString() !== targetId) && (!t._id || t._id.toString() !== targetId)
+        );
+        localStorage.setItem('tm_organization', JSON.stringify(org));
+        return { message: 'Team removed successfully (offline)', teams: org.teams };
+      }
+      throw err;
+    }
   },
 
   // GET /api/organization/relationship-types
@@ -1097,22 +1155,84 @@ export const api = {
       return Array.isArray(data) ? data : [];
     } catch {
       const org = await this.getOrganization();
-      return org?.relationshipTypes || [
-        { id: 'direct', name: 'Direct Manager', description: 'Core line manager' },
-        { id: 'project', name: 'Project Manager', description: 'Project deliverable coordinator' },
-        { id: 'functional', name: 'Functional Manager', description: 'Chapter/discipline mentor' },
-      ];
+      return org?.relationshipTypes || [];
     }
   },
 
   // POST /api/organization/relationship-types
   async addRelationshipType(relData) {
-    const data = await safeFetchJson(`${API_BASE_URL}/organization/relationship-types`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify(relData),
-    });
-    return data;
+    let serverRelTypes = null;
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/relationship-types`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(relData),
+      });
+      if (Array.isArray(data.relationshipTypes)) {
+        serverRelTypes = data.relationshipTypes;
+      }
+    } catch {
+      // offline fallback
+    }
+
+    const org = await this.getOrganization();
+    const key = (relData.id || relData.name.trim().toLowerCase().replace(/\s+/g, '_')).replace(/[^a-z0-9_]/g, '');
+    let rels = serverRelTypes !== null ? serverRelTypes : (Array.isArray(org.relationshipTypes) ? org.relationshipTypes : []);
+    if (!rels.some((r) => r.id === key)) {
+      rels.push({
+        id: key,
+        name: relData.name.trim(),
+        description: relData.description ? relData.description.trim() : '',
+      });
+    }
+    org.relationshipTypes = rels;
+    localStorage.setItem('tm_organization', JSON.stringify(org));
+    return { message: 'Relationship type added', relationshipTypes: rels };
+  },
+
+  // DELETE /api/organization/relationship-types/:id
+  async deleteRelationshipType(id) {
+    const targetId = (id || '').toString().trim().toLowerCase();
+    let serverRelTypes = null;
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/relationship-types/${encodeURIComponent(targetId)}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      if (Array.isArray(data.relationshipTypes)) {
+        serverRelTypes = data.relationshipTypes;
+      }
+    } catch {
+      // offline fallback
+    }
+
+    const org = await this.getOrganization();
+    const updated = serverRelTypes !== null
+      ? serverRelTypes
+      : (org.relationshipTypes || []).filter(
+          (r) =>
+            (r.id && r.id.toString().trim().toLowerCase() !== targetId) &&
+            (!r._id || r._id.toString() !== targetId)
+        );
+    org.relationshipTypes = updated;
+    localStorage.setItem('tm_organization', JSON.stringify(org));
+    return { message: 'Relationship type deleted', relationshipTypes: updated };
+  },
+
+  // POST /api/organization/clear-relationship-types
+  async clearRelationshipTypes() {
+    try {
+      await safeFetchJson(`${API_BASE_URL}/organization/clear-relationship-types`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+    } catch {
+      // offline fallback
+    }
+    const org = await this.getOrganization();
+    org.relationshipTypes = [];
+    localStorage.setItem('tm_organization', JSON.stringify(org));
+    return { message: 'All relationship types cleared', relationshipTypes: [] };
   },
 
   // PUT /api/organization/levels
@@ -1123,12 +1243,21 @@ export const api = {
         headers: getHeaders(),
         body: JSON.stringify({ levels }),
       });
-      return data.levels;
-    } catch {
-      const org = await this.getOrganization();
-      org.levels = levels;
-      localStorage.setItem('tm_organization', JSON.stringify(org));
-      return levels;
+      const updatedLevels = Array.isArray(data.levels) ? data.levels : levels;
+      try {
+        const org = JSON.parse(localStorage.getItem('tm_organization') || '{}');
+        org.levels = updatedLevels;
+        localStorage.setItem('tm_organization', JSON.stringify(org));
+      } catch {}
+      return updatedLevels;
+    } catch (err) {
+      if (isOfflineError(err)) {
+        const org = await this.getOrganization();
+        org.levels = levels;
+        localStorage.setItem('tm_organization', JSON.stringify(org));
+        return levels;
+      }
+      throw err;
     }
   },
 
@@ -1140,52 +1269,91 @@ export const api = {
         headers: getHeaders(),
         body: JSON.stringify(posData),
       });
+      if (Array.isArray(data.positions)) {
+        try {
+          const org = JSON.parse(localStorage.getItem('tm_organization') || '{}');
+          org.positions = data.positions;
+          localStorage.setItem('tm_organization', JSON.stringify(org));
+        } catch {}
+      }
       return data.position;
-    } catch {
-      const org = await this.getOrganization();
-      const newPos = {
-        id: 'pos_' + Date.now(),
-        ...posData,
-        level: Number(posData.level) || 4,
-        permissions: posData.permissions || {},
-      };
-      org.positions = org.positions || [];
-      org.positions.push(newPos);
-      localStorage.setItem('tm_organization', JSON.stringify(org));
-      return newPos;
+    } catch (err) {
+      if (isOfflineError(err)) {
+        const org = await this.getOrganization();
+        const newPos = {
+          id: 'pos_' + Date.now(),
+          ...posData,
+          level: Number(posData.level) || 4,
+          permissions: posData.permissions || {},
+        };
+        org.positions = org.positions || [];
+        org.positions.push(newPos);
+        localStorage.setItem('tm_organization', JSON.stringify(org));
+        return newPos;
+      }
+      throw err;
     }
   },
 
   // PUT /api/organization/positions/:id
   async updatePosition(id, posData) {
+    const targetId = id.toString().trim();
     try {
-      const data = await safeFetchJson(`${API_BASE_URL}/organization/positions/${id}`, {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/positions/${encodeURIComponent(targetId)}`, {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify(posData),
       });
+      if (Array.isArray(data.positions)) {
+        try {
+          const org = JSON.parse(localStorage.getItem('tm_organization') || '{}');
+          org.positions = data.positions;
+          localStorage.setItem('tm_organization', JSON.stringify(org));
+        } catch {}
+      }
       return data.position;
-    } catch {
-      const org = await this.getOrganization();
-      org.positions = (org.positions || []).map((p) => (p.id === id ? { ...p, ...posData } : p));
-      localStorage.setItem('tm_organization', JSON.stringify(org));
-      return org.positions.find((p) => p.id === id);
+    } catch (err) {
+      if (isOfflineError(err)) {
+        const org = await this.getOrganization();
+        org.positions = (org.positions || []).map((p) =>
+          (p.id && p.id.toString() === targetId) || (p._id && p._id.toString() === targetId)
+            ? { ...p, ...posData }
+            : p
+        );
+        localStorage.setItem('tm_organization', JSON.stringify(org));
+        return org.positions.find(
+          (p) => (p.id && p.id.toString() === targetId) || (p._id && p._id.toString() === targetId)
+        );
+      }
+      throw err;
     }
   },
 
   // DELETE /api/organization/positions/:id
   async deletePosition(id) {
+    const targetId = id.toString().trim();
     try {
-      const data = await safeFetchJson(`${API_BASE_URL}/organization/positions/${id}`, {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/positions/${encodeURIComponent(targetId)}`, {
         method: 'DELETE',
         headers: getHeaders(),
       });
-      return data.positions;
-    } catch {
-      const org = await this.getOrganization();
-      org.positions = (org.positions || []).filter((p) => p.id !== id);
-      localStorage.setItem('tm_organization', JSON.stringify(org));
-      return org.positions;
+      const remaining = Array.isArray(data.positions) ? data.positions : [];
+      try {
+        const org = JSON.parse(localStorage.getItem('tm_organization') || '{}');
+        org.positions = remaining;
+        localStorage.setItem('tm_organization', JSON.stringify(org));
+      } catch {}
+      return remaining;
+    } catch (err) {
+      if (isOfflineError(err)) {
+        const org = await this.getOrganization();
+        org.positions = (org.positions || []).filter(
+          (p) => (p.id && p.id.toString() !== targetId) && (!p._id || p._id.toString() !== targetId)
+        );
+        localStorage.setItem('tm_organization', JSON.stringify(org));
+        return org.positions;
+      }
+      throw err;
     }
   },
 
@@ -1319,6 +1487,9 @@ export const api = {
         ];
       }
       localStorage.setItem('tm_organization', JSON.stringify(org));
+      if (Array.isArray(org.departments)) {
+        localStorage.setItem('tm_departments', JSON.stringify(org.departments));
+      }
       return org;
     }
   },

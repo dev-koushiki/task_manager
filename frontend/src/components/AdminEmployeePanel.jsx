@@ -12,6 +12,9 @@ import {
   ShieldIcon,
   GitBranchIcon,
   AlertTriangleIcon,
+  UserIcon,
+  BriefcaseIcon,
+  SearchIcon,
 } from './Icons';
 import { api } from '../services/api';
 import { emailService } from '../services/emailService';
@@ -55,6 +58,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
   const [lastGeneratedInvite, setLastGeneratedInvite] = useState(null);
   const [emailStatus, setEmailStatus] = useState(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [employeeSearch, setEmployeeSearch] = useState('');
 
   // Edit Employee Modal state
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -314,78 +318,155 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
     }
   };
 
+  const filteredEmployees = employees.filter((emp) => {
+    if (!employeeSearch.trim()) return true;
+    const q = employeeSearch.toLowerCase();
+    const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.toLowerCase();
+    const email = (emp.email || '').toLowerCase();
+    const dept = (emp.department || '').toLowerCase();
+    const pos = (emp.positionTitle || emp.role || '').toLowerCase();
+    const team = (emp.team || '').toLowerCase();
+    return fullName.includes(q) || email.includes(q) || dept.includes(q) || pos.includes(q) || team.includes(q);
+  });
+
   return (
     <div className="admin-employee-panel animate-fade-in">
       {/* Top Banner */}
       <div className="panel-header-card">
-        <div className="header-icon-badge">
-          <UsersIcon size={24} className="text-accent" />
+        <div className="panel-header-left">
+          <div className="header-icon-badge">
+            <UsersIcon size={24} />
+          </div>
+          <div>
+            <h2>Workforce Administration, Invitations & Access Control</h2>
+            <p className="section-desc">
+              Invite employees into {companyName || 'your company'}, assign custom job roles,
+              departments, and teams, and configure granular RBAC action permissions and scopes.
+            </p>
+          </div>
         </div>
-        <div>
-          <h2>Workforce Administration, Invitations & Access Control</h2>
-          <p className="section-desc">
-            Invite employees into {companyName || 'your company'}, assign custom job roles,
-            departments, and teams, and configure granular RBAC action permissions and scopes.
-          </p>
+        <div className="panel-header-right">
+          <div className="panel-stat-pill">
+            <span>Active Members:</span>
+            <strong>{employees.length}</strong>
+          </div>
+          <div className="panel-stat-pill">
+            <span>Pending Invites:</span>
+            <strong>{pendingInvites.length}</strong>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setIsEmailModalOpen(true)}
+            title="Configure EmailJS service credentials for automatic invitation delivery"
+          >
+            <MailIcon size={14} />
+            <span>Email Service: {isEmailConfigured ? 'Active ✓' : 'Setup Required'}</span>
+          </button>
         </div>
       </div>
 
-      {/* Main Grid: Invite Form on Left, Result / Instructions on Right */}
-      <div className="admin-grid-layout">
-        {/* Invite Form Card */}
-        <div className="form-card-wrapper">
-          <div className="form-card-header">
-            <h3>Generate Employee Invitation</h3>
+      {/* Employee Invite Card */}
+      <div className="employee-invite-card">
+        <div className="invite-card-header">
+          <div className="invite-card-title-group">
+            <div className="invite-header-badge">
+              <SparklesIcon size={22} />
+            </div>
+            <div>
+              <h3>Generate Employee Invitation</h3>
+              <p>Issue single-use onboarding invitations with configured role, department, and direct reporting lines.</p>
+            </div>
+          </div>
+          <div className="invite-header-pills">
             <span className="secure-badge">
               <LockIcon size={12} /> Secure Single-Use Token
             </span>
+            <span className="expiry-badge">
+              ⏳ 24h Expiry
+            </span>
+          </div>
+        </div>
+
+        {error && (
+          <div className="alert-box alert-danger">
+            <AlertTriangleIcon size={16} />
+            <span>{error}</span>
+          </div>
+        )}
+        {successMsg && (
+          <div className="alert-box alert-success">
+            <CheckIcon size={16} />
+            <span>{successMsg}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleInviteSubmit} className="admin-employee-form">
+          {/* Section 1: Employee Information */}
+          <div className="form-section-header">
+            <span className="section-num">1</span>
+            <span>Employee Details</span>
           </div>
 
-          {error && (
-            <div className="alert-box alert-danger" style={{ marginBottom: '14px' }}>
-              <AlertTriangleIcon size={16} />
-              <span>{error}</span>
-            </div>
-          )}
-          {successMsg && (
-            <div className="alert-box alert-success" style={{ marginBottom: '14px' }}>
-              <CheckIcon size={16} />
-              <span>{successMsg}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleInviteSubmit} className="admin-employee-form">
-            <div className="form-group">
-              <label>Employee Full Name *</label>
-              <input
-                type="text"
-                placeholder="e.g. Alex Morgan"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-                className="form-control"
-              />
+          <div className="form-grid-2">
+            <div className="form-field-group">
+              <label className="field-label">
+                <span>Employee Full Name <span className="required-star">*</span></span>
+              </label>
+              <div className="input-icon-wrapper">
+                <span className="field-leading-icon">
+                  <UserIcon size={16} />
+                </span>
+                <input
+                  type="text"
+                  placeholder="e.g. Alex Morgan"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                  className="modern-form-input"
+                />
+              </div>
             </div>
 
-            <div className="form-group">
-              <label>Official Email Address *</label>
-              <input
-                type="email"
-                placeholder="alex.morgan@company.com"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                required
-                className="form-control"
-              />
+            <div className="form-field-group">
+              <label className="field-label">
+                <span>Official Email Address <span className="required-star">*</span></span>
+              </label>
+              <div className="input-icon-wrapper">
+                <span className="field-leading-icon">
+                  <MailIcon size={16} />
+                </span>
+                <input
+                  type="email"
+                  placeholder="alex.morgan@company.com"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  required
+                  className="modern-form-input"
+                />
+              </div>
             </div>
+          </div>
 
-            <div className="form-row-2">
-              <div className="form-group">
-                <label>Department *</label>
+          {/* Section 2: Department & Placement */}
+          <div className="form-section-header">
+            <span className="section-num">2</span>
+            <span>Department & Team Placement</span>
+          </div>
+
+          <div className="form-grid-2">
+            <div className="form-field-group">
+              <label className="field-label">
+                <span>Department <span className="required-star">*</span></span>
+              </label>
+              <div className="input-icon-wrapper">
+                <span className="field-leading-icon">
+                  <BuildingIcon size={16} />
+                </span>
                 <select
                   value={formData.department}
                   onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  className="form-control"
+                  className="modern-form-select"
                 >
                   {departments.map((dept) => (
                     <option key={dept} value={dept}>
@@ -394,13 +475,20 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                   ))}
                 </select>
               </div>
+            </div>
 
-              <div className="form-group">
-                <label>Team / Squad</label>
+            <div className="form-field-group">
+              <label className="field-label">
+                <span>Team / Squad <span className="optional-tag">Optional</span></span>
+              </label>
+              <div className="input-icon-wrapper">
+                <span className="field-leading-icon">
+                  <UsersIcon size={16} />
+                </span>
                 <select
                   value={formData.team}
                   onChange={(e) => setFormData({ ...formData, team: e.target.value })}
-                  className="form-control"
+                  className="modern-form-select"
                 >
                   <option value="">-- No specific team --</option>
                   {teams.map((t) => (
@@ -411,48 +499,72 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                 </select>
               </div>
             </div>
+          </div>
 
-            {/* Custom Job Role / Position Selection */}
-            <div className="form-group">
-              <label>Assign Custom Job Role (Template)</label>
-              <select
-                value={formData.positionId}
-                onChange={(e) => handlePositionSelect(e.target.value)}
-                className="form-control"
-              >
-                <option value="">-- Standard Role (Select Below) --</option>
-                {positions.map((pos) => (
-                  <option key={pos.id} value={pos.id}>
-                    {pos.title} ({pos.department || 'General'})
-                  </option>
-                ))}
-              </select>
-              <small style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-                Selecting a custom job role automatically configures recommended permissions and
-                access scopes.
-              </small>
+          {/* Section 3: Role & Hierarchy Placement */}
+          <div className="form-section-header">
+            <span className="section-num">3</span>
+            <span>Role Tier & Reporting Structure</span>
+          </div>
+
+          <div className="form-grid-3">
+            <div className="form-field-group">
+              <label className="field-label">
+                <span>Job Role (Template) <span className="optional-tag">Optional</span></span>
+              </label>
+              <div className="input-icon-wrapper">
+                <span className="field-leading-icon">
+                  <BriefcaseIcon size={16} />
+                </span>
+                <select
+                  value={formData.positionId}
+                  onChange={(e) => handlePositionSelect(e.target.value)}
+                  className="modern-form-select"
+                >
+                  <option value="">-- Standard Role (Select Below) --</option>
+                  {positions.map((pos) => (
+                    <option key={pos.id} value={pos.id}>
+                      {pos.title} ({pos.department || 'General'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <span className="field-hint-text">Auto-configures recommended permissions & scopes</span>
             </div>
 
-            <div className="form-row-2">
-              <div className="form-group">
-                <label>System Role Tier</label>
+            <div className="form-field-group">
+              <label className="field-label">
+                <span>System Role Tier <span className="required-star">*</span></span>
+              </label>
+              <div className="input-icon-wrapper">
+                <span className="field-leading-icon">
+                  <ShieldIcon size={16} />
+                </span>
                 <select
                   value={formData.role}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  className="form-control"
+                  className="modern-form-select"
                 >
                   <option value="employee">Specialist / Contributor</option>
                   <option value="manager">Manager / Team Lead</option>
                   <option value="director">Project Director / Executive</option>
                 </select>
               </div>
+              <span className="field-hint-text">Governs baseline workspace authorization tier</span>
+            </div>
 
-              <div className="form-group">
-                <label>Reports To (Manager)</label>
+            <div className="form-field-group">
+              <label className="field-label">
+                <span>Reports To (Supervisor)</span>
+              </label>
+              <div className="input-icon-wrapper">
+                <span className="field-leading-icon">
+                  <GitBranchIcon size={16} />
+                </span>
                 <select
                   value={formData.reportsTo}
                   onChange={(e) => setFormData({ ...formData, reportsTo: e.target.value })}
-                  className="form-control"
+                  className="modern-form-select"
                 >
                   <option value="">-- Reports to Head of Office / CEO --</option>
                   {employees.map((emp) => {
@@ -466,168 +578,210 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                   })}
                 </select>
               </div>
+              <span className="field-hint-text">Builds organizational reporting and approval flow</span>
             </div>
+          </div>
 
-            {/* Security Notice */}
-            <div className="security-note-box" style={{ margin: '14px 0' }}>
-              <LockIcon size={16} className="security-icon" />
-              <span>
-                Employee sets their own secure password upon accepting invitation. The administrator
-                never sees or manages plaintext passwords.
-              </span>
+          {/* Security Notice */}
+          <div className="form-security-banner">
+            <div className="security-banner-icon">
+              <LockIcon size={18} />
             </div>
+            <div className="security-banner-text">
+              <strong>Self-Service Password Creation:</strong>
+              The employee sets their own secure password upon accepting the invitation. Administrators never see, manage, or store plaintext passwords.
+            </div>
+          </div>
 
-            <button
-              type="submit"
-              className="btn btn-primary btn-block glow-effect"
-              disabled={submitting}
-            >
-              {submitting ? 'Generating Invitation...' : 'Generate & Send Invitation'}
-            </button>
-          </form>
-
-          {/* Generated Invitation Details */}
-          {lastGeneratedInvite && (
-            <div className="invitation-result-box animate-scale-up" style={{ marginTop: '16px' }}>
-              <div className="result-header">
-                <div className="result-badge-success">
-                  <CheckIcon size={16} />
-                  <span>Single-Use Invitation Generated</span>
-                </div>
-                <span className="expiry-pill">⏳ Expires in 24 Hours</span>
-              </div>
-
-              {emailStatus && (
-                <div
-                  className={`email-delivery-banner ${
-                    emailStatus.sent
-                      ? 'delivery-success'
-                      : emailStatus.notConfigured
-                      ? 'delivery-warning'
-                      : 'delivery-error'
-                  }`}
-                  style={{ margin: '10px 0', padding: '10px', borderRadius: '6px' }}
-                >
-                  <span>{emailStatus.message}</span>
-                </div>
-              )}
-
-              <p className="result-desc">
-                Share this link with <strong>{lastGeneratedInvite.name}</strong> (
-                {lastGeneratedInvite.email}). They will set their password and activate their account.
-              </p>
-
-              <div className="invite-link-wrapper">
-                <input
-                  type="text"
-                  readOnly
-                  value={lastGeneratedInvite.url}
-                  className="invite-url-input form-control"
-                />
+          {/* Action Footer */}
+          <div className="form-actions-bar">
+            <div className="form-actions-left">
+              <span>⚡ Single-use invitation link expires automatically in 24 hours</span>
+            </div>
+            <div className="form-actions-right">
+              {(formData.name || formData.email) && (
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
-                  onClick={() => handleCopyLink(lastGeneratedInvite.url)}
+                  onClick={() => setFormData((prev) => ({ ...prev, name: '', email: '' }))}
+                  disabled={submitting}
                 >
-                  {copiedLink ? 'Copied! ✓' : 'Copy Link'}
+                  Clear Fields
                 </button>
-              </div>
-
-              <div className="test-acceptance-row" style={{ marginTop: '10px' }}>
-                <span className="test-hint">Test Onboarding Link:</span>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={() => onTestAcceptInvite(lastGeneratedInvite.token)}
-                >
-                  Accept & Activate Account →
-                </button>
-              </div>
+              )}
+              <button
+                type="submit"
+                className="btn-submit-invite glow-effect"
+                disabled={submitting}
+              >
+                <SparklesIcon size={16} />
+                <span>{submitting ? 'Generating Invitation...' : 'Generate & Send Invitation'}</span>
+              </button>
             </div>
-          )}
-        </div>
+          </div>
+        </form>
 
-        {/* Directory & Pending Invites Section */}
-        <div className="directory-column">
-          {/* Pending Invitations */}
-          {pendingInvites.length > 0 && (
-            <div className="pending-invites-card" style={{ marginBottom: '20px' }}>
-              <h4>
-                Pending Invitations <span className="count-tag">{pendingInvites.length}</span>
-              </h4>
-              <div className="invites-list">
-                {pendingInvites.map((inv) => {
-                  const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${inv.inviteToken}`;
-                  return (
-                    <div key={inv._id || inv.id} className="invite-item">
-                      <div className="invite-meta">
-                        <div className="avatar-circle-sm">
-                          {inv.name ? inv.name[0].toUpperCase() : 'E'}
-                        </div>
-                        <div>
-                          <strong>{inv.name}</strong>
-                          <div className="sub-meta">
-                            <span>{inv.email}</span> • <span>{inv.department}</span> •{' '}
-                            <span className="role-tag-sm">{inv.role}</span>
-                          </div>
-                        </div>
+        {/* Generated Invitation Details */}
+        {lastGeneratedInvite && (
+          <div className="invitation-result-box animate-scale-up" style={{ marginTop: '16px' }}>
+            <div className="result-header">
+              <div className="result-badge-success">
+                <CheckIcon size={16} />
+                <span>Single-Use Invitation Generated Successfully</span>
+              </div>
+              <span className="expiry-pill">⏳ Expires in 24 Hours</span>
+            </div>
+
+            {emailStatus && (
+              <div
+                className={`email-delivery-banner ${
+                  emailStatus.sent
+                    ? 'delivery-success'
+                    : emailStatus.notConfigured
+                    ? 'delivery-warning'
+                    : 'delivery-error'
+                }`}
+                style={{ margin: '10px 0', padding: '10px', borderRadius: '6px' }}
+              >
+                <span>{emailStatus.message}</span>
+              </div>
+            )}
+
+            <p className="result-desc">
+              Share this link with <strong>{lastGeneratedInvite.name}</strong> (
+              {lastGeneratedInvite.email}). They will set their password and activate their account.
+            </p>
+
+            <div className="invite-link-wrapper">
+              <input
+                type="text"
+                readOnly
+                value={lastGeneratedInvite.url}
+                className="invite-url-input form-control"
+              />
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => handleCopyLink(lastGeneratedInvite.url)}
+              >
+                {copiedLink ? 'Copied! ✓' : 'Copy Link'}
+              </button>
+            </div>
+
+            <div className="test-acceptance-row" style={{ marginTop: '10px' }}>
+              <span className="test-hint">Test Onboarding Link:</span>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => onTestAcceptInvite(lastGeneratedInvite.token)}
+              >
+                Accept & Activate Account →
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Directory & Pending Invites Section */}
+      <div className="directory-sections">
+        {/* Pending Invitations */}
+        {pendingInvites.length > 0 && (
+          <div className="pending-invites-card">
+            <h4>
+              Pending Invitations <span className="count-tag">{pendingInvites.length}</span>
+            </h4>
+            <div className="invites-list">
+              {pendingInvites.map((inv) => {
+                const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${inv.inviteToken}`;
+                return (
+                  <div key={inv._id || inv.id} className="invite-item">
+                    <div className="invite-meta">
+                      <div className="avatar-circle-sm">
+                        {inv.name ? inv.name[0].toUpperCase() : 'E'}
                       </div>
-                      <div className="invite-actions">
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-xs"
-                          onClick={() => handleCopyLink(inviteUrl)}
-                        >
-                          Copy Link
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-xs"
-                          onClick={() => onTestAcceptInvite(inv.inviteToken)}
-                        >
-                          Accept
-                        </button>
+                      <div>
+                        <strong>{inv.name}</strong>
+                        <div className="sub-meta">
+                          <span>{inv.email}</span> • <span>{inv.department}</span> •{' '}
+                          <span className="role-tag-sm">{inv.role}</span>
+                        </div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="invite-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-xs"
+                        onClick={() => handleCopyLink(inviteUrl)}
+                      >
+                        Copy Link
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-xs"
+                        onClick={() => onTestAcceptInvite(inv.inviteToken)}
+                      >
+                        Accept
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Active Members Table */}
-          <div className="active-members-card">
-            <div className="members-header">
+        {/* Active Members Table */}
+        <div className="active-members-card">
+          <div className="members-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <h4>
-                Active Employees in {companyName || 'Company'} <span className="count-tag">{employees.length}</span>
+                Active Employees in {companyName || 'Company'}{' '}
+                <span className="count-tag">{employees.length}</span>
               </h4>
-              <span className="security-subtext">Multi-Company Isolated & Backend Enforced</span>
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div className="table-search-wrapper">
+                <SearchIcon size={14} className="table-search-icon" />
+                <input
+                  type="text"
+                  placeholder="Search by name, role, department..."
+                  value={employeeSearch}
+                  onChange={(e) => setEmployeeSearch(e.target.value)}
+                  className="table-search-input"
+                />
+              </div>
+              <span className="security-subtext">Multi-Company Scoped</span>
+            </div>
+          </div>
 
-            {loading ? (
-              <div className="loading-state">
-                <div className="spinner"></div>
-                <p>Loading directory...</p>
-              </div>
-            ) : employees.length === 0 ? (
-              <div className="empty-state">
-                <p>No employees registered yet.</p>
-              </div>
-            ) : (
-              <div className="members-table-wrap">
-                <table className="members-table">
-                  <thead>
-                    <tr>
-                      <th>Employee</th>
-                      <th>Department & Team</th>
-                      <th>Job Role</th>
-                      <th>Reports To</th>
-                      <th>Status</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {employees.map((emp) => {
+          {loading ? (
+            <div className="loading-state">
+              <div className="spinner"></div>
+              <p>Loading directory...</p>
+            </div>
+          ) : employees.length === 0 ? (
+            <div className="empty-state">
+              <p>No employees registered yet.</p>
+            </div>
+          ) : filteredEmployees.length === 0 ? (
+            <div className="empty-state">
+              <p>No employees match &ldquo;{employeeSearch}&rdquo;.</p>
+            </div>
+          ) : (
+            <div className="members-table-wrap">
+              <table className="members-table">
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>Department & Team</th>
+                    <th>Job Role</th>
+                    <th>Reports To</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredEmployees.map((emp) => {
                       const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || 'Team Member';
                       const initials = emp.firstName ? emp.firstName[0].toUpperCase() : 'U';
                       const isSelfAdmin = emp.role === 'admin';
@@ -734,7 +888,6 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
             )}
           </div>
         </div>
-      </div>
 
       {/* Edit Employee & RBAC Permissions Modal */}
       {isEditModalOpen && editingEmployee && (

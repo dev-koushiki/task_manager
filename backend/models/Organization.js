@@ -284,23 +284,23 @@ const organizationSchema = new mongoose.Schema(
     },
     departments: {
       type: [String],
-      default: defaultDepartments,
+      default: () => [],
     },
     teams: {
       type: [teamSchema],
-      default: defaultTeams,
+      default: () => [],
     },
     levels: {
       type: [hierarchyLevelSchema],
-      default: defaultLevels,
+      default: () => [],
     },
     positions: {
       type: [positionSchema],
-      default: defaultPositions,
+      default: () => [],
     },
     relationshipTypes: {
       type: [relationshipTypeSchema],
-      default: defaultRelationshipTypes,
+      default: () => [],
     },
   },
   { timestamps: true }
