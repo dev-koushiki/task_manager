@@ -33,15 +33,20 @@ import { ThemeToggle } from './ThemeToggle';
 import { api } from '../services/api';
 
 export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptInvite }) => {
-  // Role-based view mode: defaults to user's authenticated role with interactive simulation switcher
-  const [activeRole, setActiveRole] = useState(() => user?.role || 'admin');
+  const userRole = user?.role || 'employee';
+  const perms = user?.permissions || {};
+  const isAdmin = userRole === 'admin';
+  const canViewSummary = isAdmin || Boolean(perms.canViewExecutiveSummary);
+  const canManageEmployees = isAdmin || Boolean(perms.canManageEmployees);
+  const canManageStructure = isAdmin || Boolean(perms.canManageStructure);
+  const canManageProjects = isAdmin || userRole === 'director' || Boolean(perms.canCreateProjects);
+  const canManageTeams = isAdmin || userRole === 'manager' || Boolean(perms.canAssignTasks || perms.canApproveTasks || perms.canApproveWork);
 
-  // Active navigation tab
+  // Active navigation tab governed strictly by user authorization
   const [activeTab, setActiveTab] = useState(() => {
-    const role = user?.role || 'admin';
-    if (role === 'admin') return 'summary';
-    if (role === 'director') return 'director_view';
-    if (role === 'manager') return 'manager_view';
+    if (isAdmin || canViewSummary) return 'summary';
+    if (canManageProjects) return 'director_view';
+    if (canManageTeams) return 'manager_view';
     return 'employee_view';
   });
 
@@ -73,15 +78,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
   const [isInspectModalOpen, setIsInspectModalOpen] = useState(false);
   const [inspectingProject, setInspectingProject] = useState(null);
-
-  // Sync tab when switching role view
-  const handleRoleChange = (newRole) => {
-    setActiveRole(newRole);
-    if (newRole === 'admin') setActiveTab('summary');
-    else if (newRole === 'director') setActiveTab('director_view');
-    else if (newRole === 'manager') setActiveTab('manager_view');
-    else setActiveTab('employee_view');
-  };
 
   useEffect(() => {
     let active = true;
@@ -237,132 +233,86 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           </div>
 
           <nav className="nav-tabs">
-            {/* Admin Tabs */}
-            {activeRole === 'admin' && (
-              <>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'summary' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('summary')}
-                >
-                  <TrendingUpIcon size={16} />
-                  <span>Executive Summary</span>
-                </button>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'hierarchy' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('hierarchy')}
-                >
-                  <GitBranchIcon size={16} />
-                  <span>Hierarchy & Reporting</span>
-                </button>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'all_tasks' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('all_tasks')}
-                >
-                  <LayersIcon size={16} />
-                  <span>All Office Tasks</span>
-                </button>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('admin')}
-                >
-                  <UsersIcon size={16} />
-                  <span>Admin & Employees</span>
-                </button>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'org_structure' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('org_structure')}
-                >
-                  <ShieldIcon size={16} />
-                  <span>Structure & Permissions</span>
-                </button>
-              </>
+            {canViewSummary && (
+              <button
+                type="button"
+                className={`nav-tab-btn ${activeTab === 'summary' ? 'active' : ''}`}
+                onClick={() => setActiveTab('summary')}
+              >
+                <TrendingUpIcon size={16} />
+                <span>Executive Summary</span>
+              </button>
             )}
 
-            {/* Project Director Tabs */}
-            {activeRole === 'director' && (
-              <>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'director_view' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('director_view')}
-                >
-                  <LayersIcon size={16} />
-                  <span>Project Milestones</span>
-                </button>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'all_tasks' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('all_tasks')}
-                >
-                  <TrendingUpIcon size={16} />
-                  <span>Subordinate Tasks</span>
-                </button>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'hierarchy' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('hierarchy')}
-                >
-                  <GitBranchIcon size={16} />
-                  <span>Office Hierarchy</span>
-                </button>
-              </>
+            {canManageProjects && (
+              <button
+                type="button"
+                className={`nav-tab-btn ${activeTab === 'director_view' ? 'active' : ''}`}
+                onClick={() => setActiveTab('director_view')}
+              >
+                <LayersIcon size={16} />
+                <span>Project Milestones</span>
+              </button>
             )}
 
-            {/* Manager Tabs */}
-            {activeRole === 'manager' && (
-              <>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'manager_view' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('manager_view')}
-                >
-                  <UsersIcon size={16} />
-                  <span>Team Work & Subtasks</span>
-                </button>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'all_tasks' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('all_tasks')}
-                >
-                  <LayersIcon size={16} />
-                  <span>Team Board</span>
-                </button>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'hierarchy' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('hierarchy')}
-                >
-                  <GitBranchIcon size={16} />
-                  <span>Reporting Tree</span>
-                </button>
-              </>
+            {canManageTeams && (
+              <button
+                type="button"
+                className={`nav-tab-btn ${activeTab === 'manager_view' ? 'active' : ''}`}
+                onClick={() => setActiveTab('manager_view')}
+              >
+                <UsersIcon size={16} />
+                <span>Team Work & Subtasks</span>
+              </button>
             )}
 
-            {/* Employee Tabs */}
-            {activeRole === 'employee' && (
-              <>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'employee_view' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('employee_view')}
-                >
-                  <CheckCircleIcon size={16} />
-                  <span>My Assigned Work</span>
-                </button>
-                <button
-                  type="button"
-                  className={`nav-tab-btn ${activeTab === 'hierarchy' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('hierarchy')}
-                >
-                  <GitBranchIcon size={16} />
-                  <span>My Reporting Line</span>
-                </button>
-              </>
+            <button
+              type="button"
+              className={`nav-tab-btn ${activeTab === 'employee_view' ? 'active' : ''}`}
+              onClick={() => setActiveTab('employee_view')}
+            >
+              <CheckCircleIcon size={16} />
+              <span>My Assigned Work</span>
+            </button>
+
+            <button
+              type="button"
+              className={`nav-tab-btn ${activeTab === 'all_tasks' ? 'active' : ''}`}
+              onClick={() => setActiveTab('all_tasks')}
+            >
+              <LayersIcon size={16} />
+              <span>Task Board</span>
+            </button>
+
+            <button
+              type="button"
+              className={`nav-tab-btn ${activeTab === 'hierarchy' ? 'active' : ''}`}
+              onClick={() => setActiveTab('hierarchy')}
+            >
+              <GitBranchIcon size={16} />
+              <span>Hierarchy & Reporting</span>
+            </button>
+
+            {canManageEmployees && (
+              <button
+                type="button"
+                className={`nav-tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
+                onClick={() => setActiveTab('admin')}
+              >
+                <UsersIcon size={16} />
+                <span>Employees & Invites</span>
+              </button>
+            )}
+
+            {canManageStructure && (
+              <button
+                type="button"
+                className={`nav-tab-btn ${activeTab === 'org_structure' ? 'active' : ''}`}
+                onClick={() => setActiveTab('org_structure')}
+              >
+                <ShieldIcon size={16} />
+                <span>Structure, Roles & RBAC</span>
+              </button>
             )}
 
             <button
@@ -376,23 +326,8 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           </nav>
         </div>
 
-        {/* Right side: Role Switcher Simulation Capsule & User */}
+        {/* Right side: Authenticated User Info, Theme Toggle, Log Out (No Role Switcher) */}
         <div className="header-right">
-          {/* Interactive Role Switcher for instant simulation */}
-          <div className="role-switcher-capsule" title="Switch view perspective according to organizational hierarchy">
-            <span className="role-switcher-label">View Perspective:</span>
-            <select
-              value={activeRole}
-              onChange={(e) => handleRoleChange(e.target.value)}
-              className="role-switcher-select"
-            >
-              <option value="admin">👑 Head of Office (Admin)</option>
-              <option value="director">📁 Project Director</option>
-              <option value="manager">👥 Manager / Team Lead</option>
-              <option value="employee">💼 Junior / Employee</option>
-            </select>
-          </div>
-
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
 
           <div className="user-profile-capsule">
@@ -406,8 +341,13 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                   <BuildingIcon size={12} /> {user?.companyName}
                 </span>
                 <span className="subtag-pill role-subtag">
-                  {activeRole.toUpperCase()}
+                  {user?.role?.toUpperCase()}
                 </span>
+                {user?.team && (
+                  <span className="subtag-pill team-subtag">
+                    {user.team}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -481,7 +421,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
         {/* 5. Organizational Hierarchy Tree */}
         {activeTab === 'hierarchy' && (
-          <OrganizationHierarchyView user={user} />
+          <OrganizationHierarchyView user={user} onHierarchyUpdated={refreshAllData} />
         )}
 
         {/* 6. Admin Panel (Employee invitations, custom departments & roles) */}

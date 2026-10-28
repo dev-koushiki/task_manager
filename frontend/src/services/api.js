@@ -841,17 +841,23 @@ export const api = {
   },
 
   // PATCH /api/admin/hierarchy/assign-supervisor
-  async assignSupervisor(employeeId, supervisorId) {
-    try {
-      const data = await safeFetchJson(`${API_BASE_URL}/admin/hierarchy/assign-supervisor`, {
-        method: 'PATCH',
-        headers: getHeaders(),
-        body: JSON.stringify({ employeeId, supervisorId }),
-      });
-      return data;
-    } catch {
-      return this.updateEmployee(employeeId, { reportsTo: supervisorId || null });
-    }
+  async assignSupervisor(employeeId, supervisorId, relationshipType = 'direct') {
+    const data = await safeFetchJson(`${API_BASE_URL}/admin/hierarchy/assign-supervisor`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify({ employeeId, supervisorId, relationshipType }),
+    });
+    return data;
+  },
+
+  // POST /api/admin/hierarchy/managers - Multiple managers with relationship types
+  async updateEmployeeManagers(employeeId, relationships) {
+    const data = await safeFetchJson(`${API_BASE_URL}/admin/hierarchy/managers`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ employeeId, relationships }),
+    });
+    return data;
   },
 
   // GET /api/admin/directors
@@ -1037,6 +1043,76 @@ export const api = {
       localStorage.setItem('tm_departments', JSON.stringify(org.departments));
       return org.departments;
     }
+  },
+
+  // ======================== TEAMS ========================
+  // GET /api/organization/teams
+  async getTeams() {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/teams`, {
+        headers: getHeaders(),
+      });
+      return Array.isArray(data) ? data : [];
+    } catch {
+      const org = await this.getOrganization();
+      return org?.teams || [];
+    }
+  },
+
+  // POST /api/organization/teams
+  async createTeam(teamData) {
+    const data = await safeFetchJson(`${API_BASE_URL}/organization/teams`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(teamData),
+    });
+    return data;
+  },
+
+  // PUT /api/organization/teams/:id
+  async updateTeam(id, teamData) {
+    const data = await safeFetchJson(`${API_BASE_URL}/organization/teams/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(teamData),
+    });
+    return data;
+  },
+
+  // DELETE /api/organization/teams/:id
+  async deleteTeam(id) {
+    const data = await safeFetchJson(`${API_BASE_URL}/organization/teams/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    return data;
+  },
+
+  // GET /api/organization/relationship-types
+  async getRelationshipTypes() {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/organization/relationship-types`, {
+        headers: getHeaders(),
+      });
+      return Array.isArray(data) ? data : [];
+    } catch {
+      const org = await this.getOrganization();
+      return org?.relationshipTypes || [
+        { id: 'direct', name: 'Direct Manager', description: 'Core line manager' },
+        { id: 'project', name: 'Project Manager', description: 'Project deliverable coordinator' },
+        { id: 'functional', name: 'Functional Manager', description: 'Chapter/discipline mentor' },
+      ];
+    }
+  },
+
+  // POST /api/organization/relationship-types
+  async addRelationshipType(relData) {
+    const data = await safeFetchJson(`${API_BASE_URL}/organization/relationship-types`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(relData),
+    });
+    return data;
   },
 
   // PUT /api/organization/levels

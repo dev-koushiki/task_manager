@@ -5,25 +5,33 @@ const Invitation = require("../models/Invitation");
 const Project = require("../models/Project");
 const Task = require("../models/Task");
 const authMiddleware = require("../middleware/auth");
+const { detectCircularReporting, requirePermission } = require("../middleware/rbac");
 
 const router = express.Router();
 
-// Middleware: Require Admin or Manager role
-const requireAdminOrManager = (req, res, next) => {
-  const role = req.user.role || "admin";
-  if (role !== "admin" && role !== "manager") {
-    return res.status(403).json({
-      message: "Access forbidden. Only authorized administrators or managers can perform this action.",
-    });
+// Middleware: Require Admin role or canManageEmployees permission
+const requireAdminOrEmployeeManager = (req, res, next) => {
+  const user = req.user;
+  if (user.role === "admin" || user.permissions?.canManageEmployees) {
+    return next();
   }
-  next();
+  return res.status(403).json({
+    message: "Access forbidden. Only authorized administrators or employee managers can perform this action.",
+  });
 };
 
 // GET /api/admin/summary - Executive Head of Office Summary View
-// Calculates high-level project KPIs without exposing micro-task details by default
+// Strict multi-company data isolation: filters exclusively by user's organizationId
 router.get("/summary", authMiddleware, async (req, res) => {
   try {
-    const projects = await Project.find()
+    const user = req.user;
+    if (user.role !== "admin" && !user.permissions?.canViewExecutiveSummary) {
+      return res.status(403).json({ message: "Access forbidden. You do not have permission to view executive summary." });
+    }
+
+    const orgId = user.organizationId;
+
+    const projects = await Project.find({ organizationId: orgId })
       .populate("directorId", "firstName lastName email designation department")
       .sort({ createdAt: -1 });
 
@@ -35,7 +43,7 @@ router.get("/summary", authMiddleware, async (req, res) => {
 
     const projectSummaries = await Promise.all(
       projects.map(async (p) => {
-        const tasks = await Task.find({ projectId: p._id });
+        const tasks = await Task.find({ projectId: p._id, organizationId: orgId });
         const totalTasks = tasks.length;
 
         let totalWeight = 0;
@@ -91,8 +99,7 @@ router.get("/summary", authMiddleware, async (req, res) => {
       })
     );
 
-    const averageProgress =
-      projects.length > 0 ? Math.round(totalProgressSum / projects.length) : 0;
+    const averageProgress = projects.length > 0 ? Math.round(totalProgressSum / projects.length) : 0;
 
     res.json({
       totalProjects: projects.length,
@@ -108,12 +115,14 @@ router.get("/summary", authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/admin/hierarchy - Organizational reporting hierarchy tree
+// GET /api/admin/hierarchy - Organizational reporting hierarchy tree (multi-company scoped)
 router.get("/hierarchy", authMiddleware, async (req, res) => {
   try {
-    const users = await User.find({ status: "active" })
-      .select("firstName lastName email role designation department reportsTo positionTitle hierarchyLevel permissions")
-      .populate("reportsTo", "firstName lastName role designation positionTitle hierarchyLevel");
+    const orgId = req.user.organizationId;
+    const users = await User.find({ organizationId: orgId, status: "active" })
+      .select("firstName lastName email role designation department team teamId reportsTo reportingRelationships positionTitle hierarchyLevel permissions accessScopes")
+      .populate("reportsTo", "firstName lastName role designation positionTitle hierarchyLevel")
+      .populate("reportingRelationships.managerId", "firstName lastName role designation positionTitle hierarchyLevel");
 
     res.json(users);
   } catch (error) {
@@ -121,47 +130,155 @@ router.get("/hierarchy", authMiddleware, async (req, res) => {
   }
 });
 
-// PATCH /api/admin/hierarchy/assign-supervisor - Dynamic supervisor assignment
-router.patch("/hierarchy/assign-supervisor", authMiddleware, requireAdminOrManager, async (req, res) => {
+// PATCH /api/admin/hierarchy/assign-supervisor - Legacy supervisor assignment with circular detection
+router.patch("/hierarchy/assign-supervisor", authMiddleware, requireAdminOrEmployeeManager, async (req, res) => {
   try {
-    const { employeeId, supervisorId } = req.body;
+    const { employeeId, supervisorId, relationshipType = "direct" } = req.body;
+    const orgId = req.user.organizationId;
 
     if (!employeeId) {
       return res.status(400).json({ message: "Employee ID is required." });
     }
 
-    if (employeeId === supervisorId) {
-      return res.status(400).json({ message: "An employee cannot report to themselves." });
-    }
-
-    const employee = await User.findById(employeeId);
+    const employee = await User.findOne({ _id: employeeId, organizationId: orgId });
     if (!employee) {
-      return res.status(404).json({ message: "Employee not found." });
+      return res.status(404).json({ message: "Employee not found in your organization." });
     }
 
-    employee.reportsTo = supervisorId || null;
+    if (supervisorId) {
+      const supervisor = await User.findOne({ _id: supervisorId, organizationId: orgId });
+      if (!supervisor) {
+        return res.status(404).json({ message: "Supervisor not found in your organization." });
+      }
+
+      // Circular reporting validation
+      const cycleCheck = await detectCircularReporting(employeeId, supervisorId, orgId);
+      if (cycleCheck.hasCycle) {
+        return res.status(400).json({ message: cycleCheck.message });
+      }
+
+      employee.reportsTo = supervisorId;
+      // Update reportingRelationships array
+      const existingRelIndex = (employee.reportingRelationships || []).findIndex(
+        (r) => r.managerId && r.managerId.toString() === supervisorId.toString()
+      );
+
+      if (existingRelIndex >= 0) {
+        employee.reportingRelationships[existingRelIndex].relationshipType = relationshipType;
+      } else {
+        // Replace or add direct manager
+        const nonDirect = (employee.reportingRelationships || []).filter(
+          (r) => r.relationshipType !== "direct"
+        );
+        employee.reportingRelationships = [
+          { managerId: supervisorId, relationshipType: "direct", assignedAt: new Date() },
+          ...nonDirect,
+        ];
+      }
+    } else {
+      employee.reportsTo = null;
+      employee.reportingRelationships = (employee.reportingRelationships || []).filter(
+        (r) => r.relationshipType !== "direct"
+      );
+    }
+
     await employee.save();
+
+    const populated = await User.findById(employee._id)
+      .populate("reportsTo", "firstName lastName role designation")
+      .populate("reportingRelationships.managerId", "firstName lastName role designation");
 
     res.json({
       message: "Reporting relationship updated successfully",
-      employee,
+      employee: populated,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// GET /api/admin/directors - Eligible Project Directors, Leaders, and Managers
+// POST /api/admin/hierarchy/managers - Multiple managers configuration with relationship types
+router.post("/hierarchy/managers", authMiddleware, requireAdminOrEmployeeManager, async (req, res) => {
+  try {
+    const { employeeId, relationships } = req.body;
+    const orgId = req.user.organizationId;
+
+    if (!employeeId) {
+      return res.status(400).json({ message: "Employee ID is required." });
+    }
+
+    if (!Array.isArray(relationships)) {
+      return res.status(400).json({ message: "Relationships must be an array of { managerId, relationshipType }." });
+    }
+
+    const employee = await User.findOne({ _id: employeeId, organizationId: orgId });
+    if (!employee) {
+      return res.status(404).json({ message: "Employee not found in your organization." });
+    }
+
+    // Verify all managers belong to the same organization and detect circular relationships
+    const managerIds = [];
+    const sanitizedRelationships = [];
+
+    for (const rel of relationships) {
+      const mgrId = rel.managerId || rel._id || rel.id;
+      if (!mgrId) continue;
+
+      const mgr = await User.findOne({ _id: mgrId, organizationId: orgId });
+      if (!mgr) {
+        return res.status(400).json({ message: `Manager ID ${mgrId} not found in this company.` });
+      }
+
+      managerIds.push(mgrId);
+      sanitizedRelationships.push({
+        managerId: mgr._id,
+        relationshipType: ["direct", "project", "functional"].includes(rel.relationshipType)
+          ? rel.relationshipType
+          : "direct",
+        assignedAt: rel.assignedAt || new Date(),
+      });
+    }
+
+    // Validate circular reporting dependencies
+    const cycleCheck = await detectCircularReporting(employeeId, managerIds, orgId);
+    if (cycleCheck.hasCycle) {
+      return res.status(400).json({ message: cycleCheck.message });
+    }
+
+    employee.reportingRelationships = sanitizedRelationships;
+
+    // Synchronize reportsTo with the first direct manager (or first manager in list)
+    const directRel = sanitizedRelationships.find((r) => r.relationshipType === "direct");
+    employee.reportsTo = directRel ? directRel.managerId : (sanitizedRelationships[0]?.managerId || null);
+
+    await employee.save();
+
+    const populated = await User.findById(employee._id)
+      .populate("reportsTo", "firstName lastName role designation")
+      .populate("reportingRelationships.managerId", "firstName lastName role designation positionTitle");
+
+    res.json({
+      message: "Reporting relationships updated successfully",
+      employee: populated,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/admin/directors - Eligible Project Directors and Leaders (company scoped)
 router.get("/directors", authMiddleware, async (req, res) => {
   try {
+    const orgId = req.user.organizationId;
     const eligible = await User.find({
+      organizationId: orgId,
       status: "active",
       $or: [
         { role: { $in: ["admin", "director", "manager"] } },
-        { hierarchyLevel: { $lte: 2 } },
+        { hierarchyLevel: { $lte: 3 } },
         { "permissions.canCreateProjects": true },
       ],
-    }).select("firstName lastName email role designation department positionTitle hierarchyLevel");
+    }).select("firstName lastName email role designation department team positionTitle hierarchyLevel");
 
     res.json(eligible);
   } catch (error) {
@@ -169,11 +286,21 @@ router.get("/directors", authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/admin/employees/invite
-// Generate a secure single-use invitation with 24-hour expiration
-router.post("/employees/invite", authMiddleware, requireAdminOrManager, async (req, res) => {
+// POST /api/admin/employees/invite - Generate single-use invitation scoped to company
+router.post("/employees/invite", authMiddleware, requireAdminOrEmployeeManager, async (req, res) => {
   try {
-    const { name, email, department, role, positionTitle, hierarchyLevel, permissions } = req.body;
+    const {
+      name,
+      email,
+      department,
+      team,
+      role,
+      positionTitle,
+      hierarchyLevel,
+      permissions,
+      accessScopes,
+      reportingRelationships,
+    } = req.body;
 
     if (!name || !email || !department || !role) {
       return res.status(400).json({
@@ -183,7 +310,7 @@ router.post("/employees/invite", authMiddleware, requireAdminOrManager, async (r
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Verify employee role (Never allow frontend to assign admin!)
+    // Prevent granting admin role via regular invitation
     if (role.toLowerCase() === "admin") {
       return res.status(400).json({
         message: "Cannot assign 'admin' role through employee invitation.",
@@ -198,11 +325,11 @@ router.post("/employees/invite", authMiddleware, requireAdminOrManager, async (r
       });
     }
 
-    // Generate cryptographically random 32-byte single-use token
+    const orgId = req.user.organizationId;
+
+    // Generate cryptographically random token
     const rawToken = crypto.randomBytes(32).toString("hex");
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-
-    // 24-hour expiration
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     // Revoke any previous pending invitations for this email
@@ -215,11 +342,20 @@ router.post("/employees/invite", authMiddleware, requireAdminOrManager, async (r
       name: name.trim(),
       email: normalizedEmail,
       department: department.trim(),
+      team: team ? team.trim() : "",
       role,
       positionTitle: positionTitle || `${department.trim()} ${role === "manager" ? "Manager" : "Specialist"}`,
       hierarchyLevel: Number(hierarchyLevel) || (role === "director" ? 2 : role === "manager" ? 3 : 4),
       permissions: permissions || {},
+      accessScopes: accessScopes || {
+        taskScope: role === "director" ? "project" : role === "manager" ? "team" : "own",
+        projectScope: "project",
+        employeeScope: role === "director" ? "department" : role === "manager" ? "team" : "own",
+        reportScope: "own",
+      },
+      reportingRelationships: Array.isArray(reportingRelationships) ? reportingRelationships : [],
       companyName: req.user.companyName || "Company",
+      organizationId: orgId,
       tokenHash,
       status: "pending",
       expiresAt,
@@ -233,6 +369,7 @@ router.post("/employees/invite", authMiddleware, requireAdminOrManager, async (r
         name: invitation.name,
         email: invitation.email,
         department: invitation.department,
+        team: invitation.team,
         role: invitation.role,
         status: invitation.status,
         expiresAt: invitation.expiresAt,
@@ -245,15 +382,18 @@ router.post("/employees/invite", authMiddleware, requireAdminOrManager, async (r
   }
 });
 
-// GET /api/admin/employees
+// GET /api/admin/employees - List employees and invitations (company-scoped)
 router.get("/employees", authMiddleware, async (req, res) => {
   try {
-    const users = await User.find()
+    const orgId = req.user.organizationId;
+
+    const users = await User.find({ organizationId: orgId })
       .select("-password")
       .populate("reportsTo", "firstName lastName role designation")
+      .populate("reportingRelationships.managerId", "firstName lastName role designation positionTitle")
       .sort({ createdAt: -1 });
 
-    const pendingInvites = await Invitation.find({ status: "pending" }).sort({ createdAt: -1 });
+    const pendingInvites = await Invitation.find({ organizationId: orgId, status: "pending" }).sort({ createdAt: -1 });
 
     res.json({
       employees: users,
@@ -264,51 +404,93 @@ router.get("/employees", authMiddleware, async (req, res) => {
   }
 });
 
-// PATCH /api/admin/employees/:id
-router.patch("/employees/:id", authMiddleware, requireAdminOrManager, async (req, res) => {
+// PATCH /api/admin/employees/:id - Update employee role, department, team, permissions, scopes & managers
+router.patch("/employees/:id", authMiddleware, requireAdminOrEmployeeManager, async (req, res) => {
   try {
-    const { role, department, designation, reportsTo, positionTitle, hierarchyLevel, permissions } = req.body;
-    const updateData = {};
-
-    if (role) {
-      updateData.role = role;
-    }
-    if (department) {
-      updateData.department = department.trim();
-    }
-    if (designation) {
-      updateData.designation = designation.trim();
-    }
-    if (positionTitle) {
-      updateData.positionTitle = positionTitle.trim();
-    }
-    if (hierarchyLevel !== undefined) {
-      updateData.hierarchyLevel = Number(hierarchyLevel);
-    }
-    if (permissions) {
-      updateData.permissions = permissions;
-    }
-    if (reportsTo !== undefined) {
-      updateData.reportsTo = reportsTo || null;
-    }
-
-    const employee = await User.findByIdAndUpdate(req.params.id, updateData, { new: true }).select("-password");
+    const orgId = req.user.organizationId;
+    const employee = await User.findOne({ _id: req.params.id, organizationId: orgId });
     if (!employee) {
-      return res.status(404).json({ message: "Employee not found." });
+      return res.status(404).json({ message: "Employee not found in your organization." });
     }
 
-    res.json({ message: "Employee updated successfully", employee });
+    const {
+      role,
+      department,
+      team,
+      teamId,
+      designation,
+      positionTitle,
+      hierarchyLevel,
+      permissions,
+      accessScopes,
+      reportingRelationships,
+      reportsTo,
+    } = req.body;
+
+    if (role) employee.role = role;
+    if (department) employee.department = department.trim();
+    if (team !== undefined) employee.team = team.trim();
+    if (teamId !== undefined) employee.teamId = teamId.trim();
+    if (designation) employee.designation = designation.trim();
+    if (positionTitle) employee.positionTitle = positionTitle.trim();
+    if (hierarchyLevel !== undefined) employee.hierarchyLevel = Number(hierarchyLevel);
+    if (permissions) employee.permissions = { ...employee.permissions, ...permissions };
+    if (accessScopes) employee.accessScopes = { ...employee.accessScopes, ...accessScopes };
+
+    // Update managers if provided
+    if (reportingRelationships !== undefined && Array.isArray(reportingRelationships)) {
+      const managerIds = reportingRelationships.map((r) => r.managerId || r._id || r.id).filter(Boolean);
+      const cycleCheck = await detectCircularReporting(employee._id, managerIds, orgId);
+      if (cycleCheck.hasCycle) {
+        return res.status(400).json({ message: cycleCheck.message });
+      }
+
+      employee.reportingRelationships = reportingRelationships.map((r) => ({
+        managerId: r.managerId || r._id || r.id,
+        relationshipType: ["direct", "project", "functional"].includes(r.relationshipType)
+          ? r.relationshipType
+          : "direct",
+        assignedAt: r.assignedAt || new Date(),
+      }));
+
+      const directRel = employee.reportingRelationships.find((r) => r.relationshipType === "direct");
+      employee.reportsTo = directRel ? directRel.managerId : (employee.reportingRelationships[0]?.managerId || null);
+    } else if (reportsTo !== undefined) {
+      if (reportsTo) {
+        const cycleCheck = await detectCircularReporting(employee._id, reportsTo, orgId);
+        if (cycleCheck.hasCycle) {
+          return res.status(400).json({ message: cycleCheck.message });
+        }
+        employee.reportsTo = reportsTo;
+        employee.reportingRelationships = [
+          { managerId: reportsTo, relationshipType: "direct", assignedAt: new Date() },
+        ];
+      } else {
+        employee.reportsTo = null;
+        employee.reportingRelationships = [];
+      }
+    }
+
+    await employee.save();
+
+    const updated = await User.findById(employee._id)
+      .select("-password")
+      .populate("reportsTo", "firstName lastName role designation")
+      .populate("reportingRelationships.managerId", "firstName lastName role designation positionTitle");
+
+    res.json({ message: "Employee updated successfully", employee: updated });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// POST /api/admin/employees/:id/disable
-router.post("/employees/:id/disable", authMiddleware, requireAdminOrManager, async (req, res) => {
+// POST /api/admin/employees/:id/disable - Toggle employee account status
+router.post("/employees/:id/disable", authMiddleware, requireAdminOrEmployeeManager, async (req, res) => {
   try {
-    const employee = await User.findById(req.params.id);
+    const orgId = req.user.organizationId;
+    const employee = await User.findOne({ _id: req.params.id, organizationId: orgId });
     if (!employee) {
-      return res.status(404).json({ message: "Employee not found." });
+      return res.status(404).json({ message: "Employee not found in your organization." });
     }
 
     if (employee.role === "admin" && employee._id.toString() === req.user.id) {

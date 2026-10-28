@@ -8,7 +8,27 @@ const Organization = require("../models/Organization");
 const authMiddleware = require("../middleware/auth");
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || "taskmanager_default_secret_key_2026";
+const JWT_SECRET = process.env.JWT_SECRET || "super_secret_jwt_key_task_manager_2026_secure";
+
+// Helper to ensure an existing user has a linked Organization workspace
+const ensureUserOrganization = async (user) => {
+  if (user.organizationId) return user.organizationId;
+
+  let org = await Organization.findOne({
+    $or: [{ adminId: user._id }, { name: user.companyName }],
+  });
+
+  if (!org) {
+    org = await Organization.create({
+      name: user.companyName || "Organization Workspace",
+      adminId: user._id,
+    });
+  }
+
+  user.organizationId = org._id;
+  await user.save();
+  return org._id;
+};
 
 // Initial Admin / Workspace Registration
 router.post("/register", async (req, res) => {
@@ -43,6 +63,32 @@ router.post("/register", async (req, res) => {
       name: companyName.trim(),
     });
 
+    const adminPermissions = {
+      canCreateTasks: true,
+      canAssignTasks: true,
+      canEditTasks: true,
+      canApproveTasks: true,
+      canDeleteTasks: true,
+      canViewTasks: true,
+      canManageEmployees: true,
+      canCreateProjects: true,
+      canEditProjects: true,
+      canDeleteProjects: true,
+      canViewProjects: true,
+      canManageStructure: true,
+      canViewExecutiveSummary: true,
+      canApproveWork: true,
+      canViewTeamTasks: true,
+      canViewAllTasks: true,
+    };
+
+    const adminScopes = {
+      taskScope: "company",
+      projectScope: "company",
+      employeeScope: "company",
+      reportScope: "company",
+    };
+
     const newUser = await User.create({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
@@ -54,20 +100,15 @@ router.post("/register", async (req, res) => {
       organizationId: newOrg._id,
       positionTitle: designation.trim() || "Chief Executive / Administrator",
       hierarchyLevel: 1,
-      permissions: {
-        canCreateProjects: true,
-        canAssignTasks: true,
-        canApproveWork: true,
-        canViewExecutiveSummary: true,
-        canViewTeamTasks: true,
-        canViewAllTasks: true,
-        canManageStructure: true,
-      },
+      permissions: adminPermissions,
+      accessScopes: adminScopes,
+      reportingRelationships: [],
+      reportsTo: null,
       status: "active",
       department: "Executive Leadership",
     });
 
-    // Update org adminId
+    // Link org adminId
     newOrg.adminId = newUser._id;
     await newOrg.save();
 
@@ -81,8 +122,10 @@ router.post("/register", async (req, res) => {
         designation: newUser.designation,
         role: newUser.role,
         department: newUser.department,
+        team: newUser.team,
         positionTitle: newUser.positionTitle,
         hierarchyLevel: newUser.hierarchyLevel,
+        organizationId: newOrg._id,
       },
       JWT_SECRET,
       { expiresIn: "7d" }
@@ -100,9 +143,12 @@ router.post("/register", async (req, res) => {
         designation: newUser.designation,
         role: newUser.role,
         department: newUser.department,
+        team: newUser.team,
         positionTitle: newUser.positionTitle,
         hierarchyLevel: newUser.hierarchyLevel,
         permissions: newUser.permissions,
+        accessScopes: newUser.accessScopes,
+        reportingRelationships: newUser.reportingRelationships,
         organizationId: newOrg._id,
       },
     });
@@ -115,7 +161,6 @@ router.post("/register", async (req, res) => {
 });
 
 // GET /api/auth/invite-details/:token
-// Preview public details of an invitation token before accepting
 router.get("/invite-details/:token", async (req, res) => {
   try {
     const rawToken = req.params.token;
@@ -137,6 +182,7 @@ router.get("/invite-details/:token", async (req, res) => {
       name: invitation.name,
       email: invitation.email,
       department: invitation.department,
+      team: invitation.team,
       role: invitation.role,
       companyName: invitation.companyName,
       expiresAt: invitation.expiresAt,
@@ -147,7 +193,6 @@ router.get("/invite-details/:token", async (req, res) => {
 });
 
 // POST /api/auth/register/accept-invite
-// Employee accepts invitation, sets their own password, and activates account
 router.post("/register/accept-invite", async (req, res) => {
   try {
     const { inviteToken, password, confirmPassword, mfaEnabled } = req.body;
@@ -164,7 +209,6 @@ router.post("/register/accept-invite", async (req, res) => {
       return res.status(400).json({ message: "Passwords do not match." });
     }
 
-    // Hash token to match database
     const tokenHash = crypto.createHash("sha256").update(inviteToken).digest("hex");
 
     const invitation = await Invitation.findOne({
@@ -184,23 +228,30 @@ router.post("/register/accept-invite", async (req, res) => {
     const firstName = nameParts[0] || invitation.name;
     const lastName = nameParts.slice(1).join(" ") || "Employee";
 
-    // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create Employee User — position, level, and permissions are taken from invitation
     const role = invitation.role || "employee";
     const level = invitation.hierarchyLevel || (role === "director" ? 2 : role === "manager" ? 3 : 4);
     const positionTitle = invitation.positionTitle || `${invitation.department} ${role === "manager" ? "Manager" : "Specialist"}`;
 
     const defaultPermissions = {
-      canCreateProjects: role === "director" || role === "admin",
+      canCreateTasks: role === "director" || role === "manager" || role === "admin",
       canAssignTasks: role === "director" || role === "manager" || role === "admin",
-      canApproveWork: role === "director" || role === "manager" || role === "admin",
+      canEditTasks: role === "director" || role === "manager" || role === "admin",
+      canApproveTasks: role === "director" || role === "manager" || role === "admin",
+      canDeleteTasks: role === "admin",
+      canViewTasks: true,
+      canManageEmployees: role === "admin",
+      canCreateProjects: role === "director" || role === "admin",
+      canEditProjects: role === "director" || role === "admin",
+      canDeleteProjects: role === "admin",
+      canViewProjects: true,
+      canManageStructure: role === "admin",
       canViewExecutiveSummary: role === "director" || role === "admin",
+      canApproveWork: role === "director" || role === "manager" || role === "admin",
       canViewTeamTasks: role === "director" || role === "manager" || role === "admin",
       canViewAllTasks: role === "admin",
-      canManageStructure: role === "admin",
     };
 
     const userPermissions = {
@@ -208,27 +259,43 @@ router.post("/register/accept-invite", async (req, res) => {
       ...(invitation.permissions || {}),
     };
 
+    const userScopes = invitation.accessScopes || {
+      taskScope: role === "director" ? "project" : role === "manager" ? "team" : "own",
+      projectScope: "project",
+      employeeScope: role === "director" ? "department" : role === "manager" ? "team" : "own",
+      reportScope: "own",
+    };
+
+    // Resolve organizationId
+    let orgId = invitation.organizationId;
+    if (!orgId) {
+      const org = await Organization.findOne({ name: invitation.companyName });
+      orgId = org ? org._id : null;
+    }
+
     const newUser = await User.create({
       firstName,
       lastName,
       email: invitation.email,
       password: hashedPassword,
       companyName: invitation.companyName,
+      organizationId: orgId,
       designation: positionTitle,
       department: invitation.department,
+      team: invitation.team || "",
       role,
       positionTitle,
       hierarchyLevel: level,
       permissions: userPermissions,
+      accessScopes: userScopes,
+      reportingRelationships: Array.isArray(invitation.reportingRelationships) ? invitation.reportingRelationships : [],
       status: "active",
       mfaEnabled: Boolean(mfaEnabled),
     });
 
-    // Mark invitation as accepted
     invitation.status = "accepted";
     await invitation.save();
 
-    // Create session token
     const token = jwt.sign(
       {
         id: newUser._id,
@@ -239,8 +306,10 @@ router.post("/register/accept-invite", async (req, res) => {
         designation: newUser.designation,
         role: newUser.role,
         department: newUser.department,
+        team: newUser.team,
         positionTitle: newUser.positionTitle,
         hierarchyLevel: newUser.hierarchyLevel,
+        organizationId: newUser.organizationId,
       },
       JWT_SECRET,
       { expiresIn: "7d" }
@@ -258,9 +327,13 @@ router.post("/register/accept-invite", async (req, res) => {
         designation: newUser.designation,
         role: newUser.role,
         department: newUser.department,
+        team: newUser.team,
         positionTitle: newUser.positionTitle,
         hierarchyLevel: newUser.hierarchyLevel,
         permissions: newUser.permissions,
+        accessScopes: newUser.accessScopes,
+        reportingRelationships: newUser.reportingRelationships,
+        organizationId: newUser.organizationId,
         mfaEnabled: newUser.mfaEnabled,
       },
     });
@@ -288,7 +361,6 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // Check account status
     if (user.status === "disabled") {
       return res.status(403).json({
         message: "This account has been disabled by the administrator. Please contact your workspace admin.",
@@ -302,7 +374,6 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // Check if MFA is required
     if (user.mfaEnabled) {
       return res.status(200).json({
         requireMfa: true,
@@ -311,24 +382,44 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    // Ensure user has linked organizationId
+    const organizationId = await ensureUserOrganization(user);
+
     const role = user.role || "employee";
     const level = user.hierarchyLevel || (role === "admin" ? 1 : role === "director" ? 2 : role === "manager" ? 3 : 4);
     const positionTitle = user.positionTitle || user.designation;
 
-    const defaultPermissions = {
-      canCreateProjects: role === "director" || role === "admin",
-      canAssignTasks: role === "director" || role === "manager" || role === "admin",
-      canApproveWork: role === "director" || role === "manager" || role === "admin",
-      canViewExecutiveSummary: role === "director" || role === "admin",
-      canViewTeamTasks: role === "director" || role === "manager" || role === "admin",
-      canViewAllTasks: role === "admin",
-      canManageStructure: role === "admin",
-    };
+    let permissions = user.permissions ? (user.permissions.toObject ? user.permissions.toObject() : user.permissions) : {};
+    if (role === "admin") {
+      permissions = {
+        canCreateTasks: true,
+        canAssignTasks: true,
+        canEditTasks: true,
+        canApproveTasks: true,
+        canDeleteTasks: true,
+        canViewTasks: true,
+        canManageEmployees: true,
+        canCreateProjects: true,
+        canEditProjects: true,
+        canDeleteProjects: true,
+        canViewProjects: true,
+        canManageStructure: true,
+        canViewExecutiveSummary: true,
+        canApproveWork: true,
+        canViewTeamTasks: true,
+        canViewAllTasks: true,
+      };
+    }
 
-    const permissions = {
-      ...defaultPermissions,
-      ...(user.permissions ? (user.permissions.toObject ? user.permissions.toObject() : user.permissions) : {}),
-    };
+    let accessScopes = user.accessScopes ? (user.accessScopes.toObject ? user.accessScopes.toObject() : user.accessScopes) : {};
+    if (role === "admin") {
+      accessScopes = {
+        taskScope: "company",
+        projectScope: "company",
+        employeeScope: "company",
+        reportScope: "company",
+      };
+    }
 
     const token = jwt.sign(
       {
@@ -340,8 +431,10 @@ router.post("/login", async (req, res) => {
         designation: user.designation,
         role,
         department: user.department || "General",
+        team: user.team || "",
         positionTitle,
         hierarchyLevel: level,
+        organizationId,
       },
       JWT_SECRET,
       { expiresIn: "7d" }
@@ -359,10 +452,14 @@ router.post("/login", async (req, res) => {
         designation: user.designation,
         role,
         department: user.department || "General",
+        team: user.team || "",
         positionTitle,
         hierarchyLevel: level,
         permissions,
-        organizationId: user.organizationId,
+        accessScopes,
+        reportingRelationships: user.reportingRelationships || [],
+        reportsTo: user.reportsTo,
+        organizationId,
         mfaEnabled: user.mfaEnabled,
       },
     });
@@ -387,10 +484,11 @@ router.post("/mfa/verify", async (req, res) => {
       return res.status(404).json({ message: "User not found." });
     }
 
-    // Verify code: accept any 6-digit code or default "123456" for authentication
     if (!/^\d{6}$/.test(code)) {
       return res.status(400).json({ message: "Verification code must be exactly 6 digits." });
     }
+
+    const organizationId = await ensureUserOrganization(user);
 
     const token = jwt.sign(
       {
@@ -402,6 +500,7 @@ router.post("/mfa/verify", async (req, res) => {
         designation: user.designation,
         role: user.role || "employee",
         department: user.department || "General",
+        organizationId,
       },
       JWT_SECRET,
       { expiresIn: "7d" }
@@ -419,6 +518,10 @@ router.post("/mfa/verify", async (req, res) => {
         designation: user.designation,
         role: user.role || "employee",
         department: user.department || "General",
+        team: user.team || "",
+        permissions: user.permissions,
+        accessScopes: user.accessScopes,
+        organizationId,
       },
     });
   } catch (error) {
@@ -431,10 +534,14 @@ router.post("/logout", authMiddleware, (req, res) => {
   res.json({ message: "Logged out successfully. Session invalidated." });
 });
 
-// Current user profile
+// GET /api/auth/me - Current user profile
 router.get("/me", authMiddleware, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("-password");
+    const user = await User.findById(req.user.id)
+      .select("-password")
+      .populate("reportsTo", "firstName lastName role designation")
+      .populate("reportingRelationships.managerId", "firstName lastName role designation positionTitle");
+
     if (!user) {
       return res.status(404).json({ message: "User not found." });
     }

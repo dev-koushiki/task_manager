@@ -4213,3 +4213,337 @@
   font-size: 11px;
   color: var(--text-muted);
 }
+
+/* ==========================================================================
+   Dynamic Hierarchy, Multi-Manager & RBAC Enhancements
+   ========================================================================== */
+
+.hierarchy-filter-bar {
+  display: flex;
+  gap: 12px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.hierarchy-level-wrapper {
+  margin-bottom: 24px;
+}
+
+.reporting-relationships-block {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rel-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.rel-title {
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.rel-count-badge {
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  padding: 2px 7px;
+  border-radius: 12px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.no-managers-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.rel-pill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rel-pill-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.rel-type-pill {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+
+.badge-rel-direct {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.badge-rel-project {
+  background: rgba(168, 85, 247, 0.15);
+  color: #9333ea;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.badge-rel-functional {
+  background: rgba(20, 184, 166, 0.15);
+  color: #0d9488;
+  border: 1px solid rgba(20, 184, 166, 0.3);
+}
+
+.badge-rel-default {
+  background: rgba(107, 114, 128, 0.15);
+  color: #4b5563;
+  border: 1px solid rgba(107, 114, 128, 0.3);
+}
+
+.rel-mgr-name {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.hierarchy-tags-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.tag-dept, .tag-team {
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-card-subtle);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+/* Modal styles for manager draft */
+.manager-draft-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.manager-draft-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.mgr-info {
+  flex: 1;
+}
+
+.mgr-rel-select {
+  width: 170px;
+}
+
+.add-manager-form-card {
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  padding: 14px;
+  border-radius: 8px;
+}
+
+.add-mgr-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+@media (max-width: 640px) {
+  .add-mgr-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Scope Pills in Position Cards */
+.scopes-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.scope-pill {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.scope-pill strong {
+  color: var(--primary);
+}
+
+.perm-group-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--primary);
+  letter-spacing: 0.5px;
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+/* Teams Grid & Cards */
+.teams-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.team-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.team-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--primary);
+}
+
+.team-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.team-card-header h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.team-dept-pill {
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+.team-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.team-meta-row {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+  font-size: 12px;
+}
+
+.meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.meta-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.meta-val {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+/* Relationship Types Grid */
+.relationship-types-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.relationship-type-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  padding: 16px;
+  border-radius: var(--radius-md);
+}
+
+.rel-type-icon {
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.rel-type-body h4 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.rel-type-body p {
+  margin: 0 0 6px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.rel-id-badge {
+  font-size: 10px;
+  font-family: monospace;
+  background: var(--bg-card-subtle);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text-muted);
+}

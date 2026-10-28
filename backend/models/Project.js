@@ -17,6 +17,22 @@ const projectSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Organization",
+      required: [true, "Organization ID is required"],
+      index: true,
+    },
+    department: {
+      type: String,
+      default: "General",
+      trim: true,
+    },
+    team: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     directorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

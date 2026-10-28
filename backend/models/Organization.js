@@ -14,13 +14,29 @@ const defaultPositions = [
     level: 1,
     department: "Executive Leadership",
     permissions: {
-      canCreateProjects: true,
+      canCreateTasks: true,
       canAssignTasks: true,
-      canApproveWork: true,
+      canEditTasks: true,
+      canApproveTasks: true,
+      canDeleteTasks: true,
+      canViewTasks: true,
+      canManageEmployees: true,
+      canCreateProjects: true,
+      canEditProjects: true,
+      canDeleteProjects: true,
+      canViewProjects: true,
+      canManageStructure: true,
       canViewExecutiveSummary: true,
+      // Legacy compatibility
+      canApproveWork: true,
       canViewTeamTasks: true,
       canViewAllTasks: true,
-      canManageStructure: true,
+    },
+    accessScopes: {
+      taskScope: "company",
+      projectScope: "company",
+      employeeScope: "company",
+      reportScope: "company",
     },
   },
   {
@@ -29,13 +45,29 @@ const defaultPositions = [
     level: 2,
     department: "Project Management Office",
     permissions: {
-      canCreateProjects: true,
+      canCreateTasks: true,
       canAssignTasks: true,
-      canApproveWork: true,
+      canEditTasks: true,
+      canApproveTasks: true,
+      canDeleteTasks: false,
+      canViewTasks: true,
+      canManageEmployees: false,
+      canCreateProjects: true,
+      canEditProjects: true,
+      canDeleteProjects: false,
+      canViewProjects: true,
+      canManageStructure: false,
       canViewExecutiveSummary: true,
+      // Legacy compatibility
+      canApproveWork: true,
       canViewTeamTasks: true,
       canViewAllTasks: false,
-      canManageStructure: false,
+    },
+    accessScopes: {
+      taskScope: "project",
+      projectScope: "project",
+      employeeScope: "department",
+      reportScope: "department",
     },
   },
   {
@@ -44,13 +76,29 @@ const defaultPositions = [
     level: 3,
     department: "Engineering & Technology",
     permissions: {
-      canCreateProjects: false,
+      canCreateTasks: true,
       canAssignTasks: true,
-      canApproveWork: true,
+      canEditTasks: true,
+      canApproveTasks: true,
+      canDeleteTasks: false,
+      canViewTasks: true,
+      canManageEmployees: false,
+      canCreateProjects: false,
+      canEditProjects: false,
+      canDeleteProjects: false,
+      canViewProjects: true,
+      canManageStructure: false,
       canViewExecutiveSummary: false,
+      // Legacy compatibility
+      canApproveWork: true,
       canViewTeamTasks: true,
       canViewAllTasks: false,
-      canManageStructure: false,
+    },
+    accessScopes: {
+      taskScope: "team",
+      projectScope: "project",
+      employeeScope: "team",
+      reportScope: "team",
     },
   },
   {
@@ -59,13 +107,29 @@ const defaultPositions = [
     level: 4,
     department: "Engineering & Technology",
     permissions: {
-      canCreateProjects: false,
+      canCreateTasks: false,
       canAssignTasks: false,
-      canApproveWork: false,
+      canEditTasks: false,
+      canApproveTasks: false,
+      canDeleteTasks: false,
+      canViewTasks: true,
+      canManageEmployees: false,
+      canCreateProjects: false,
+      canEditProjects: false,
+      canDeleteProjects: false,
+      canViewProjects: true,
+      canManageStructure: false,
       canViewExecutiveSummary: false,
+      // Legacy compatibility
+      canApproveWork: false,
       canViewTeamTasks: false,
       canViewAllTasks: false,
-      canManageStructure: false,
+    },
+    accessScopes: {
+      taskScope: "own",
+      projectScope: "project",
+      employeeScope: "own",
+      reportScope: "own",
     },
   },
 ];
@@ -77,7 +141,94 @@ const defaultDepartments = [
   "Product & Design",
   "Operations & Quality",
   "Human Resources & Finance",
+  "Marketing & Sales",
 ];
+
+const defaultTeams = [
+  {
+    id: "team_1",
+    name: "Core Platform Squad",
+    department: "Engineering & Technology",
+    description: "Backend architecture, APIs, and infrastructure maintenance",
+    leadName: "Platform Lead",
+    memberIds: [],
+  },
+  {
+    id: "team_2",
+    name: "Product Design Squad",
+    department: "Product & Design",
+    description: "Design systems, prototyping, and user journeys",
+    leadName: "UI/UX Lead",
+    memberIds: [],
+  },
+];
+
+const defaultRelationshipTypes = [
+  {
+    id: "direct",
+    name: "Direct Manager",
+    description: "Line manager responsible for core evaluations, performance, and general oversight",
+  },
+  {
+    id: "project",
+    name: "Project Manager",
+    description: "Manager coordinating specific projects, deliverables, milestones, and task review",
+  },
+  {
+    id: "functional",
+    name: "Functional Manager",
+    description: "Discipline or chapter lead guiding technical standards, quality, and mentorship",
+  },
+];
+
+const permissionSchema = new mongoose.Schema(
+  {
+    canCreateTasks: { type: Boolean, default: false },
+    canAssignTasks: { type: Boolean, default: false },
+    canEditTasks: { type: Boolean, default: false },
+    canApproveTasks: { type: Boolean, default: false },
+    canDeleteTasks: { type: Boolean, default: false },
+    canViewTasks: { type: Boolean, default: true },
+    canManageEmployees: { type: Boolean, default: false },
+    canCreateProjects: { type: Boolean, default: false },
+    canEditProjects: { type: Boolean, default: false },
+    canDeleteProjects: { type: Boolean, default: false },
+    canViewProjects: { type: Boolean, default: true },
+    canManageStructure: { type: Boolean, default: false },
+    canViewExecutiveSummary: { type: Boolean, default: false },
+    // Legacy compatibility aliases
+    canApproveWork: { type: Boolean, default: false },
+    canViewTeamTasks: { type: Boolean, default: false },
+    canViewAllTasks: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+const scopeSchema = new mongoose.Schema(
+  {
+    taskScope: {
+      type: String,
+      enum: ["company", "department", "team", "project", "own"],
+      default: "own",
+    },
+    projectScope: {
+      type: String,
+      enum: ["company", "department", "team", "project", "own"],
+      default: "project",
+    },
+    employeeScope: {
+      type: String,
+      enum: ["company", "department", "team", "own"],
+      default: "own",
+    },
+    reportScope: {
+      type: String,
+      enum: ["company", "department", "team", "own"],
+      default: "own",
+    },
+  },
+  { _id: false }
+);
 
 const positionSchema = new mongoose.Schema({
   id: { type: String, required: true },
@@ -85,18 +236,33 @@ const positionSchema = new mongoose.Schema({
   level: { type: Number, required: true, default: 4 },
   department: { type: String, default: "General", trim: true },
   permissions: {
-    canCreateProjects: { type: Boolean, default: false },
-    canAssignTasks: { type: Boolean, default: false },
-    canApproveWork: { type: Boolean, default: false },
-    canViewExecutiveSummary: { type: Boolean, default: false },
-    canViewTeamTasks: { type: Boolean, default: false },
-    canViewAllTasks: { type: Boolean, default: false },
-    canManageStructure: { type: Boolean, default: false },
+    type: permissionSchema,
+    default: () => ({}),
+  },
+  accessScopes: {
+    type: scopeSchema,
+    default: () => ({}),
   },
 });
 
 const hierarchyLevelSchema = new mongoose.Schema({
   level: { type: Number, required: true },
+  name: { type: String, required: true, trim: true },
+  description: { type: String, default: "", trim: true },
+});
+
+const teamSchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  name: { type: String, required: true, trim: true },
+  department: { type: String, default: "General", trim: true },
+  description: { type: String, default: "", trim: true },
+  leadId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  leadName: { type: String, default: "" },
+  memberIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+});
+
+const relationshipTypeSchema = new mongoose.Schema({
+  id: { type: String, required: true },
   name: { type: String, required: true, trim: true },
   description: { type: String, default: "", trim: true },
 });
@@ -120,6 +286,10 @@ const organizationSchema = new mongoose.Schema(
       type: [String],
       default: defaultDepartments,
     },
+    teams: {
+      type: [teamSchema],
+      default: defaultTeams,
+    },
     levels: {
       type: [hierarchyLevelSchema],
       default: defaultLevels,
@@ -127,6 +297,10 @@ const organizationSchema = new mongoose.Schema(
     positions: {
       type: [positionSchema],
       default: defaultPositions,
+    },
+    relationshipTypes: {
+      type: [relationshipTypeSchema],
+      default: defaultRelationshipTypes,
     },
   },
   { timestamps: true }

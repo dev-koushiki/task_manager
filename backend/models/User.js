@@ -1,5 +1,74 @@
 const mongoose = require("mongoose");
 
+const reportingRelationshipSchema = new mongoose.Schema(
+  {
+    managerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    relationshipType: {
+      type: String,
+      enum: ["direct", "project", "functional"],
+      default: "direct",
+    },
+    assignedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: true }
+);
+
+const permissionsSchema = new mongoose.Schema(
+  {
+    canCreateTasks: { type: Boolean, default: false },
+    canAssignTasks: { type: Boolean, default: false },
+    canEditTasks: { type: Boolean, default: false },
+    canApproveTasks: { type: Boolean, default: false },
+    canDeleteTasks: { type: Boolean, default: false },
+    canViewTasks: { type: Boolean, default: true },
+    canManageEmployees: { type: Boolean, default: false },
+    canCreateProjects: { type: Boolean, default: false },
+    canEditProjects: { type: Boolean, default: false },
+    canDeleteProjects: { type: Boolean, default: false },
+    canViewProjects: { type: Boolean, default: true },
+    canManageStructure: { type: Boolean, default: false },
+    canViewExecutiveSummary: { type: Boolean, default: false },
+    // Legacy compatibility aliases
+    canApproveWork: { type: Boolean, default: false },
+    canViewTeamTasks: { type: Boolean, default: false },
+    canViewAllTasks: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+const accessScopesSchema = new mongoose.Schema(
+  {
+    taskScope: {
+      type: String,
+      enum: ["company", "department", "team", "project", "own"],
+      default: "own",
+    },
+    projectScope: {
+      type: String,
+      enum: ["company", "department", "team", "project", "own"],
+      default: "project",
+    },
+    employeeScope: {
+      type: String,
+      enum: ["company", "department", "team", "own"],
+      default: "own",
+    },
+    reportScope: {
+      type: String,
+      enum: ["company", "department", "team", "own"],
+      default: "own",
+    },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     firstName: {
@@ -30,6 +99,12 @@ const userSchema = new mongoose.Schema(
       required: [true, "Company name is required"],
       trim: true,
     },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Organization",
+      default: null,
+      index: true,
+    },
     designation: {
       type: String,
       required: [true, "Designation is required"],
@@ -40,15 +115,20 @@ const userSchema = new mongoose.Schema(
       default: "General",
       trim: true,
     },
+    team: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    teamId: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     role: {
       type: String,
-      enum: ["admin", "director", "manager", "employee"],
-      default: "admin",
-    },
-    organizationId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Organization",
-      default: null,
+      default: "employee",
+      trim: true,
     },
     positionTitle: {
       type: String,
@@ -57,17 +137,22 @@ const userSchema = new mongoose.Schema(
     },
     hierarchyLevel: {
       type: Number,
-      default: 1,
+      default: 4,
     },
     permissions: {
-      canCreateProjects: { type: Boolean, default: false },
-      canAssignTasks: { type: Boolean, default: false },
-      canApproveWork: { type: Boolean, default: false },
-      canViewExecutiveSummary: { type: Boolean, default: false },
-      canViewTeamTasks: { type: Boolean, default: false },
-      canViewAllTasks: { type: Boolean, default: false },
-      canManageStructure: { type: Boolean, default: false },
+      type: permissionsSchema,
+      default: () => ({}),
     },
+    accessScopes: {
+      type: accessScopesSchema,
+      default: () => ({}),
+    },
+    // Multiple managers with relationship types
+    reportingRelationships: {
+      type: [reportingRelationshipSchema],
+      default: [],
+    },
+    // Kept for backward compatibility, automatically synced with primary/first manager
     reportsTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -85,5 +170,15 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Pre-save hook to ensure reportsTo is kept in sync with the primary direct manager
+userSchema.pre("save", function () {
+  if (Array.isArray(this.reportingRelationships) && this.reportingRelationships.length > 0) {
+    const directRel = this.reportingRelationships.find((r) => r.relationshipType === "direct");
+    this.reportsTo = directRel ? directRel.managerId : this.reportingRelationships[0].managerId;
+  } else if (!this.reportsTo) {
+    this.reportsTo = null;
+  }
+});
 
 module.exports = mongoose.model("User", userSchema);

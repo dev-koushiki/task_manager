@@ -11,13 +11,15 @@ import {
   LayersIcon,
   BuildingIcon,
   SparklesIcon,
+  UsersIcon,
+  BriefcaseIcon,
 } from './Icons';
 import { api } from '../services/api';
 
 export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdated }) => {
   const [org, setOrg] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeSubTab, setActiveSubTab] = useState('matrix'); // 'matrix' | 'levels' | 'departments' | 'tree'
+  const [activeSubTab, setActiveSubTab] = useState('matrix'); // 'matrix' | 'levels' | 'departments' | 'teams' | 'relationships' | 'tree'
   const [notice, setNotice] = useState('');
   const [errorNotice, setErrorNotice] = useState('');
 
@@ -29,41 +31,69 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
     level: 4,
     department: 'General',
     permissions: {
-      canCreateProjects: false,
+      canCreateTasks: false,
       canAssignTasks: false,
-      canApproveWork: false,
+      canEditTasks: false,
+      canApproveTasks: false,
+      canDeleteTasks: false,
+      canViewTasks: true,
+      canManageEmployees: false,
+      canCreateProjects: false,
+      canEditProjects: false,
+      canDeleteProjects: false,
+      canViewProjects: true,
+      canManageStructure: false,
       canViewExecutiveSummary: false,
+      canApproveWork: false,
       canViewTeamTasks: false,
       canViewAllTasks: false,
-      canManageStructure: false,
+    },
+    accessScopes: {
+      taskScope: 'own',
+      projectScope: 'project',
+      employeeScope: 'own',
+      reportScope: 'own',
     },
   });
 
   // Department State
   const [newDeptInput, setNewDeptInput] = useState('');
 
+  // Team Modal State
+  const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
+  const [editingTeam, setEditingTeam] = useState(null);
+  const [teamForm, setTeamForm] = useState({
+    name: '',
+    department: 'General',
+    description: '',
+    leadId: '',
+    memberIds: [],
+  });
+
   // Levels State
   const [levelsDraft, setLevelsDraft] = useState([]);
 
-  // Load Org Data
-  useEffect(() => {
-    let active = true;
-    api.getOrganization()
-      .then((data) => {
-        if (active && data) {
-          setOrg(data);
-          setLevelsDraft(data.levels || []);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load organization structure:', err);
-        if (active) setLoading(false);
-      });
+  // Relationship Types State
+  const [newRelName, setNewRelName] = useState('');
+  const [newRelDesc, setNewRelDesc] = useState('');
 
-    return () => {
-      active = false;
-    };
+  // Load Org Data
+  const loadOrgData = async () => {
+    try {
+      const data = await api.getOrganization();
+      if (data) {
+        setOrg(data);
+        setLevelsDraft(data.levels || []);
+      }
+    } catch (err) {
+      console.error('Failed to load organization structure:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadOrgData();
   }, []);
 
   const showSuccess = (msg) => {
@@ -86,33 +116,64 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
       level: org?.levels?.[org.levels.length - 1]?.level || 4,
       department: org?.departments?.[0] || 'General',
       permissions: {
-        canCreateProjects: false,
+        canCreateTasks: false,
         canAssignTasks: false,
-        canApproveWork: false,
+        canEditTasks: false,
+        canApproveTasks: false,
+        canDeleteTasks: false,
+        canViewTasks: true,
+        canManageEmployees: false,
+        canCreateProjects: false,
+        canEditProjects: false,
+        canDeleteProjects: false,
+        canViewProjects: true,
+        canManageStructure: false,
         canViewExecutiveSummary: false,
+        canApproveWork: false,
         canViewTeamTasks: false,
         canViewAllTasks: false,
-        canManageStructure: false,
+      },
+      accessScopes: {
+        taskScope: 'own',
+        projectScope: 'project',
+        employeeScope: 'own',
+        reportScope: 'own',
       },
     });
     setIsPosModalOpen(true);
   };
 
-  // Open Modal to Edit Position
+  // Open Modal for Edit Position
   const handleOpenEditPosition = (pos) => {
     setEditingPos(pos);
+    const existingPerms = pos.permissions || {};
     setPosForm({
       title: pos.title,
       level: pos.level || 4,
       department: pos.department || 'General',
       permissions: {
-        canCreateProjects: Boolean(pos.permissions?.canCreateProjects),
-        canAssignTasks: Boolean(pos.permissions?.canAssignTasks),
-        canApproveWork: Boolean(pos.permissions?.canApproveWork),
-        canViewExecutiveSummary: Boolean(pos.permissions?.canViewExecutiveSummary),
-        canViewTeamTasks: Boolean(pos.permissions?.canViewTeamTasks),
-        canViewAllTasks: Boolean(pos.permissions?.canViewAllTasks),
-        canManageStructure: Boolean(pos.permissions?.canManageStructure),
+        canCreateTasks: Boolean(existingPerms.canCreateTasks || existingPerms.canAssignTasks),
+        canAssignTasks: Boolean(existingPerms.canAssignTasks),
+        canEditTasks: Boolean(existingPerms.canEditTasks),
+        canApproveTasks: Boolean(existingPerms.canApproveTasks || existingPerms.canApproveWork),
+        canDeleteTasks: Boolean(existingPerms.canDeleteTasks),
+        canViewTasks: existingPerms.canViewTasks !== undefined ? Boolean(existingPerms.canViewTasks) : true,
+        canManageEmployees: Boolean(existingPerms.canManageEmployees),
+        canCreateProjects: Boolean(existingPerms.canCreateProjects),
+        canEditProjects: Boolean(existingPerms.canEditProjects),
+        canDeleteProjects: Boolean(existingPerms.canDeleteProjects),
+        canViewProjects: existingPerms.canViewProjects !== undefined ? Boolean(existingPerms.canViewProjects) : true,
+        canManageStructure: Boolean(existingPerms.canManageStructure),
+        canViewExecutiveSummary: Boolean(existingPerms.canViewExecutiveSummary),
+        canApproveWork: Boolean(existingPerms.canApproveTasks || existingPerms.canApproveWork),
+        canViewTeamTasks: Boolean(existingPerms.canViewTeamTasks),
+        canViewAllTasks: Boolean(existingPerms.canViewAllTasks),
+      },
+      accessScopes: {
+        taskScope: pos.accessScopes?.taskScope || 'own',
+        projectScope: pos.accessScopes?.projectScope || 'project',
+        employeeScope: pos.accessScopes?.employeeScope || 'own',
+        reportScope: pos.accessScopes?.reportScope || 'own',
       },
     });
     setIsPosModalOpen(true);
@@ -121,22 +182,25 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
   // Save Position (Create or Edit)
   const handleSavePosition = async (e) => {
     e.preventDefault();
-    if (!posForm.title.trim()) {
-      showError('Please enter a position title');
-      return;
-    }
+    if (!posForm.title.trim()) return;
 
     try {
       if (editingPos) {
-        await api.updatePosition(editingPos.id, posForm);
-        showSuccess(`Position "${posForm.title}" updated successfully.`);
+        const updated = await api.updatePosition(editingPos.id, posForm);
+        setOrg((prev) => ({
+          ...prev,
+          positions: (prev.positions || []).map((p) => (p.id === editingPos.id ? updated : p)),
+        }));
+        showSuccess(`Job role / position "${posForm.title}" updated successfully.`);
       } else {
-        await api.createPosition(posForm);
-        showSuccess(`Custom position "${posForm.title}" added to hierarchy.`);
+        const created = await api.createPosition(posForm);
+        setOrg((prev) => ({
+          ...prev,
+          positions: [...(prev.positions || []), created],
+        }));
+        showSuccess(`Custom job role / position "${posForm.title}" created successfully.`);
       }
       setIsPosModalOpen(false);
-      const updatedOrg = await api.getOrganization();
-      setOrg(updatedOrg);
       if (onHierarchyUpdated) onHierarchyUpdated();
     } catch (err) {
       showError(err.message || 'Failed to save position');
@@ -144,13 +208,12 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
   };
 
   // Delete Position
-  const handleDeletePosition = async (posId, posTitle) => {
-    if (!window.confirm(`Are you sure you want to delete position "${posTitle}"?`)) return;
+  const handleDeletePosition = async (posId, title) => {
+    if (!window.confirm(`Are you sure you want to delete position "${title}"?`)) return;
     try {
-      await api.deletePosition(posId);
-      showSuccess(`Position "${posTitle}" removed.`);
-      const updatedOrg = await api.getOrganization();
-      setOrg(updatedOrg);
+      const remaining = await api.deletePosition(posId);
+      setOrg((prev) => ({ ...prev, positions: remaining }));
+      showSuccess(`Position "${title}" removed successfully.`);
       if (onHierarchyUpdated) onHierarchyUpdated();
     } catch (err) {
       showError(err.message || 'Failed to delete position');
@@ -158,23 +221,19 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
   };
 
   // Apply Industry Template
-  const handleApplyTemplate = async (templateType) => {
-    const label =
-      templateType === 'tech_startup'
-        ? 'Tech Startup (CTO → Lead → Senior → Associate)'
-        : templateType === 'academic'
-        ? 'Academic Institution (Dean → Chair → Professor → Assistant)'
-        : 'Corporate Enterprise (CEO → VP → Manager → Associate)';
-
-    if (!window.confirm(`Apply template: ${label}? This will configure standard hierarchy levels, positions, and permissions for this organization model.`)) {
+  const handleApplyTemplate = async (templateKey) => {
+    if (
+      !window.confirm(
+        'Applying a template will configure standardized hierarchy levels, departments, and job roles. Proceed?'
+      )
+    ) {
       return;
     }
-
     try {
-      const updated = await api.applyOrganizationTemplate(templateType);
-      setOrg(updated);
-      setLevelsDraft(updated.levels || []);
-      showSuccess(`Applied "${label}" template successfully!`);
+      const updatedOrg = await api.applyOrganizationTemplate(templateKey);
+      setOrg(updatedOrg);
+      setLevelsDraft(updatedOrg.levels || []);
+      showSuccess(`Template "${templateKey.replace('_', ' ').toUpperCase()}" applied successfully.`);
       if (onHierarchyUpdated) onHierarchyUpdated();
     } catch (err) {
       showError(err.message || 'Failed to apply template');
@@ -189,7 +248,7 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
       const depts = await api.addOrgDepartment(newDeptInput.trim());
       setOrg((prev) => ({ ...prev, departments: depts }));
       setNewDeptInput('');
-      showSuccess(`Department "${newDeptInput.trim()}" created.`);
+      showSuccess(`Department "${newDeptInput.trim()}" added successfully.`);
       if (onHierarchyUpdated) onHierarchyUpdated();
     } catch (err) {
       showError(err.message || 'Failed to add department');
@@ -223,7 +282,8 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
 
   // Add Hierarchy Level
   const handleAddLevel = () => {
-    const nextLevelNum = (levelsDraft.length > 0 ? Math.max(...levelsDraft.map((l) => l.level)) : 0) + 1;
+    const nextLevelNum =
+      (levelsDraft.length > 0 ? Math.max(...levelsDraft.map((l) => l.level)) : 0) + 1;
     setLevelsDraft([
       ...levelsDraft,
       {
@@ -234,14 +294,89 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
     ]);
   };
 
-  // Dynamic Supervisor Assignment in Tree
-  const handleAssignSupervisor = async (employeeId, supervisorId) => {
+  // ======================== TEAMS HANDLERS ========================
+  const handleOpenNewTeam = () => {
+    setEditingTeam(null);
+    setTeamForm({
+      name: '',
+      department: org?.departments?.[0] || 'General',
+      description: '',
+      leadId: '',
+      memberIds: [],
+    });
+    setIsTeamModalOpen(true);
+  };
+
+  const handleOpenEditTeam = (team) => {
+    setEditingTeam(team);
+    setTeamForm({
+      name: team.name,
+      department: team.department || (org?.departments?.[0] || 'General'),
+      description: team.description || '',
+      leadId: team.leadId?._id || team.leadId || '',
+      memberIds: Array.isArray(team.memberIds)
+        ? team.memberIds.map((m) => (m._id ? m._id : m))
+        : [],
+    });
+    setIsTeamModalOpen(true);
+  };
+
+  const handleSaveTeam = async (e) => {
+    e.preventDefault();
+    if (!teamForm.name.trim()) return;
+
     try {
-      await api.assignSupervisor(employeeId, supervisorId || null);
-      showSuccess('Reporting relationship updated successfully.');
+      const leadUser = employees.find((emp) => (emp._id || emp.id) === teamForm.leadId);
+      const leadName = leadUser ? `${leadUser.firstName} ${leadUser.lastName}` : '';
+
+      const payload = {
+        ...teamForm,
+        leadName,
+      };
+
+      if (editingTeam) {
+        const res = await api.updateTeam(editingTeam.id, payload);
+        setOrg((prev) => ({ ...prev, teams: res.teams || [] }));
+        showSuccess(`Team "${teamForm.name}" updated successfully.`);
+      } else {
+        const res = await api.createTeam(payload);
+        setOrg((prev) => ({ ...prev, teams: res.teams || [] }));
+        showSuccess(`Team "${teamForm.name}" created successfully.`);
+      }
+      setIsTeamModalOpen(false);
       if (onHierarchyUpdated) onHierarchyUpdated();
     } catch (err) {
-      showError(err.message || 'Failed to update supervisor');
+      showError(err.message || 'Failed to save team');
+    }
+  };
+
+  const handleDeleteTeam = async (teamId, teamName) => {
+    if (!window.confirm(`Are you sure you want to delete team "${teamName}"?`)) return;
+    try {
+      const res = await api.deleteTeam(teamId);
+      setOrg((prev) => ({ ...prev, teams: res.teams || [] }));
+      showSuccess(`Team "${teamName}" deleted successfully.`);
+      if (onHierarchyUpdated) onHierarchyUpdated();
+    } catch (err) {
+      showError(err.message || 'Failed to delete team');
+    }
+  };
+
+  // ======================== RELATIONSHIP TYPES ========================
+  const handleAddRelationshipType = async (e) => {
+    e.preventDefault();
+    if (!newRelName.trim()) return;
+    try {
+      const res = await api.addRelationshipType({
+        name: newRelName.trim(),
+        description: newRelDesc.trim(),
+      });
+      setOrg((prev) => ({ ...prev, relationshipTypes: res.relationshipTypes || [] }));
+      setNewRelName('');
+      setNewRelDesc('');
+      showSuccess(`Relationship type "${newRelName.trim()}" added.`);
+    } catch (err) {
+      showError(err.message || 'Failed to add relationship type');
     }
   };
 
@@ -249,7 +384,7 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
     return (
       <div className="loading-state">
         <div className="spinner"></div>
-        <p>Loading Organization Structure & Permissions...</p>
+        <p>Loading Organization Structure, Roles & RBAC Matrix...</p>
       </div>
     );
   }
@@ -257,6 +392,8 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
   const levels = org?.levels || [];
   const positions = org?.positions || [];
   const departments = org?.departments || [];
+  const teams = org?.teams || [];
+  const relationshipTypes = org?.relationshipTypes || [];
 
   return (
     <div className="org-builder-container animate-fade-in">
@@ -267,10 +404,11 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
             <ShieldIcon size={24} className="text-accent" />
           </div>
           <div>
-            <h2>Organization Structure & Custom Permissions Builder</h2>
+            <h2>Dynamic Organization Hierarchy, Job Roles & RBAC Governance</h2>
             <p className="section-desc">
-              Tailor this workspace for your organization: configure custom hierarchy levels, define bespoke positions
-              (e.g., CEO, Dean, Partner, Scrum Master), and assign granular permissions without rigid hardcoded titles.
+              Allow each company to configure custom hierarchy levels, job roles, departments, and
+              teams without changing code. Granular permissions and access scopes are strictly enforced
+              on the backend.
             </p>
           </div>
         </div>
@@ -326,7 +464,7 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
           onClick={() => setActiveSubTab('matrix')}
         >
           <ShieldIcon size={16} />
-          <span>Positions & Permissions Matrix ({positions.length})</span>
+          <span>Job Roles & RBAC Matrix ({positions.length})</span>
         </button>
         <button
           type="button"
@@ -346,11 +484,19 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
         </button>
         <button
           type="button"
-          className={`org-subtab-btn ${activeSubTab === 'tree' ? 'active' : ''}`}
-          onClick={() => setActiveSubTab('tree')}
+          className={`org-subtab-btn ${activeSubTab === 'teams' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('teams')}
+        >
+          <UsersIcon size={16} />
+          <span>Teams & Squads ({teams.length})</span>
+        </button>
+        <button
+          type="button"
+          className={`org-subtab-btn ${activeSubTab === 'relationships' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('relationships')}
         >
           <GitBranchIcon size={16} />
-          <span>Reporting Tree & Assignments</span>
+          <span>Relationship Types ({relationshipTypes.length})</span>
         </button>
       </div>
 
@@ -359,9 +505,11 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
         <div className="tab-pane animate-fade-in">
           <div className="pane-header-actions">
             <div>
-              <h3>Positions & Permission Governance</h3>
+              <h3>Configurable Job Roles, Permissions & Scopes</h3>
               <p className="pane-desc">
-                Define the roles and capabilities of your workforce. Each position dictates who can assign tasks, view overall progress, conduct quality reviews, and govern the system.
+                Define custom job roles. Configure action permissions (create, assign, edit, approve,
+                delete, view tasks or manage employees) and scope-based access (company, department,
+                team, project, own).
               </p>
             </div>
             <button
@@ -370,7 +518,7 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
               onClick={handleOpenNewPosition}
             >
               <PlusIcon size={16} />
-              <span>Add Custom Position</span>
+              <span>Add Custom Job Role</span>
             </button>
           </div>
 
@@ -382,84 +530,80 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
                   <div className="level-group-header">
                     <span className="level-tag">LEVEL {lvl.level}</span>
                     <span className="level-name">{lvl.name}</span>
-                    <span className="level-count">{lvlPositions.length} Position(s)</span>
+                    <span className="level-count">{lvlPositions.length} Role(s)</span>
                   </div>
 
                   {lvlPositions.length === 0 ? (
                     <div className="empty-level-hint">
-                      <span>No positions defined under this hierarchy level yet.</span>
+                      <span>No job roles defined under this hierarchy level yet.</span>
                     </div>
                   ) : (
                     <div className="positions-cards-list">
-                      {lvlPositions.map((pos) => (
-                        <div key={pos.id} className="position-card">
-                          <div className="position-card-top">
-                            <div>
-                              <h4 className="position-title">{pos.title}</h4>
-                              <span className="position-dept-tag">
-                                <BuildingIcon size={12} /> {pos.department || 'General'}
-                              </span>
+                      {lvlPositions.map((pos) => {
+                        const p = pos.permissions || {};
+                        const s = pos.accessScopes || {};
+                        return (
+                          <div key={pos.id} className="position-card">
+                            <div className="position-card-top">
+                              <div>
+                                <h4 className="position-title">{pos.title}</h4>
+                                <span className="position-dept-tag">
+                                  <BuildingIcon size={12} /> {pos.department || 'General'}
+                                </span>
+                              </div>
+                              <div className="position-card-actions">
+                                <button
+                                  type="button"
+                                  className="icon-action-btn"
+                                  title="Edit Role & Permissions"
+                                  onClick={() => handleOpenEditPosition(pos)}
+                                >
+                                  <EditIcon size={15} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="icon-action-btn text-danger"
+                                  title="Delete Role"
+                                  onClick={() => handleDeletePosition(pos.id, pos.title)}
+                                >
+                                  <TrashIcon size={15} />
+                                </button>
+                              </div>
                             </div>
-                            <div className="position-card-actions">
-                              <button
-                                type="button"
-                                className="icon-action-btn"
-                                title="Edit Position & Permissions"
-                                onClick={() => handleOpenEditPosition(pos)}
-                              >
-                                <EditIcon size={15} />
-                              </button>
-                              <button
-                                type="button"
-                                className="icon-action-btn text-danger"
-                                title="Delete Position"
-                                onClick={() => handleDeletePosition(pos.id, pos.title)}
-                              >
-                                <TrashIcon size={15} />
-                              </button>
-                            </div>
-                          </div>
 
-                          {/* Permissions Badges */}
-                          <div className="permissions-badge-list">
-                            {pos.permissions?.canCreateProjects && (
-                              <span className="perm-pill perm-active">
-                                <CheckIcon size={12} /> Create Projects
+                            {/* Scopes Summary */}
+                            <div className="scopes-summary-row">
+                              <span className="scope-pill">
+                                Task Scope: <strong>{(s.taskScope || 'own').toUpperCase()}</strong>
                               </span>
-                            )}
-                            {pos.permissions?.canAssignTasks && (
-                              <span className="perm-pill perm-active">
-                                <CheckIcon size={12} /> Assign Tasks
+                              <span className="scope-pill">
+                                Project Scope: <strong>{(s.projectScope || 'project').toUpperCase()}</strong>
                               </span>
-                            )}
-                            {pos.permissions?.canApproveWork && (
-                              <span className="perm-pill perm-active">
-                                <CheckIcon size={12} /> Review & Approve
+                              <span className="scope-pill">
+                                Employee Scope: <strong>{(s.employeeScope || 'own').toUpperCase()}</strong>
                               </span>
-                            )}
-                            {pos.permissions?.canViewExecutiveSummary && (
-                              <span className="perm-pill perm-active">
-                                <CheckIcon size={12} /> Executive Summary
-                              </span>
-                            )}
-                            {pos.permissions?.canViewTeamTasks && (
-                              <span className="perm-pill perm-active">
-                                <CheckIcon size={12} /> Team Deliverables
-                              </span>
-                            )}
-                            {pos.permissions?.canManageStructure && (
-                              <span className="perm-pill perm-active">
-                                <CheckIcon size={12} /> Org Governance
-                              </span>
-                            )}
-                            {!Object.values(pos.permissions || {}).some(Boolean) && (
-                              <span className="perm-pill perm-contributor">
-                                Individual Contributor (My Work Only)
-                              </span>
-                            )}
+                            </div>
+
+                            {/* Permissions Badges */}
+                            <div className="permissions-badge-list">
+                              {p.canCreateTasks && <span className="perm-pill perm-active"><CheckIcon size={12} /> Create Tasks</span>}
+                              {p.canAssignTasks && <span className="perm-pill perm-active"><CheckIcon size={12} /> Assign Tasks</span>}
+                              {p.canEditTasks && <span className="perm-pill perm-active"><CheckIcon size={12} /> Edit Tasks</span>}
+                              {(p.canApproveTasks || p.canApproveWork) && <span className="perm-pill perm-active"><CheckIcon size={12} /> Approve Tasks</span>}
+                              {p.canDeleteTasks && <span className="perm-pill perm-active"><CheckIcon size={12} /> Delete Tasks</span>}
+                              {p.canManageEmployees && <span className="perm-pill perm-active"><CheckIcon size={12} /> Manage Employees</span>}
+                              {p.canCreateProjects && <span className="perm-pill perm-active"><CheckIcon size={12} /> Create Projects</span>}
+                              {p.canManageStructure && <span className="perm-pill perm-active"><CheckIcon size={12} /> Hierarchy Governance</span>}
+                              {p.canViewExecutiveSummary && <span className="perm-pill perm-active"><CheckIcon size={12} /> Executive Summary</span>}
+                              {!Object.values(p).some(Boolean) && (
+                                <span className="perm-pill perm-contributor">
+                                  Standard Contributor (View & Execute Own Tasks)
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -474,9 +618,9 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
         <div className="tab-pane animate-fade-in">
           <div className="pane-header-actions">
             <div>
-              <h3>Hierarchy Levels Architecture</h3>
+              <h3>Custom Hierarchy Levels Architecture</h3>
               <p className="pane-desc">
-                Customize the reporting ladder for your organization (e.g., Level 1 = Executive, Level 2 = Director, Level 3 = Team Lead, Level 4 = Staff). Subordinates in lower levels report upwards to supervisors in higher levels.
+                Customize the organizational ladder (e.g. Level 1 = Executive, Level 2 = Director, Level 3 = Team Lead, Level 4 = Contributor). Lower level members report to higher level supervisors.
               </p>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -537,24 +681,23 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
         </div>
       )}
 
-      {/* TAB 3: Department Manager */}
+      {/* TAB 3: Departments */}
       {activeSubTab === 'departments' && (
         <div className="tab-pane animate-fade-in">
           <div className="pane-header-actions">
             <div>
-              <h3>Department & Business Unit Management</h3>
+              <h3>Department & Functional Unit Management</h3>
               <p className="pane-desc">
-                Create and manage functional departments for your company or institution. Employees and positions will belong to these units.
+                Create and manage functional departments for your company. Employees and teams will belong to these units.
               </p>
             </div>
           </div>
 
-          {/* Add Department Input */}
           <form onSubmit={handleAddDepartment} className="add-dept-form">
             <input
               type="text"
               className="input-field"
-              placeholder="Enter new department name (e.g., Artificial Intelligence, Clinical Research, Legal)"
+              placeholder="Enter department name (e.g., Engineering, Marketing, Finance, Operations)"
               value={newDeptInput}
               onChange={(e) => setNewDeptInput(e.target.value)}
             />
@@ -563,7 +706,6 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
             </button>
           </form>
 
-          {/* Departments Grid */}
           <div className="departments-grid">
             {departments.map((dept) => {
               const deptEmpCount = employees.filter((e) => e.department === dept).length;
@@ -574,7 +716,7 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
                   </div>
                   <div className="dept-info">
                     <h4>{dept}</h4>
-                    <span>{deptEmpCount} Active Member(s)</span>
+                    <span>{deptEmpCount} Member(s)</span>
                   </div>
                   <button
                     type="button"
@@ -591,109 +733,143 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
         </div>
       )}
 
-      {/* TAB 4: Visual Reporting Tree & Dynamic Supervisor Assignment */}
-      {activeSubTab === 'tree' && (
+      {/* TAB 4: Teams & Squads */}
+      {activeSubTab === 'teams' && (
         <div className="tab-pane animate-fade-in">
           <div className="pane-header-actions">
             <div>
-              <h3>Dynamic Reporting Lines & Supervisor Assignment</h3>
+              <h3>Teams, Squads & Working Groups</h3>
               <p className="pane-desc">
-                Assign who reports to whom across your custom hierarchy levels. Subordinates report to their designated supervisor, providing clear review pathways and milestone tracking.
+                Create dynamic teams inside departments, designate team leads, assign members, and
+                enforce team-scoped task isolation.
               </p>
             </div>
+            <button type="button" className="btn btn-primary" onClick={handleOpenNewTeam}>
+              <PlusIcon size={16} /> Create Team / Squad
+            </button>
           </div>
 
-          <div className="hierarchy-tree-view">
-            {levels.map((lvl) => {
-              // Match employees by their hierarchyLevel or role mapping
-              const levelEmployees = employees.filter((e) => {
-                const empLvl = e.hierarchyLevel || (e.role === 'admin' ? 1 : e.role === 'director' ? 2 : e.role === 'manager' ? 3 : 4);
-                return Number(empLvl) === Number(lvl.level);
-              });
-
-              // Eligible supervisors: employees at higher or equal levels
-              const higherLevelSupervisors = employees.filter((e) => {
-                const sLvl = e.hierarchyLevel || (e.role === 'admin' ? 1 : e.role === 'director' ? 2 : e.role === 'manager' ? 3 : 4);
-                return Number(sLvl) < Number(lvl.level);
-              });
-
-              return (
-                <div key={lvl.level} className="hierarchy-level-section">
-                  <div className="level-badge-header">
-                    <span className="level-rank">Level {lvl.level} · {lvl.name}</span>
-                    <p>{lvl.description || 'Organizational Tier'}</p>
-                  </div>
-
-                  {levelEmployees.length === 0 ? (
-                    <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: '12px 0' }}>
-                      No members assigned to Level {lvl.level} currently.
-                    </p>
-                  ) : (
-                    <div className="hierarchy-grid">
-                      {levelEmployees.map((emp) => {
-                        const currentSupId = emp.reportsTo?._id || emp.reportsTo?.id || emp.reportsTo || '';
-                        return (
-                          <div key={emp._id || emp.id} className="hierarchy-card">
-                            <div className="card-top-row">
-                              <div className="avatar-circle-sm bg-purple">
-                                {emp.firstName ? emp.firstName[0] : 'U'}
-                              </div>
-                              <span className="role-tag-sm">
-                                {emp.positionTitle || emp.designation || 'Specialist'}
-                              </span>
-                            </div>
-
-                            <div className="card-identity-col">
-                              <h4>{emp.firstName} {emp.lastName}</h4>
-                              <span className="emp-email">{emp.email}</span>
-                              <span className="dept-tag">
-                                <BuildingIcon size={12} /> {emp.department}
-                              </span>
-                            </div>
-
-                            {/* Supervisor Assignment Dropdown */}
-                            {lvl.level > 1 && (
-                              <div className="supervisor-assign-box">
-                                <label>Reports Directly To:</label>
-                                <select
-                                  className="supervisor-select"
-                                  value={currentSupId}
-                                  onChange={(e) => handleAssignSupervisor(emp._id || emp.id, e.target.value)}
-                                >
-                                  <option value="">-- No Direct Supervisor --</option>
-                                  {(higherLevelSupervisors.length > 0 ? higherLevelSupervisors : employees).map((s) => (
-                                    <option key={s._id || s.id} value={s._id || s.id}>
-                                      {s.firstName} {s.lastName} ({s.positionTitle || s.designation || s.role})
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+          <div className="teams-grid">
+            {teams.length === 0 ? (
+              <div className="empty-level-box w-100">
+                <p>No teams created yet. Click "Create Team / Squad" to get started.</p>
+              </div>
+            ) : (
+              teams.map((t) => {
+                const memberCount = Array.isArray(t.memberIds) ? t.memberIds.length : 0;
+                return (
+                  <div key={t.id} className="team-card">
+                    <div className="team-card-header">
+                      <div>
+                        <h4>{t.name}</h4>
+                        <span className="team-dept-pill">
+                          <BuildingIcon size={11} /> {t.department}
+                        </span>
+                      </div>
+                      <div className="team-card-actions">
+                        <button
+                          type="button"
+                          className="icon-action-btn"
+                          title="Edit Team"
+                          onClick={() => handleOpenEditTeam(t)}
+                        >
+                          <EditIcon size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-action-btn text-danger"
+                          title="Delete Team"
+                          onClick={() => handleDeleteTeam(t.id, t.name)}
+                        >
+                          <TrashIcon size={15} />
+                        </button>
+                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+
+                    <p className="team-desc">{t.description || 'No description provided.'}</p>
+
+                    <div className="team-meta-row">
+                      <div className="meta-item">
+                        <span className="meta-label">Team Lead:</span>
+                        <span className="meta-val">{t.leadName || 'Unassigned'}</span>
+                      </div>
+                      <div className="meta-item">
+                        <span className="meta-label">Members:</span>
+                        <span className="meta-val">{memberCount} member(s)</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       )}
 
-      {/* MODAL: Add / Edit Custom Position */}
+      {/* TAB 5: Relationship Types */}
+      {activeSubTab === 'relationships' && (
+        <div className="tab-pane animate-fade-in">
+          <div className="pane-header-actions">
+            <div>
+              <h3>Reporting Relationship Types</h3>
+              <p className="pane-desc">
+                Configure the types of managerial relationships employees can have (e.g., Direct Manager, Project Manager, Functional Manager).
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleAddRelationshipType} className="add-dept-form">
+            <input
+              type="text"
+              className="input-field"
+              placeholder="Relationship Type Name (e.g. Chapter Lead, Clinical Supervisor)"
+              value={newRelName}
+              onChange={(e) => setNewRelName(e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <input
+              type="text"
+              className="input-field"
+              placeholder="Description of oversight scope"
+              value={newRelDesc}
+              onChange={(e) => setNewRelDesc(e.target.value)}
+              style={{ flex: 1.5 }}
+            />
+            <button type="submit" className="btn btn-primary">
+              <PlusIcon size={16} /> Add Relationship Type
+            </button>
+          </form>
+
+          <div className="relationship-types-grid">
+            {relationshipTypes.map((rel) => (
+              <div key={rel.id} className="relationship-type-card">
+                <div className="rel-type-icon">
+                  <GitBranchIcon size={20} className="text-accent" />
+                </div>
+                <div className="rel-type-body">
+                  <h4>{rel.name}</h4>
+                  <p>{rel.description}</p>
+                  <span className="rel-id-badge">ID: {rel.id}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Add / Edit Custom Position & RBAC Matrix */}
       {isPosModalOpen && (
         <div className="modal-overlay" onClick={() => setIsPosModalOpen(false)}>
           <div
-            className="modal-card animate-scale-up"
+            className="modal-card modal-lg animate-scale-up"
             onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: '600px' }}
+            style={{ maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto' }}
           >
             <div className="modal-header">
               <div>
-                <span className="project-badge-tag">POSITION & PERMISSIONS BUILDER</span>
+                <span className="project-badge-tag">JOB ROLE & RBAC CONFIGURATOR</span>
                 <h3 style={{ fontSize: '18px', marginTop: '4px' }}>
-                  {editingPos ? `Edit Position: ${editingPos.title}` : 'Create Custom Position'}
+                  {editingPos ? `Edit Job Role: ${editingPos.title}` : 'Create Custom Job Role'}
                 </h3>
               </div>
               <button
@@ -707,11 +883,11 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
 
             <form onSubmit={handleSavePosition} className="modal-body-form">
               <div className="form-group">
-                <label className="form-label">Position Title *</label>
+                <label className="form-label">Job Role Title *</label>
                 <input
                   type="text"
                   className="input-field"
-                  placeholder="e.g. Chief Executive Officer, Creative Director, Lead Architect"
+                  placeholder="e.g. Senior Tech Lead, Project Director, QA Specialist"
                   value={posForm.title}
                   onChange={(e) => setPosForm({ ...posForm, title: e.target.value })}
                   required
@@ -751,29 +927,123 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
                 </div>
               </div>
 
-              <div className="permissions-config-box">
-                <label className="form-label" style={{ marginBottom: '8px', display: 'block' }}>
-                  Custom Role Permissions Matrix
+              {/* Scope-based Access Control Configuration */}
+              <div className="scopes-config-box" style={{ background: 'var(--bg-card-subtle)', padding: '14px', borderRadius: '8px', marginBottom: '16px', border: '1px solid var(--border-color)' }}>
+                <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                  Scope-Based Access Control
                 </label>
                 <p className="section-desc" style={{ fontSize: '12px', marginBottom: '12px' }}>
-                  Select the granular capabilities members with this position will possess in the workspace.
+                  Defines the boundary of tasks and resources employees holding this job role can access.
                 </p>
 
-                <div className="perm-checkbox-list">
-                  <label className="perm-checkbox-row">
-                    <input
-                      type="checkbox"
-                      checked={posForm.permissions.canCreateProjects}
+                <div className="form-row-2">
+                  <div className="form-group">
+                    <label style={{ fontSize: '12px', fontWeight: 600 }}>Task Access Scope:</label>
+                    <select
+                      className="input-field form-control-sm"
+                      value={posForm.accessScopes.taskScope}
                       onChange={(e) =>
                         setPosForm({
                           ...posForm,
-                          permissions: { ...posForm.permissions, canCreateProjects: e.target.checked },
+                          accessScopes: { ...posForm.accessScopes, taskScope: e.target.value },
+                        })
+                      }
+                    >
+                      <option value="company">🏢 Company-wide (All Tasks)</option>
+                      <option value="department">🏛️ Department-only (Same Department)</option>
+                      <option value="team">👥 Team-only (Same Squad/Team)</option>
+                      <option value="project">📁 Project-only (Assigned Projects)</option>
+                      <option value="own">💼 Own & Subordinates Only</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '12px', fontWeight: 600 }}>Project Access Scope:</label>
+                    <select
+                      className="input-field form-control-sm"
+                      value={posForm.accessScopes.projectScope}
+                      onChange={(e) =>
+                        setPosForm({
+                          ...posForm,
+                          accessScopes: { ...posForm.accessScopes, projectScope: e.target.value },
+                        })
+                      }
+                    >
+                      <option value="company">🏢 Company-wide (All Projects)</option>
+                      <option value="department">🏛️ Department-only</option>
+                      <option value="team">👥 Team-only</option>
+                      <option value="project">📁 Assigned Projects</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="form-row-2" style={{ marginTop: '8px' }}>
+                  <div className="form-group">
+                    <label style={{ fontSize: '12px', fontWeight: 600 }}>Employee Access Scope:</label>
+                    <select
+                      className="input-field form-control-sm"
+                      value={posForm.accessScopes.employeeScope}
+                      onChange={(e) =>
+                        setPosForm({
+                          ...posForm,
+                          accessScopes: { ...posForm.accessScopes, employeeScope: e.target.value },
+                        })
+                      }
+                    >
+                      <option value="company">🏢 Company-wide</option>
+                      <option value="department">🏛️ Department-only</option>
+                      <option value="team">👥 Team-only</option>
+                      <option value="own">💼 Own subordinates only</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ fontSize: '12px', fontWeight: 600 }}>Report / KPI Scope:</label>
+                    <select
+                      className="input-field form-control-sm"
+                      value={posForm.accessScopes.reportScope}
+                      onChange={(e) =>
+                        setPosForm({
+                          ...posForm,
+                          accessScopes: { ...posForm.accessScopes, reportScope: e.target.value },
+                        })
+                      }
+                    >
+                      <option value="company">🏢 Company-wide</option>
+                      <option value="department">🏛️ Department-only</option>
+                      <option value="team">👥 Team-only</option>
+                      <option value="own">💼 Own only</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Granular RBAC Permissions */}
+              <div className="permissions-config-box">
+                <label className="form-label" style={{ marginBottom: '8px', display: 'block', fontWeight: 600 }}>
+                  Configurable Role-Based Action Permissions (RBAC)
+                </label>
+                <p className="section-desc" style={{ fontSize: '12px', marginBottom: '12px' }}>
+                  Granular control over task actions, employee management, and organizational governance.
+                </p>
+
+                <div className="perm-checkbox-list">
+                  {/* Task Permissions */}
+                  <div className="perm-group-header">Task & Deliverable Permissions</div>
+                  <label className="perm-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={posForm.permissions.canCreateTasks}
+                      onChange={(e) =>
+                        setPosForm({
+                          ...posForm,
+                          permissions: { ...posForm.permissions, canCreateTasks: e.target.checked },
                         })
                       }
                     />
                     <div>
-                      <strong>Create Projects & Strategic Milestones</strong>
-                      <span>Allows creating high-level projects, target outcomes, and deadlines.</span>
+                      <strong>Create Tasks</strong>
+                      <span>Allows creating new tasks and subtasks.</span>
                     </div>
                   </label>
 
@@ -789,25 +1059,102 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
                       }
                     />
                     <div>
-                      <strong>Assign & Delegate Tasks</strong>
-                      <span>Can break down milestones into subtasks and assign them to team members.</span>
+                      <strong>Assign Tasks</strong>
+                      <span>Allows assigning deliverables to subordinates or team members.</span>
                     </div>
                   </label>
 
                   <label className="perm-checkbox-row">
                     <input
                       type="checkbox"
-                      checked={posForm.permissions.canApproveWork}
+                      checked={posForm.permissions.canEditTasks}
                       onChange={(e) =>
                         setPosForm({
                           ...posForm,
-                          permissions: { ...posForm.permissions, canApproveWork: e.target.checked },
+                          permissions: { ...posForm.permissions, canEditTasks: e.target.checked },
                         })
                       }
                     />
                     <div>
-                      <strong>Conduct Quality Reviews & Approve Work</strong>
-                      <span>Review submitted deliverables from subordinates; approve or request revisions.</span>
+                      <strong>Edit Tasks</strong>
+                      <span>Allows editing task descriptions, priorities, deadlines, and parameters.</span>
+                    </div>
+                  </label>
+
+                  <label className="perm-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={posForm.permissions.canApproveTasks}
+                      onChange={(e) =>
+                        setPosForm({
+                          ...posForm,
+                          permissions: {
+                            ...posForm.permissions,
+                            canApproveTasks: e.target.checked,
+                            canApproveWork: e.target.checked,
+                          },
+                        })
+                      }
+                    />
+                    <div>
+                      <strong>Approve Tasks (Quality Review)</strong>
+                      <span>Allows reviewing deliverables submitted by subordinates; approve or request revisions.</span>
+                    </div>
+                  </label>
+
+                  <label className="perm-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={posForm.permissions.canDeleteTasks}
+                      onChange={(e) =>
+                        setPosForm({
+                          ...posForm,
+                          permissions: { ...posForm.permissions, canDeleteTasks: e.target.checked },
+                        })
+                      }
+                    />
+                    <div>
+                      <strong>Delete Tasks</strong>
+                      <span>Allows deleting tasks and their associated subtasks.</span>
+                    </div>
+                  </label>
+
+                  {/* Employee & Structure Permissions */}
+                  <div className="perm-group-header" style={{ marginTop: '10px' }}>
+                    Employee Management & Governance
+                  </div>
+
+                  <label className="perm-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={posForm.permissions.canManageEmployees}
+                      onChange={(e) =>
+                        setPosForm({
+                          ...posForm,
+                          permissions: { ...posForm.permissions, canManageEmployees: e.target.checked },
+                        })
+                      }
+                    />
+                    <div>
+                      <strong>Manage Employees</strong>
+                      <span>Can invite employees, update roles, assign departments/teams, and disable accounts.</span>
+                    </div>
+                  </label>
+
+                  <label className="perm-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={posForm.permissions.canCreateProjects}
+                      onChange={(e) =>
+                        setPosForm({
+                          ...posForm,
+                          permissions: { ...posForm.permissions, canCreateProjects: e.target.checked },
+                        })
+                      }
+                    />
+                    <div>
+                      <strong>Create Projects & Milestone Containers</strong>
+                      <span>Allows creating high-level projects, target outcomes, and deadlines.</span>
                     </div>
                   </label>
 
@@ -823,25 +1170,8 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
                       }
                     />
                     <div>
-                      <strong>Executive Summary & Completion KPIs</strong>
-                      <span>View aggregated project completion percentages without micro-task clutter.</span>
-                    </div>
-                  </label>
-
-                  <label className="perm-checkbox-row">
-                    <input
-                      type="checkbox"
-                      checked={posForm.permissions.canViewTeamTasks}
-                      onChange={(e) =>
-                        setPosForm({
-                          ...posForm,
-                          permissions: { ...posForm.permissions, canViewTeamTasks: e.target.checked },
-                        })
-                      }
-                    />
-                    <div>
-                      <strong>View Department & Team Deliverables</strong>
-                      <span>Inspect tasks and blocker alerts for subordinates in their department.</span>
+                      <strong>View Executive Summary & KPIs</strong>
+                      <span>View high-level milestone progress and completion metrics across projects.</span>
                     </div>
                   </label>
 
@@ -857,8 +1187,8 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
                       }
                     />
                     <div>
-                      <strong>Govern Organization Structure & Permissions</strong>
-                      <span>Allows creating custom positions, hierarchy tiers, and managing permissions.</span>
+                      <strong>Govern Organization Hierarchy & RBAC</strong>
+                      <span>Allows editing hierarchy levels, custom positions, teams, and departments.</span>
                     </div>
                   </label>
                 </div>
@@ -873,7 +1203,156 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  {editingPos ? 'Save Position Changes' : 'Create Position'}
+                  {editingPos ? 'Save Role Changes' : 'Create Custom Job Role'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Create / Edit Team */}
+      {isTeamModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsTeamModalOpen(false)}>
+          <div
+            className="modal-card modal-md animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '580px' }}
+          >
+            <div className="modal-header">
+              <div className="modal-title-with-icon">
+                <UsersIcon size={20} className="text-accent" />
+                <h3>{editingTeam ? `Edit Team: ${editingTeam.name}` : 'Create New Team / Squad'}</h3>
+              </div>
+              <button
+                type="button"
+                className="close-btn"
+                onClick={() => setIsTeamModalOpen(false)}
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTeam} className="modal-body-form">
+              <div className="form-group">
+                <label className="form-label">Team / Squad Name *</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="e.g. Core Backend Squad, UI/UX Chapter, Growth Ops"
+                  value={teamForm.name}
+                  onChange={(e) => setTeamForm({ ...teamForm, name: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="form-row-2">
+                <div className="form-group">
+                  <label className="form-label">Department *</label>
+                  <select
+                    className="input-field"
+                    value={teamForm.department}
+                    onChange={(e) => setTeamForm({ ...teamForm, department: e.target.value })}
+                  >
+                    {departments.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Team Lead</label>
+                  <select
+                    className="input-field"
+                    value={teamForm.leadId}
+                    onChange={(e) => setTeamForm({ ...teamForm, leadId: e.target.value })}
+                  >
+                    <option value="">-- Choose Team Lead --</option>
+                    {employees.map((emp) => (
+                      <option key={emp._id || emp.id} value={emp._id || emp.id}>
+                        {emp.firstName} {emp.lastName} ({emp.designation || emp.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Team Description</label>
+                <textarea
+                  className="input-field"
+                  rows={2}
+                  placeholder="Describe the operational focus of this team..."
+                  value={teamForm.description}
+                  onChange={(e) => setTeamForm({ ...teamForm, description: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Team Members (Assign Employees)</label>
+                <div
+                  style={{
+                    maxHeight: '160px',
+                    overflowY: 'auto',
+                    border: '1px solid var(--border-color)',
+                    padding: '8px',
+                    borderRadius: '6px',
+                  }}
+                >
+                  {employees.map((emp) => {
+                    const empId = emp._id || emp.id;
+                    const isChecked = teamForm.memberIds.includes(empId);
+                    return (
+                      <label
+                        key={empId}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '4px 0',
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setTeamForm({
+                                ...teamForm,
+                                memberIds: [...teamForm.memberIds, empId],
+                              });
+                            } else {
+                              setTeamForm({
+                                ...teamForm,
+                                memberIds: teamForm.memberIds.filter((id) => id !== empId),
+                              });
+                            }
+                          }}
+                        />
+                        <span>
+                          {emp.firstName} {emp.lastName} ({emp.designation || emp.role}) ·{' '}
+                          <small style={{ color: 'var(--text-muted)' }}>{emp.department}</small>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="modal-actions" style={{ marginTop: '20px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setIsTeamModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  {editingTeam ? 'Save Team Changes' : 'Create Team'}
                 </button>
               </div>
             </form>

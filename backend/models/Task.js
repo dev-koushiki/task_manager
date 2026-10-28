@@ -12,10 +12,27 @@ const taskSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Organization",
+      required: [true, "Organization ID is required"],
+      index: true,
+    },
+    department: {
+      type: String,
+      default: "General",
+      trim: true,
+    },
+    team: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     projectId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Project",
       default: null,
+      index: true,
     },
     parentTaskId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -55,6 +72,7 @@ const taskSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
+      index: true,
     },
     assignedToName: {
       type: String,

@@ -18,6 +18,11 @@ const invitationSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    team: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     role: {
       type: String,
       default: "employee",
@@ -36,9 +41,27 @@ const invitationSchema = new mongoose.Schema(
       type: Object,
       default: {},
     },
+    accessScopes: {
+      type: Object,
+      default: () => ({
+        taskScope: "own",
+        projectScope: "project",
+        employeeScope: "own",
+        reportScope: "own",
+      }),
+    },
+    reportingRelationships: {
+      type: Array,
+      default: [],
+    },
     companyName: {
       type: String,
       default: "Workspace",
+    },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Organization",
+      index: true,
     },
     tokenHash: {
       type: String,
