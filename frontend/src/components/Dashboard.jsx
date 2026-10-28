@@ -30,7 +30,7 @@ import { AdminEmployeePanel } from './AdminEmployeePanel';
 import { ThemeToggle } from './ThemeToggle';
 import { api } from '../services/api';
 
-export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptInvite }) => {
+export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptInvite, onUpdateUser }) => {
   const userRole = user?.role || 'employee';
   const perms = user?.permissions || {};
   const isAdmin = userRole === 'admin';
@@ -39,6 +39,22 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const canManageStructure = isAdmin || Boolean(perms.canManageStructure);
   const canManageProjects = isAdmin || userRole === 'director' || Boolean(perms.canCreateProjects);
   const canManageTeams = isAdmin || userRole === 'manager' || Boolean(perms.canAssignTasks || perms.canApproveTasks || perms.canApproveWork);
+
+  // Profile management states
+  const [profileTab, setProfileTab] = useState('overview'); // 'overview' | 'edit' | 'security'
+  const [profileForm, setProfileForm] = useState({
+    firstName: user?.firstName || '',
+    lastName: user?.lastName || '',
+    designation: user?.designation || '',
+  });
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [profileNotice, setProfileNotice] = useState('');
+  const [profileError, setProfileError] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
 
   // Active navigation tab governed strictly by user authorization
   const [activeTab, setActiveTab] = useState(() => {
@@ -195,6 +211,84 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const handleInspectProject = (project) => {
     setInspectingProject(project);
     setIsInspectModalOpen(true);
+  };
+
+  // Profile management handlers
+  useEffect(() => {
+    if (user) {
+      setProfileForm({
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        designation: user.designation || '',
+      });
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (activeTab === 'profile') {
+      api.getMe().then((me) => {
+        if (me && onUpdateUser) onUpdateUser(me);
+      }).catch(() => {});
+    }
+  }, [activeTab]);
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    if (!profileForm.firstName.trim() || !profileForm.lastName.trim()) {
+      setProfileError('First name and last name are required.');
+      return;
+    }
+    setSavingProfile(true);
+    setProfileNotice('');
+    setProfileError('');
+    try {
+      const updated = await api.updateProfile({
+        firstName: profileForm.firstName.trim(),
+        lastName: profileForm.lastName.trim(),
+        designation: profileForm.designation.trim(),
+      });
+      if (onUpdateUser) onUpdateUser(updated);
+      setProfileNotice('Profile information updated successfully!');
+      setTimeout(() => setProfileNotice(''), 3500);
+      setProfileTab('overview');
+    } catch (err) {
+      setProfileError(err.message || 'Failed to update profile');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (!passwordForm.currentPassword) {
+      setProfileError('Current password is required.');
+      return;
+    }
+    if (!passwordForm.newPassword || passwordForm.newPassword.length < 6) {
+      setProfileError('New password must be at least 6 characters.');
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setProfileError('New passwords do not match.');
+      return;
+    }
+    setSavingProfile(true);
+    setProfileNotice('');
+    setProfileError('');
+    try {
+      await api.updateProfile({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      });
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setProfileNotice('Password updated successfully!');
+      setTimeout(() => setProfileNotice(''), 3500);
+      setProfileTab('overview');
+    } catch (err) {
+      setProfileError(err.message || 'Failed to update password');
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
   // Filter tasks for general task view
@@ -647,31 +741,247 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <div className="profile-avatar-lg">{userInitials}</div>
               </div>
               <div className="profile-body">
-                <h2>
-                  {user?.firstName} {user?.lastName}
-                </h2>
-                <p className="profile-mail">{user?.email}</p>
-
-                <div className="profile-info-grid">
-                  <div className="info-box">
-                    <span className="info-label">Company</span>
-                    <span className="info-val">{user?.companyName}</span>
+                <div className="profile-body-top">
+                  <div>
+                    <h2>
+                      {user?.firstName} {user?.lastName}
+                    </h2>
+                    <p className="profile-mail">{user?.email}</p>
                   </div>
-                  <div className="info-box">
-                    <span className="info-label">Current Role / Perspective</span>
-                    <span className="info-val" style={{ textTransform: 'uppercase' }}>
-                      {activeRole}
+                  <div className="profile-role-badge">
+                    <span className="role-chip">
+                      <ShieldIcon size={13} /> {user?.positionTitle || userRole.toUpperCase()}
+                    </span>
+                    <span className="tier-chip">
+                      Tier {user?.hierarchyLevel || (isAdmin ? 1 : 4)}
                     </span>
                   </div>
-                  <div className="info-box">
-                    <span className="info-label">Department</span>
-                    <span className="info-val">{user?.department || 'Leadership & Administration'}</span>
-                  </div>
-                  <div className="info-box">
-                    <span className="info-label">Designation</span>
-                    <span className="info-val">{user?.designation}</span>
-                  </div>
                 </div>
+
+                {/* Profile Subtabs */}
+                <div className="profile-subtabs-bar">
+                  <button
+                    type="button"
+                    className={`profile-subtab-btn ${profileTab === 'overview' ? 'active' : ''}`}
+                    onClick={() => {
+                      setProfileTab('overview');
+                      setProfileNotice('');
+                      setProfileError('');
+                    }}
+                  >
+                    Account Overview
+                  </button>
+                  <button
+                    type="button"
+                    className={`profile-subtab-btn ${profileTab === 'edit' ? 'active' : ''}`}
+                    onClick={() => {
+                      setProfileTab('edit');
+                      setProfileNotice('');
+                      setProfileError('');
+                      setProfileForm({
+                        firstName: user?.firstName || '',
+                        lastName: user?.lastName || '',
+                        designation: user?.designation || '',
+                      });
+                    }}
+                  >
+                    Edit Profile
+                  </button>
+                  <button
+                    type="button"
+                    className={`profile-subtab-btn ${profileTab === 'security' ? 'active' : ''}`}
+                    onClick={() => {
+                      setProfileTab('security');
+                      setProfileNotice('');
+                      setProfileError('');
+                      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                    }}
+                  >
+                    Security & Password
+                  </button>
+                </div>
+
+                {profileNotice && (
+                  <div className="alert-box alert-success animate-fade-in" style={{ margin: '14px 0' }}>
+                    <CheckCircleIcon size={16} />
+                    <span>{profileNotice}</span>
+                  </div>
+                )}
+                {profileError && (
+                  <div className="alert-box alert-danger animate-fade-in" style={{ margin: '14px 0' }}>
+                    <AlertTriangleIcon size={16} />
+                    <span>{profileError}</span>
+                  </div>
+                )}
+
+                {/* Subtab 1: Account Overview */}
+                {profileTab === 'overview' && (
+                  <div className="profile-info-grid">
+                    <div className="info-box">
+                      <span className="info-label">Company Workspace</span>
+                      <span className="info-val">
+                        <BuildingIcon size={15} className="text-accent" /> {user?.companyName || 'Workspace'}
+                      </span>
+                    </div>
+                    <div className="info-box">
+                      <span className="info-label">Authority Tier & Role</span>
+                      <span className="info-val">
+                        <ShieldIcon size={15} className="text-accent" /> Tier {user?.hierarchyLevel || (isAdmin ? 1 : 4)} • {user?.positionTitle || userRole.toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="info-box">
+                      <span className="info-label">Department</span>
+                      <span className="info-val">{user?.department || 'Leadership & Administration'}</span>
+                    </div>
+                    <div className="info-box">
+                      <span className="info-label">Team / Squad</span>
+                      <span className="info-val">
+                        <UsersIcon size={15} className="text-accent" /> {user?.team || 'General (No squad assigned)'}
+                      </span>
+                    </div>
+                    <div className="info-box">
+                      <span className="info-label">Job Title / Designation</span>
+                      <span className="info-val">{user?.designation || 'Staff Member'}</span>
+                    </div>
+                    <div className="info-box">
+                      <span className="info-label">Account Status</span>
+                      <span className="info-val status-badge-active">
+                        <CheckCircleIcon size={14} /> Active & Verified
+                      </span>
+                    </div>
+                    <div className="info-box" style={{ gridColumn: '1 / -1' }}>
+                      <span className="info-label">Data Access Scope (RBAC)</span>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' }}>
+                        <span className="scope-badge">Task Scope: {(user?.accessScopes?.taskScope || (isAdmin ? 'company' : 'own')).toUpperCase()}</span>
+                        <span className="scope-badge">Project Scope: {(user?.accessScopes?.projectScope || 'project').toUpperCase()}</span>
+                        <span className="scope-badge">Employee Scope: {(user?.accessScopes?.employeeScope || (isAdmin ? 'company' : 'own')).toUpperCase()}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Subtab 2: Edit Profile Form */}
+                {profileTab === 'edit' && (
+                  <form onSubmit={handleSaveProfile} className="profile-edit-form">
+                    <div className="form-row-2">
+                      <div className="form-group">
+                        <label className="form-label">First Name *</label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          value={profileForm.firstName}
+                          onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Last Name *</label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          value={profileForm.lastName}
+                          onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Designation / Professional Title</label>
+                      <input
+                        type="text"
+                        className="input-field"
+                        value={profileForm.designation}
+                        onChange={(e) => setProfileForm({ ...profileForm, designation: e.target.value })}
+                        placeholder="e.g. Lead Engineer, Project Director"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Email Address (Managed by Admin)</label>
+                      <input
+                        type="email"
+                        className="input-field"
+                        value={user?.email || ''}
+                        disabled
+                        style={{ opacity: 0.7, cursor: 'not-allowed' }}
+                      />
+                      <small style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '3px', display: 'block' }}>
+                        To change your workspace email address, please contact your workspace administrator.
+                      </small>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setProfileTab('overview')}
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn btn-primary" disabled={savingProfile}>
+                        {savingProfile ? 'Saving Changes...' : 'Save Profile Changes'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Subtab 3: Change Password Form */}
+                {profileTab === 'security' && (
+                  <form onSubmit={handleChangePassword} className="profile-edit-form">
+                    <div className="form-group">
+                      <label className="form-label">Current Password *</label>
+                      <input
+                        type="password"
+                        className="input-field"
+                        placeholder="Enter current password"
+                        value={passwordForm.currentPassword}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-row-2">
+                      <div className="form-group">
+                        <label className="form-label">New Password * (min 6 characters)</label>
+                        <input
+                          type="password"
+                          className="input-field"
+                          placeholder="Enter new password"
+                          value={passwordForm.newPassword}
+                          onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                          minLength={6}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Confirm New Password *</label>
+                        <input
+                          type="password"
+                          className="input-field"
+                          placeholder="Re-enter new password"
+                          value={passwordForm.confirmPassword}
+                          onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                          minLength={6}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setProfileTab('overview')}
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn btn-primary" disabled={savingProfile}>
+                        {savingProfile ? 'Updating Password...' : 'Update Password'}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             </div>
           </div>

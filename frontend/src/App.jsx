@@ -177,6 +177,7 @@ function App() {
           theme={theme}
           onToggleTheme={toggleTheme}
           onTestAcceptInvite={handleTestAcceptInvite}
+          onUpdateUser={setCurrentUser}
         />
       )}
     </div>

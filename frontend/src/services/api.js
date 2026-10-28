@@ -1509,4 +1509,65 @@ export const api = {
       return null;
     }
   },
+
+  // Fetch current user details from backend or local
+  async getMe() {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/auth/me`, {
+        headers: getHeaders(),
+      });
+      if (data && data.user) {
+        localStorage.setItem('tm_user', JSON.stringify(data.user));
+        return data.user;
+      }
+      return this.getUser();
+    } catch {
+      return this.getUser();
+    }
+  },
+
+  // Update profile details and/or password
+  async updateProfile(profileData) {
+    let updatedUser = null;
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/auth/profile`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify(profileData),
+      });
+      if (data && data.user) {
+        updatedUser = data.user;
+      }
+    } catch (err) {
+      if (!isOfflineError(err)) {
+        throw err;
+      }
+    }
+
+    const current = this.getUser() || {};
+    const merged = updatedUser || {
+      ...current,
+      ...(profileData.firstName ? { firstName: profileData.firstName.trim() } : {}),
+      ...(profileData.lastName ? { lastName: profileData.lastName.trim() } : {}),
+      ...(profileData.designation ? { designation: profileData.designation.trim() } : {}),
+    };
+
+    localStorage.setItem('tm_user', JSON.stringify(merged));
+
+    // Update in tm_admin_employees cache if present
+    const localEmps = localStorage.getItem('tm_admin_employees');
+    if (localEmps) {
+      try {
+        const emps = JSON.parse(localEmps);
+        const updated = emps.map((e) =>
+          e.email === merged.email || e._id === merged._id || e.id === merged.id
+            ? { ...e, ...merged }
+            : e
+        );
+        localStorage.setItem('tm_admin_employees', JSON.stringify(updated));
+      } catch {}
+    }
+
+    return merged;
+  },
 };

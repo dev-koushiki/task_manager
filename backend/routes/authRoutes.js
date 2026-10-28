@@ -551,4 +551,49 @@ router.get("/me", authMiddleware, async (req, res) => {
   }
 });
 
+// PATCH /api/auth/profile - Update current user profile details & password
+router.patch("/profile", authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    const { firstName, lastName, designation, currentPassword, newPassword } = req.body;
+
+    if (firstName && firstName.trim()) user.firstName = firstName.trim();
+    if (lastName && lastName.trim()) user.lastName = lastName.trim();
+    if (designation && designation.trim()) user.designation = designation.trim();
+
+    // Password change verification
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({ message: "Current password is required to change password." });
+      }
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res.status(400).json({ message: "Current password does not match." });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ message: "New password must be at least 6 characters." });
+      }
+      user.password = await bcrypt.hash(newPassword, 10);
+    }
+
+    await user.save();
+
+    const updatedUser = await User.findById(user._id)
+      .select("-password")
+      .populate("reportsTo", "firstName lastName role designation")
+      .populate("reportingRelationships.managerId", "firstName lastName role designation positionTitle");
+
+    res.json({
+      message: "Profile updated successfully.",
+      user: updatedUser,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;
