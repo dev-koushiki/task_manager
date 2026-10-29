@@ -3,11 +3,23 @@
   "version": "1.0.0",
   "private": true,
   "description": "Hierarchical Task Manager & Progress Monitoring System",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
     "start": "node backend/server.js",
     "server": "node backend/server.js",
     "backend": "node backend/server.js",
-    "frontend": "cd frontend && npm run dev",
-    "build": "cd frontend && npm run build"
+    "frontend": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspace=frontend"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.11.4"
   }
 }

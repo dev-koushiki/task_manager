@@ -216,8 +216,8 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
 
       const result = await api.inviteEmployee(payload);
 
-      const rawToken = result.inviteToken;
-      const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${rawToken}`;
+      const rawToken = result.inviteToken || result.token || result.invitation?.inviteToken || result.invitation?.token;
+      const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${rawToken || ''}`;
       setLastGeneratedInvite({
         ...result.invitation,
         token: rawToken,
@@ -765,9 +765,19 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                     ? 'delivery-warning'
                     : 'delivery-error'
                 }`}
-                style={{ margin: '10px 0', padding: '10px', borderRadius: '6px' }}
+                style={{ margin: '10px 0', padding: '10px 14px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}
               >
                 <span>{emailStatus.message}</span>
+                {emailStatus.notConfigured && (
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-primary"
+                    style={{ whiteSpace: 'nowrap' }}
+                    onClick={() => setIsEmailModalOpen(true)}
+                  >
+                    ⚙ Connect EmailJS
+                  </button>
+                )}
               </div>
             )}
 
@@ -782,7 +792,9 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                 readOnly
                 value={lastGeneratedInvite.url}
                 className="invite-url-input form-control"
-                style={{ flex: '1 1 250px' }}
+                style={{ flex: '1 1 320px', minWidth: '240px' }}
+                onClick={(e) => e.target.select()}
+                title="Click to select full URL"
               />
               <button
                 type="button"
@@ -802,6 +814,15 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                 </a>
               )}
             </div>
+
+            {lastGeneratedInvite.token && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0 12px', fontSize: '13px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Token:</span>
+                <code style={{ background: 'var(--bg-main, #f1f5f9)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, color: 'var(--primary, #3b82f6)', fontSize: '12px' }}>
+                  {lastGeneratedInvite.token}
+                </code>
+              </div>
+            )}
 
             <div className="test-acceptance-row" style={{ marginTop: '10px' }}>
               <span className="test-hint">Test Onboarding Link:</span>

@@ -1,4 +1,21 @@
-const API_BASE_URL = 'http://localhost:5000/api';
+const getApiBaseUrl = () => {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined') {
+    const isLocalhost =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === '0.0.0.0';
+
+    if (!isLocalhost) {
+      return `${window.location.origin}/api`;
+    }
+  }
+  return 'http://localhost:5000/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // Helper to get auth header
 const getHeaders = () => {
