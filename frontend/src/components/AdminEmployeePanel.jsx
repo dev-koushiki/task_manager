@@ -30,6 +30,29 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [isEmailConfigured, setIsEmailConfigured] = useState(() => emailService.isConfigured());
 
+  // Cached invitation tokens to ensure instant copy/accept access even after refresh
+  const [knownTokens, setKnownTokens] = useState(() => {
+    try {
+      const stored = localStorage.getItem('tm_known_tokens');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const rememberToken = (id, token, email) => {
+    if (!token) return;
+    setKnownTokens((prev) => {
+      const next = { ...prev };
+      if (id) next[id] = token;
+      if (email) next[email.toLowerCase()] = token;
+      try {
+        localStorage.setItem('tm_known_tokens', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
   // Form states
   const [formData, setFormData] = useState({
     name: '',
@@ -193,37 +216,79 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
 
       const result = await api.inviteEmployee(payload);
 
-      const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${result.inviteToken}`;
+      const rawToken = result.inviteToken;
+      const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${rawToken}`;
       setLastGeneratedInvite({
         ...result.invitation,
-        token: result.inviteToken,
+        token: rawToken,
         url: inviteUrl,
       });
+
+      // Cache token so it remains accessible in the UI table
+      rememberToken(result.invitation?.id || result.invitation?._id, rawToken, formData.email.trim());
 
       // Send email if configured
       if (emailService.isConfigured()) {
         try {
-          await emailService.sendInvitation({
-            to_email: formData.email.trim(),
-            employee_name: formData.name.trim(),
-            company_name: companyName || 'Our Workspace',
+          const emailRes = await emailService.sendInvitation({
+            toEmail: formData.email.trim(),
+            toName: formData.name.trim(),
+            companyName: companyName || 'Our Workspace',
             department: formData.department,
-            role_name: positionTitle,
-            invitation_link: inviteUrl,
+            role: positionTitle,
+            inviteLink: inviteUrl,
           });
-          setEmailStatus({ sent: true, message: `Email delivered to ${formData.email} via EmailJS.` });
+
+          if (emailRes && emailRes.success) {
+            setEmailStatus({
+              sent: true,
+              message: `Invitation email delivered directly to ${formData.email} via EmailJS!`,
+            });
+          } else {
+            setEmailStatus({
+              sent: false,
+              message: `Email sending notice: ${emailRes?.message || 'Email delivery failed'}. Use the link or Mail App below.`,
+              mailtoUrl: emailService.getMailtoLink({
+                toEmail: formData.email.trim(),
+                toName: formData.name.trim(),
+                companyName: companyName || 'Our Workspace',
+                department: formData.department,
+                role: positionTitle,
+                inviteLink: inviteUrl,
+              }),
+            });
+          }
         } catch (emailErr) {
-          setEmailStatus({ sent: false, message: `Email sending failed: ${emailErr.message}` });
+          setEmailStatus({
+            sent: false,
+            message: `Email sending failed: ${emailErr.message}`,
+            mailtoUrl: emailService.getMailtoLink({
+              toEmail: formData.email.trim(),
+              toName: formData.name.trim(),
+              companyName: companyName || 'Our Workspace',
+              department: formData.department,
+              role: positionTitle,
+              inviteLink: inviteUrl,
+            }),
+          });
         }
       } else {
         setEmailStatus({
           sent: false,
           notConfigured: true,
-          message: 'EmailJS not yet configured. Copy the link below or configure email service.',
+          message: 'EmailJS credentials not yet configured. Copy the invitation link below or open your Mail App.',
+          mailtoUrl: emailService.getMailtoLink({
+            toEmail: formData.email.trim(),
+            toName: formData.name.trim(),
+            companyName: companyName || 'Our Workspace',
+            department: formData.department,
+            role: positionTitle,
+            inviteLink: inviteUrl,
+          }),
         });
       }
 
-      setSuccessMsg(`Secure invitation generated for ${formData.name}!`);
+      setSuccessMsg(`Secure invitation generated for ${formData.name}! Valid for 7 days.`);
       setFormData((prev) => ({ ...prev, name: '', email: '' }));
       refreshData();
     } catch (err) {
@@ -245,26 +310,37 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
       setInviteActionMsg('');
       const invId = inv._id || inv.id;
       const res = await api.resendInvitation(invId);
-      const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${res.inviteToken}`;
+      const rawToken = res.inviteToken;
+      const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${rawToken}`;
 
+      // Cache token so it remains accessible in the UI table
+      rememberToken(invId, rawToken, inv.email);
+
+      let actionMsg = '';
       if (emailService.isConfigured()) {
         try {
-          await emailService.sendInvitation({
-            to_email: inv.email,
-            employee_name: inv.name,
-            company_name: companyName || 'Our Workspace',
+          const emailRes = await emailService.sendInvitation({
+            toEmail: inv.email,
+            toName: inv.name,
+            companyName: companyName || 'Our Workspace',
             department: inv.department,
-            role_name: inv.positionTitle || `${inv.department} Specialist`,
-            invitation_link: inviteUrl,
+            role: inv.positionTitle || `${inv.department} Specialist`,
+            inviteLink: inviteUrl,
           });
-          setInviteActionMsg(`Invitation resent and emailed to ${inv.email}!`);
+          if (emailRes && emailRes.success) {
+            actionMsg = `Invitation renewed for 7 days & emailed to ${inv.email}! Fresh link copied.`;
+          } else {
+            actionMsg = `Invitation renewed for 7 days! (Email note: ${emailRes?.message || 'Check EmailJS'}). Fresh link copied.`;
+          }
         } catch (e) {
-          setInviteActionMsg(`Invitation refreshed. New invite link generated & copied!`);
+          actionMsg = `Invitation renewed for 7 days! Fresh link copied to clipboard.`;
         }
       } else {
-        setInviteActionMsg(`Invitation renewed for 24 hours. New link copied to clipboard!`);
+        actionMsg = `Invitation renewed for 7 days! Fresh link copied to clipboard.`;
       }
+
       handleCopyLink(inviteUrl);
+      setInviteActionMsg(actionMsg);
       refreshData();
     } catch (err) {
       alert(err.message || 'Failed to resend invitation');
@@ -677,7 +753,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                 <CheckIcon size={16} />
                 <span>Single-Use Invitation Generated Successfully</span>
               </div>
-              <span className="expiry-pill">⏳ Expires in 24 Hours</span>
+              <span className="expiry-pill">⏳ Expires in 7 Days</span>
             </div>
 
             {emailStatus && (
@@ -700,12 +776,13 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
               {lastGeneratedInvite.email}). They will set their password and activate their account.
             </p>
 
-            <div className="invite-link-wrapper">
+            <div className="invite-link-wrapper" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               <input
                 type="text"
                 readOnly
                 value={lastGeneratedInvite.url}
                 className="invite-url-input form-control"
+                style={{ flex: '1 1 250px' }}
               />
               <button
                 type="button"
@@ -714,6 +791,16 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
               >
                 {copiedLink ? 'Copied! ✓' : 'Copy Link'}
               </button>
+              {emailStatus?.mailtoUrl && (
+                <a
+                  href={emailStatus.mailtoUrl}
+                  className="btn btn-secondary btn-sm"
+                  style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <MailIcon size={14} />
+                  <span>Email in Mail App</span>
+                </a>
+              )}
             </div>
 
             <div className="test-acceptance-row" style={{ marginTop: '10px' }}>
@@ -772,8 +859,12 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
               {(allInvitations.length > 0 ? allInvitations : pendingInvites)
                 .filter((inv) => inviteFilter === 'all' || inv.status === inviteFilter)
                 .map((inv) => {
-                  const hasToken = Boolean(inv.inviteToken || (lastGeneratedInvite && lastGeneratedInvite.email === inv.email && lastGeneratedInvite.token));
-                  const currentToken = inv.inviteToken || (lastGeneratedInvite && lastGeneratedInvite.email === inv.email ? lastGeneratedInvite.token : null);
+                  const currentToken =
+                    inv.inviteToken ||
+                    knownTokens[inv._id] ||
+                    knownTokens[inv.id] ||
+                    (inv.email && knownTokens[inv.email.toLowerCase()]) ||
+                    (lastGeneratedInvite && lastGeneratedInvite.email === inv.email ? lastGeneratedInvite.token : null);
                   const inviteUrl = currentToken ? `${window.location.origin}${window.location.pathname}?invite=${currentToken}` : '';
 
                   const isExpired = inv.status === 'expired' || (inv.expiresAt && new Date(inv.expiresAt) < new Date() && inv.status === 'pending');
@@ -807,7 +898,10 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                           <div className="sub-meta" style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px' }}>
                             <span>{inv.email}</span> • <span>{inv.positionTitle || inv.role}</span>
                             {inv.expiresAt && currentStatus === 'pending' && (
-                              <span> • Expires {new Date(inv.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              <span> • Valid until {new Date(inv.expiresAt).toLocaleDateString()}</span>
+                            )}
+                            {inv.expiresAt && currentStatus === 'expired' && (
+                              <span style={{ color: '#ef4444', fontWeight: 600 }}> • Expired on {new Date(inv.expiresAt).toLocaleDateString()}</span>
                             )}
                           </div>
                         </div>

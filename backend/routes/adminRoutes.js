@@ -331,7 +331,7 @@ router.post("/employees/invite", authMiddleware, requireAdminOrEmployeeManager, 
     // Generate cryptographically random token
     const rawToken = crypto.randomBytes(32).toString("hex");
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7-day expiration
 
     // Revoke any previous pending invitations for this email
     await Invitation.updateMany(
@@ -451,7 +451,7 @@ router.post("/invitations/:id/resend", authMiddleware, requireAdminOrEmployeeMan
 
     const rawToken = crypto.randomBytes(32).toString("hex");
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7-day renewal
 
     invitation.tokenHash = tokenHash;
     invitation.status = "pending";

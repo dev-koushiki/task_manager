@@ -319,18 +319,34 @@ export const api = {
       const data = await safeFetchJson(`${API_BASE_URL}/auth/invite-details/${inviteToken}`);
       return data;
     } catch (err) {
+      if (!isOfflineError(err)) {
+        throw err;
+      }
+
       const localInvites = localStorage.getItem('tm_invitations');
       if (localInvites) {
-        const invites = JSON.parse(localInvites);
-        const inv = invites.find((i) => i.inviteToken === inviteToken && i.status === 'pending');
-        if (inv) {
-          if (new Date(inv.expiresAt) < new Date()) {
-            throw new Error('This invitation link has expired. Please contact your administrator.', { cause: err });
+        try {
+          const invites = JSON.parse(localInvites);
+          const inv = invites.find((i) => i.inviteToken === inviteToken);
+          if (inv) {
+            if (inv.status === 'accepted') {
+              throw new Error('This invitation has already been accepted. Please log in.');
+            }
+            if (inv.status === 'revoked') {
+              throw new Error('This invitation was revoked or superseded by a newer link.');
+            }
+            if (inv.expiresAt && new Date(inv.expiresAt) < new Date()) {
+              throw new Error(`This invitation link expired on ${new Date(inv.expiresAt).toLocaleDateString()}. Please request your administrator to renew it.`);
+            }
+            return inv;
           }
-          return inv;
+        } catch (jsonErr) {
+          if (jsonErr.message && !jsonErr.message.includes('JSON')) throw jsonErr;
         }
       }
-      throw new Error('This invitation link is invalid or has expired.', { cause: err });
+      throw new Error(
+        'Unable to connect to the backend server (http://localhost:5000). Please start the backend or verify your invitation link.'
+      );
     }
   },
 
@@ -405,7 +421,7 @@ export const api = {
     } catch (err) {
       if (isOfflineError(err)) {
         const rawToken = 'inv_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
         const storedUser = localStorage.getItem('tm_user');
         const currentUser = storedUser ? JSON.parse(storedUser) : {};
 
@@ -1590,7 +1606,7 @@ export const api = {
       if (idx !== -1) {
         const rawToken = 'tok_' + Math.random().toString(36).substring(2, 15);
         invites[idx].status = 'pending';
-        invites[idx].expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        invites[idx].expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
         invites[idx].inviteToken = rawToken;
         localStorage.setItem('tm_invitations', JSON.stringify(invites));
         return {

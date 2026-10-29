@@ -126,8 +126,24 @@ export const AcceptInviteScreen = ({
             <p>Validating single-use security token...</p>
           </div>
         ) : error && !inviteDetails ? (
-          <div className="alert-box alert-error">
-            <span>{error}</span>
+          <div className="alert-box alert-error" style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '14px' }}>
+            <span style={{ fontWeight: 500, fontSize: '14px', lineHeight: 1.4 }}>{error}</span>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => window.location.reload()}
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={onGoToLogin}
+              >
+                Go to Login
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -217,7 +233,7 @@ export const AcceptInviteScreen = ({
                 </div>
               </div>
 
-              {/* MFA Configuration Checkbox matching Image 1 & 3 */}
+              {/* MFA Configuration Checkbox */}
               <div className="mfa-config-box">
                 <label className="checkbox-label">
                   <input

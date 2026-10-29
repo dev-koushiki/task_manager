@@ -166,15 +166,38 @@ router.get("/invite-details/:token", async (req, res) => {
     const rawToken = req.params.token;
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
 
-    const invitation = await Invitation.findOne({
-      tokenHash,
-      status: "pending",
-      expiresAt: { $gt: new Date() },
-    });
+    const invitation = await Invitation.findOne({ tokenHash });
 
     if (!invitation) {
       return res.status(404).json({
-        message: "This invitation link is invalid or has expired. Please contact your workspace administrator.",
+        message: "This invitation link was not found or is invalid. Please verify the URL or ask your workspace administrator for a new invite.",
+        reason: "NOT_FOUND",
+      });
+    }
+
+    if (invitation.status === "accepted") {
+      return res.status(400).json({
+        message: "This invitation has already been accepted and activated. Please log in with your credentials.",
+        reason: "ALREADY_ACCEPTED",
+        email: invitation.email,
+      });
+    }
+
+    if (invitation.status === "revoked") {
+      return res.status(400).json({
+        message: "This invitation was revoked or replaced with a newer invitation. Please check your latest email or ask your administrator to resend.",
+        reason: "REVOKED",
+        email: invitation.email,
+      });
+    }
+
+    const now = new Date();
+    if (invitation.expiresAt && new Date(invitation.expiresAt) <= now) {
+      return res.status(400).json({
+        message: `This invitation link expired on ${new Date(invitation.expiresAt).toLocaleDateString()}. Please contact your workspace administrator to renew or resend it.`,
+        reason: "EXPIRED",
+        email: invitation.email,
+        expiresAt: invitation.expiresAt,
       });
     }
 
@@ -184,8 +207,10 @@ router.get("/invite-details/:token", async (req, res) => {
       department: invitation.department,
       team: invitation.team,
       role: invitation.role,
+      positionTitle: invitation.positionTitle,
       companyName: invitation.companyName,
       expiresAt: invitation.expiresAt,
+      status: invitation.status,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -211,15 +236,33 @@ router.post("/register/accept-invite", async (req, res) => {
 
     const tokenHash = crypto.createHash("sha256").update(inviteToken).digest("hex");
 
-    const invitation = await Invitation.findOne({
-      tokenHash,
-      status: "pending",
-      expiresAt: { $gt: new Date() },
-    });
+    const invitation = await Invitation.findOne({ tokenHash });
 
     if (!invitation) {
+      return res.status(404).json({
+        message: "This invitation link is invalid or unrecognized. Please request a new invitation from your administrator.",
+        reason: "NOT_FOUND",
+      });
+    }
+
+    if (invitation.status === "accepted") {
       return res.status(400).json({
-        message: "This invitation link is invalid, expired, or already used. Please request a new invitation from your admin.",
+        message: "This invitation has already been accepted. Please sign in with your credentials.",
+        reason: "ALREADY_ACCEPTED",
+      });
+    }
+
+    if (invitation.status === "revoked") {
+      return res.status(400).json({
+        message: "This invitation was revoked or replaced by a newer invitation link. Please use the newest invite.",
+        reason: "REVOKED",
+      });
+    }
+
+    if (invitation.expiresAt && new Date(invitation.expiresAt) <= new Date()) {
+      return res.status(400).json({
+        message: `This invitation link expired on ${new Date(invitation.expiresAt).toLocaleDateString()}. Please request your administrator to resend or renew it.`,
+        reason: "EXPIRED",
       });
     }
 

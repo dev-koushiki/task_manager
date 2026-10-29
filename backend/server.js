@@ -1,6 +1,10 @@
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
+const path = require("path");
+
+// Load .env relative to this file's directory and project root
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 require("dotenv").config();
 
 const authRoutes = require("./routes/authRoutes");
@@ -61,6 +65,14 @@ mongoose
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+});
+
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`Port ${PORT} is already in use by another process. Please stop it or change PORT in .env.`);
+  } else {
+    console.error("Server error:", error.message);
+  }
 });

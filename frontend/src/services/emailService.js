@@ -52,31 +52,48 @@ export const emailService = {
     );
   },
 
-  // Send an invitation email using EmailJS
-  async sendInviteEmail({ toName, toEmail, inviteLink, companyName, department, role }) {
+  // Send an invitation email using EmailJS - accepts flexible parameter naming
+  async sendInviteEmail(params = {}) {
     const config = this.getConfig();
+
+    const toName = params.toName || params.employee_name || params.to_name || 'Team Member';
+    const toEmail = (params.toEmail || params.to_email || params.recipient_email || params.email || '').trim();
+    const inviteLink = params.inviteLink || params.invitation_link || params.link || '';
+    const companyName = params.companyName || params.company_name || 'Company Workspace';
+    const department = params.department || 'General';
+    const role = (params.role || params.role_name || 'Specialist').replace(/_/g, ' ');
+
+    if (!toEmail) {
+      return {
+        success: false,
+        reason: 'NO_EMAIL',
+        message: 'Recipient email address is required.',
+      };
+    }
 
     if (!this.isConfigured()) {
       return {
         success: false,
         reason: 'NOT_CONFIGURED',
-        message: 'EmailJS credentials are not configured yet.',
+        message: 'EmailJS credentials are not configured yet. Please configure Service ID and Public Key.',
       };
     }
 
-    // Matches your EmailJS template variables from screenshot
+    // Matches template variables
     const templateParams = {
       to_name: toName,
-      name: companyName || 'TaskFlow Administrator',
+      name: companyName,
       to_email: toEmail,
       recipient_email: toEmail,
       email: toEmail,
       invite_link: inviteLink,
       link: inviteLink,
-      company_name: companyName || 'Company Workspace',
-      department: department || 'General',
-      role: (role || 'employee').replace(/_/g, ' '),
-      expires_in: '24 hours',
+      invitation_link: inviteLink,
+      company_name: companyName,
+      department: department,
+      role: role,
+      role_name: role,
+      expires_in: '7 days',
     };
 
     try {
@@ -102,5 +119,31 @@ export const emailService = {
         message: errMsg,
       };
     }
+  },
+
+  // Alias for sendInviteEmail to prevent 'sendInvitation is not a function' errors
+  async sendInvitation(params) {
+    return this.sendInviteEmail(params);
+  },
+
+  // Helper to construct mailto link as direct mail client fallback
+  getMailtoLink({ toEmail, toName, companyName, role, department, inviteLink } = {}) {
+    const email = toEmail || '';
+    const name = toName || 'there';
+    const company = companyName || 'our workspace';
+    const dept = department || 'General';
+    const roleTitle = (role || 'team member').replace(/_/g, ' ');
+
+    const subject = encodeURIComponent(`Invitation to join ${company} as ${roleTitle}`);
+    const body = encodeURIComponent(
+      `Hello ${name},\n\n` +
+      `You have been invited to join ${company} as a ${roleTitle} in the ${dept} department.\n\n` +
+      `Click the secure link below to accept your invitation and activate your account:\n` +
+      `${inviteLink}\n\n` +
+      `Note: This invitation link is valid for 7 days.\n\n` +
+      `Best regards,\n${company}`
+    );
+
+    return `mailto:${email}?subject=${subject}&body=${body}`;
   },
 };
