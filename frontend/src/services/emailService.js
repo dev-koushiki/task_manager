@@ -3,7 +3,7 @@ import emailjs from '@emailjs/browser';
 const STORAGE_KEY = 'tm_emailjs_config';
 
 const DEFAULT_SERVICE_ID = 'service_3937bmg';
-const DEFAULT_TEMPLATE_ID = 'almtr1p';
+const DEFAULT_TEMPLATE_ID = 'template_e8t3gmy';
 const DEFAULT_PUBLIC_KEY = 'GoX15NC8DvUYOjl2M';
 
 export const emailService = {
@@ -33,7 +33,11 @@ export const emailService = {
     }
 
     const cleanStoredService = (stored.serviceId && typeof stored.serviceId === 'string') ? stored.serviceId.trim() : '';
-    const cleanStoredTemplate = (stored.templateId && typeof stored.templateId === 'string') ? stored.templateId.trim() : '';
+    let cleanStoredTemplate = (stored.templateId && typeof stored.templateId === 'string') ? stored.templateId.trim() : '';
+    // Upgrade legacy/broken template IDs from localStorage automatically
+    if (cleanStoredTemplate === 'almtr1p') {
+      cleanStoredTemplate = '';
+    }
     const cleanStoredPublic = (stored.publicKey && typeof stored.publicKey === 'string') ? stored.publicKey.trim() : '';
 
     const serviceId = (
