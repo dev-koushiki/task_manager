@@ -67,7 +67,7 @@ export const EmailConfigModal = ({ isOpen, onClose, onConfigSaved }) => {
         </div>
 
         <p className="modal-subtitle">
-          Your EmailJS template <code>almtr1p</code> has been detected. Enter your Service ID and Public
+          Your EmailJS template <code>template_e8t3gmy</code> has been detected. Enter your Service ID and Public
           Key below to start delivering real invitation emails.
         </p>
 
@@ -105,7 +105,7 @@ export const EmailConfigModal = ({ isOpen, onClose, onConfigSaved }) => {
             <input
               id="templateId"
               type="text"
-              placeholder="almtr1p"
+              placeholder="template_e8t3gmy"
               value={config.templateId}
               onChange={(e) => setConfig({ ...config, templateId: e.target.value })}
               required
@@ -136,7 +136,7 @@ export const EmailConfigModal = ({ isOpen, onClose, onConfigSaved }) => {
                 <strong>Service ID:</strong> Click <strong>Email Services</strong> on your left sidebar, then copy the Service ID shown next to your connected email.
               </li>
               <li>
-                <strong>Template ID:</strong> Already pre-filled as <code>almtr1p</code> from your template!
+                <strong>Template ID:</strong> Already pre-filled as <code>template_e8t3gmy</code> from your template!
               </li>
               <li>
                 <strong>Public Key:</strong> Click <strong>Account</strong> on the bottom of the left sidebar, and copy your <strong>Public Key</strong>.

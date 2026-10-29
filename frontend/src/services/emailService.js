@@ -137,6 +137,12 @@ export const emailService = {
     };
 
     try {
+      console.log('Sending EmailJS with:', {
+        serviceId: config.serviceId.trim(),
+        templateId: config.templateId.trim(),
+        publicKey: config.publicKey ? 'configured' : 'missing',
+      });
+
       // Ensure SDK is initialized with public key
       emailjs.init({ publicKey: config.publicKey.trim() });
 
