@@ -1570,4 +1570,428 @@ export const api = {
 
     return merged;
   },
+
+  // ----------------------------------------------------
+  // INVITATIONS MANAGEMENT (Resend & Revoke)
+  // ----------------------------------------------------
+  async resendInvitation(invitationId) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/admin/invitations/${invitationId}/resend`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+
+      const local = localStorage.getItem('tm_invitations');
+      let invites = local ? JSON.parse(local) : [];
+      const idx = invites.findIndex((i) => (i._id || i.id) === invitationId);
+      if (idx !== -1) {
+        const rawToken = 'tok_' + Math.random().toString(36).substring(2, 15);
+        invites[idx].status = 'pending';
+        invites[idx].expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        invites[idx].inviteToken = rawToken;
+        localStorage.setItem('tm_invitations', JSON.stringify(invites));
+        return {
+          message: 'Invitation resent successfully.',
+          invitation: invites[idx],
+          inviteToken: rawToken,
+        };
+      }
+      throw new Error('Invitation not found.');
+    }
+  },
+
+  async revokeInvitation(invitationId) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/admin/invitations/${invitationId}/revoke`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+
+      const local = localStorage.getItem('tm_invitations');
+      let invites = local ? JSON.parse(local) : [];
+      const idx = invites.findIndex((i) => (i._id || i.id) === invitationId);
+      if (idx !== -1) {
+        invites[idx].status = 'revoked';
+        localStorage.setItem('tm_invitations', JSON.stringify(invites));
+        return { message: 'Invitation revoked successfully.', invitation: invites[idx] };
+      }
+      throw new Error('Invitation not found.');
+    }
+  },
+
+  // ----------------------------------------------------
+  // CALENDAR & MEETINGS MANAGEMENT
+  // ----------------------------------------------------
+  async getMeetings(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.date) params.append('date', filters.date);
+    if (filters.month) params.append('month', filters.month);
+    if (filters.projectId) params.append('projectId', filters.projectId);
+    if (filters.status) params.append('status', filters.status);
+
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/meetings${qs}`, {
+        headers: getHeaders(),
+      });
+      return data || [];
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+
+      const local = localStorage.getItem('tm_meetings');
+      let meetings = local ? JSON.parse(local) : [];
+      if (filters.date) {
+        meetings = meetings.filter((m) => m.date === filters.date);
+      }
+      if (filters.month) {
+        meetings = meetings.filter((m) => m.date && m.date.startsWith(filters.month));
+      }
+      if (filters.status) {
+        meetings = meetings.filter((m) => m.status === filters.status);
+      }
+      return meetings;
+    }
+  },
+
+  async getMeetingById(id) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/meetings/${id}`, {
+        headers: getHeaders(),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      const local = localStorage.getItem('tm_meetings');
+      const list = local ? JSON.parse(local) : [];
+      const found = list.find((m) => (m._id || m.id) === id);
+      if (!found) throw new Error('Meeting not found.');
+      return found;
+    }
+  },
+
+  async createMeeting(meetingData) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/meetings`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(meetingData),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+
+      const currentUser = this.getUser() || {};
+      const newMeeting = {
+        _id: 'mtg_' + Date.now(),
+        id: 'mtg_' + Date.now(),
+        title: meetingData.title,
+        agenda: meetingData.agenda || '',
+        date: meetingData.date,
+        startTime: meetingData.startTime,
+        endTime: meetingData.endTime,
+        location: meetingData.location || '',
+        meetingLink: meetingData.meetingLink || '',
+        projectId: meetingData.projectId || null,
+        projectName: meetingData.projectName || '',
+        organizer: currentUser._id || currentUser.id || 'usr_organizer',
+        organizerName: `${currentUser.firstName || 'Organizer'} ${currentUser.lastName || ''}`.trim(),
+        participants: Array.isArray(meetingData.participants) ? meetingData.participants : [],
+        status: 'scheduled',
+        minutes: { notes: '', decisions: [], actionItems: [] },
+        createdAt: new Date().toISOString(),
+      };
+
+      const local = localStorage.getItem('tm_meetings');
+      const meetings = local ? JSON.parse(local) : [];
+      meetings.unshift(newMeeting);
+      localStorage.setItem('tm_meetings', JSON.stringify(meetings));
+
+      return {
+        message: 'Meeting scheduled successfully.',
+        meeting: newMeeting,
+        conflicts: [],
+        hasConflict: false,
+      };
+    }
+  },
+
+  async updateMeeting(id, meetingData) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/meetings/${id}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(meetingData),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+
+      const local = localStorage.getItem('tm_meetings');
+      let meetings = local ? JSON.parse(local) : [];
+      const idx = meetings.findIndex((m) => (m._id || m.id) === id);
+      if (idx !== -1) {
+        meetings[idx] = { ...meetings[idx], ...meetingData };
+        localStorage.setItem('tm_meetings', JSON.stringify(meetings));
+        return { message: 'Meeting updated successfully.', meeting: meetings[idx], conflicts: [] };
+      }
+      throw new Error('Meeting not found.');
+    }
+  },
+
+  async cancelMeeting(id, reason = '') {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/meetings/${id}/cancel`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ reason }),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+
+      const local = localStorage.getItem('tm_meetings');
+      let meetings = local ? JSON.parse(local) : [];
+      const idx = meetings.findIndex((m) => (m._id || m.id) === id);
+      if (idx !== -1) {
+        meetings[idx].status = 'cancelled';
+        meetings[idx].cancellationReason = reason;
+        localStorage.setItem('tm_meetings', JSON.stringify(meetings));
+        return { message: 'Meeting cancelled successfully.', meeting: meetings[idx] };
+      }
+      throw new Error('Meeting not found.');
+    }
+  },
+
+  async respondMeeting(id, status) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/meetings/${id}/respond`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ status }),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+
+      const currentUser = this.getUser() || {};
+      const currentUserId = (currentUser._id || currentUser.id || '').toString();
+      const local = localStorage.getItem('tm_meetings');
+      let meetings = local ? JSON.parse(local) : [];
+      const idx = meetings.findIndex((m) => (m._id || m.id) === id);
+      if (idx !== -1) {
+        const p = meetings[idx].participants.find((pt) => (pt.userId || pt.id || '').toString() === currentUserId);
+        if (p) {
+          p.status = status;
+          p.respondedAt = new Date().toISOString();
+        }
+        localStorage.setItem('tm_meetings', JSON.stringify(meetings));
+        return { message: `Invitation response recorded as ${status}.`, meeting: meetings[idx] };
+      }
+      throw new Error('Meeting not found.');
+    }
+  },
+
+  async saveMeetingMinutes(id, minutesData) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/meetings/${id}/minutes`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(minutesData),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+
+      const currentUser = this.getUser() || {};
+      const local = localStorage.getItem('tm_meetings');
+      let meetings = local ? JSON.parse(local) : [];
+      const idx = meetings.findIndex((m) => (m._id || m.id) === id);
+      if (idx !== -1) {
+        meetings[idx].status = 'completed';
+        meetings[idx].minutes = {
+          notes: minutesData.notes || '',
+          decisions: Array.isArray(minutesData.decisions) ? minutesData.decisions : [],
+          actionItems: Array.isArray(minutesData.actionItems)
+            ? minutesData.actionItems.map((ai, index) => ({
+                _id: 'act_' + Date.now() + '_' + index,
+                description: ai.description,
+                assigneeId: ai.assigneeId || null,
+                assigneeName: ai.assigneeName || '',
+                dueDate: ai.dueDate || meetings[idx].date,
+                convertedToTaskId: ai.convertedToTaskId || null,
+                status: ai.status || 'pending',
+              }))
+            : [],
+          recordedBy: currentUser._id || currentUser.id,
+          recordedByName: `${currentUser.firstName || 'User'} ${currentUser.lastName || ''}`.trim(),
+          recordedAt: new Date().toISOString(),
+        };
+        localStorage.setItem('tm_meetings', JSON.stringify(meetings));
+        return { message: 'Meeting minutes recorded successfully.', meeting: meetings[idx] };
+      }
+      throw new Error('Meeting not found.');
+    }
+  },
+
+  async convertMeetingActionItem(meetingId, actionItemId) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/meetings/${meetingId}/action-items/${actionItemId}/convert`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+
+      const local = localStorage.getItem('tm_meetings');
+      let meetings = local ? JSON.parse(local) : [];
+      const mIdx = meetings.findIndex((m) => (m._id || m.id) === meetingId);
+      if (mIdx === -1) throw new Error('Meeting not found.');
+
+      const meeting = meetings[mIdx];
+      const actionItems = meeting.minutes?.actionItems || [];
+      const item = actionItems.find((ai) => (ai._id || ai.id) === actionItemId);
+      if (!item) throw new Error('Action item not found.');
+
+      const currentUser = this.getUser() || {};
+      const newTask = {
+        _id: 'task_' + Date.now(),
+        id: 'task_' + Date.now(),
+        title: item.description,
+        description: `Follow-up action item from meeting: "${meeting.title}" (Date: ${meeting.date})`,
+        organizationId: meeting.organizationId || 'org_default',
+        projectId: meeting.projectId || null,
+        assignedTo: item.assigneeId || currentUser._id,
+        assignedToName: item.assigneeName || `${currentUser.firstName || ''} ${currentUser.lastName || ''}`,
+        assignedBy: currentUser._id,
+        assignedByName: `${currentUser.firstName || 'Admin'} ${currentUser.lastName || ''}`,
+        deadline: item.dueDate || meeting.date,
+        dueDate: item.dueDate || meeting.date,
+        status: 'not-started',
+        priority: 'medium',
+        progress: 0,
+        createdAt: new Date().toISOString(),
+      };
+
+      const tasksLocal = localStorage.getItem('tm_tasks');
+      const tasks = tasksLocal ? JSON.parse(tasksLocal) : [];
+      tasks.unshift(newTask);
+      localStorage.setItem('tm_tasks', JSON.stringify(tasks));
+
+      item.status = 'converted';
+      item.convertedToTaskId = newTask._id;
+      localStorage.setItem('tm_meetings', JSON.stringify(meetings));
+
+      return {
+        message: 'Action item converted into task successfully.',
+        task: newTask,
+        meeting,
+      };
+    }
+  },
+
+  async checkMeetingConflicts({ date, startTime, endTime, participantIds = [], excludeMeetingId = null }) {
+    const params = new URLSearchParams({
+      date,
+      startTime,
+      endTime,
+      participantIds: Array.isArray(participantIds) ? participantIds.join(',') : participantIds,
+    });
+    if (excludeMeetingId) params.append('excludeMeetingId', excludeMeetingId);
+
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/meetings/conflicts?${params.toString()}`, {
+        headers: getHeaders(),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+
+      // Offline conflict checking
+      const local = localStorage.getItem('tm_meetings');
+      const meetings = local ? JSON.parse(local) : [];
+      const ids = Array.isArray(participantIds) ? participantIds : (participantIds ? participantIds.split(',') : []);
+
+      const conflicts = [];
+      for (const m of meetings) {
+        if (m.date === date && m.status === 'scheduled') {
+          if (excludeMeetingId && (m._id || m.id) === excludeMeetingId) continue;
+          if (m.startTime < endTime && m.endTime > startTime) {
+            for (const p of m.participants || []) {
+              if (ids.includes((p.userId || p.id || '').toString())) {
+                conflicts.push({
+                  userId: p.userId || p.id,
+                  name: p.name,
+                  meetingId: m._id || m.id,
+                  meetingTitle: m.title,
+                  startTime: m.startTime,
+                  endTime: m.endTime,
+                });
+              }
+            }
+          }
+        }
+      }
+      return { hasConflict: conflicts.length > 0, conflicts };
+    }
+  },
+
+  // ----------------------------------------------------
+  // NOTIFICATIONS
+  // ----------------------------------------------------
+  async getNotifications() {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/notifications`, {
+        headers: getHeaders(),
+      });
+      return data || { notifications: [], unreadCount: 0 };
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      const local = localStorage.getItem('tm_notifications');
+      const notifications = local ? JSON.parse(local) : [];
+      const unreadCount = notifications.filter((n) => !n.read).length;
+      return { notifications, unreadCount };
+    }
+  },
+
+  async markNotificationRead(id) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/notifications/${id}/read`, {
+        method: 'PUT',
+        headers: getHeaders(),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      const local = localStorage.getItem('tm_notifications');
+      let list = local ? JSON.parse(local) : [];
+      const n = list.find((item) => (item._id || item.id) === id);
+      if (n) n.read = true;
+      localStorage.setItem('tm_notifications', JSON.stringify(list));
+      return n;
+    }
+  },
+
+  async markAllNotificationsRead() {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/notifications/read-all`, {
+        method: 'PUT',
+        headers: getHeaders(),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      const local = localStorage.getItem('tm_notifications');
+      let list = local ? JSON.parse(local) : [];
+      list.forEach((n) => (n.read = true));
+      localStorage.setItem('tm_notifications', JSON.stringify(list));
+      return { message: 'All notifications marked as read.' };
+    }
+  },
 };

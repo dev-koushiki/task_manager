@@ -401,14 +401,114 @@ router.get("/employees", authMiddleware, async (req, res) => {
       .populate("reportingRelationships.managerId", "firstName lastName role designation positionTitle")
       .sort({ createdAt: -1 });
 
-    const pendingInvites = await Invitation.find({ organizationId: orgId, status: "pending" }).sort({ createdAt: -1 });
+    const allInvites = await Invitation.find({ organizationId: orgId }).sort({ createdAt: -1 });
+
+    const now = new Date();
+    const formattedInvites = allInvites.map((inv) => {
+      const isExpired = inv.status === "pending" && inv.expiresAt && new Date(inv.expiresAt) < now;
+      return {
+        _id: inv._id,
+        id: inv._id,
+        name: inv.name,
+        email: inv.email,
+        department: inv.department,
+        team: inv.team,
+        role: inv.role,
+        positionTitle: inv.positionTitle,
+        hierarchyLevel: inv.hierarchyLevel,
+        status: isExpired ? "expired" : inv.status,
+        expiresAt: inv.expiresAt,
+        createdAt: inv.createdAt,
+        isExpired,
+      };
+    });
+
+    const pendingInvites = formattedInvites.filter((i) => i.status === "pending");
 
     res.json({
       employees: users,
       pendingInvitations: pendingInvites,
+      allInvitations: formattedInvites,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/admin/invitations/:id/resend - Resend an invitation with a fresh token and 24h expiration
+router.post("/invitations/:id/resend", authMiddleware, requireAdminOrEmployeeManager, async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const invitation = await Invitation.findOne({ _id: req.params.id, organizationId: orgId });
+
+    if (!invitation) {
+      return res.status(404).json({ message: "Invitation not found." });
+    }
+
+    if (invitation.status === "accepted") {
+      return res.status(400).json({ message: "This invitation has already been accepted." });
+    }
+
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    invitation.tokenHash = tokenHash;
+    invitation.status = "pending";
+    invitation.expiresAt = expiresAt;
+    await invitation.save();
+
+    res.json({
+      message: `Invitation resent successfully to ${invitation.email}.`,
+      invitation: {
+        id: invitation._id,
+        _id: invitation._id,
+        name: invitation.name,
+        email: invitation.email,
+        department: invitation.department,
+        team: invitation.team,
+        role: invitation.role,
+        status: "pending",
+        expiresAt: invitation.expiresAt,
+      },
+      inviteToken: rawToken,
+    });
+  } catch (error) {
+    console.error("Resend invite error:", error);
+    res.status(500).json({ message: error.message || "Failed to resend invitation." });
+  }
+});
+
+// POST /api/admin/invitations/:id/revoke - Revoke an invitation
+router.post("/invitations/:id/revoke", authMiddleware, requireAdminOrEmployeeManager, async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const invitation = await Invitation.findOne({ _id: req.params.id, organizationId: orgId });
+
+    if (!invitation) {
+      return res.status(404).json({ message: "Invitation not found." });
+    }
+
+    if (invitation.status === "accepted") {
+      return res.status(400).json({ message: "Cannot revoke an invitation that has already been accepted." });
+    }
+
+    invitation.status = "revoked";
+    await invitation.save();
+
+    res.json({
+      message: `Invitation for ${invitation.email} has been revoked.`,
+      invitation: {
+        id: invitation._id,
+        _id: invitation._id,
+        name: invitation.name,
+        email: invitation.email,
+        status: "revoked",
+      },
+    });
+  } catch (error) {
+    console.error("Revoke invite error:", error);
+    res.status(500).json({ message: error.message || "Failed to revoke invitation." });
   }
 });
 

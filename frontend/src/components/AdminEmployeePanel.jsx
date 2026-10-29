@@ -51,6 +51,9 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
 
   const [employees, setEmployees] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
+  const [allInvitations, setAllInvitations] = useState([]);
+  const [inviteFilter, setInviteFilter] = useState('all'); // 'all' | 'pending' | 'expired' | 'revoked'
+  const [inviteActionMsg, setInviteActionMsg] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -90,6 +93,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
 
       setEmployees(adminData?.employees || []);
       setPendingInvites(adminData?.pendingInvitations || []);
+      setAllInvitations(adminData?.allInvitations || adminData?.pendingInvitations || []);
 
       if (orgData) {
         setOrg(orgData);
@@ -123,6 +127,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
       ]);
       setEmployees(adminData?.employees || []);
       setPendingInvites(adminData?.pendingInvitations || []);
+      setAllInvitations(adminData?.allInvitations || adminData?.pendingInvitations || []);
       if (orgData) {
         setOrg(orgData);
         setDepartments(orgData.departments || []);
@@ -233,6 +238,49 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 3000);
     });
+  };
+
+  const handleResendInvite = async (inv) => {
+    try {
+      setInviteActionMsg('');
+      const invId = inv._id || inv.id;
+      const res = await api.resendInvitation(invId);
+      const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${res.inviteToken}`;
+
+      if (emailService.isConfigured()) {
+        try {
+          await emailService.sendInvitation({
+            to_email: inv.email,
+            employee_name: inv.name,
+            company_name: companyName || 'Our Workspace',
+            department: inv.department,
+            role_name: inv.positionTitle || `${inv.department} Specialist`,
+            invitation_link: inviteUrl,
+          });
+          setInviteActionMsg(`Invitation resent and emailed to ${inv.email}!`);
+        } catch (e) {
+          setInviteActionMsg(`Invitation refreshed. New invite link generated & copied!`);
+        }
+      } else {
+        setInviteActionMsg(`Invitation renewed for 24 hours. New link copied to clipboard!`);
+      }
+      handleCopyLink(inviteUrl);
+      refreshData();
+    } catch (err) {
+      alert(err.message || 'Failed to resend invitation');
+    }
+  };
+
+  const handleRevokeInvite = async (inv) => {
+    if (!window.confirm(`Are you sure you want to revoke the invitation for ${inv.email}?`)) return;
+    try {
+      const invId = inv._id || inv.id;
+      await api.revokeInvitation(invId);
+      setInviteActionMsg(`Invitation for ${inv.email} has been revoked.`);
+      refreshData();
+    } catch (err) {
+      alert(err.message || 'Failed to revoke invitation');
+    }
   };
 
   // Toggle active/disabled
@@ -682,53 +730,147 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
         )}
       </div>
 
-      {/* Directory & Pending Invites Section */}
+      {/* Directory & Invitations Section */}
       <div className="directory-sections">
-        {/* Pending Invitations */}
-        {pendingInvites.length > 0 && (
-          <div className="pending-invites-card">
-            <h4>
-              Pending Invitations <span className="count-tag">{pendingInvites.length}</span>
-            </h4>
-            <div className="invites-list">
-              {pendingInvites.map((inv) => {
-                const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${inv.inviteToken}`;
-                return (
-                  <div key={inv._id || inv.id} className="invite-item">
-                    <div className="invite-meta">
-                      <div className="avatar-circle-sm">
-                        {inv.name ? inv.name[0].toUpperCase() : 'E'}
-                      </div>
-                      <div>
-                        <strong>{inv.name}</strong>
-                        <div className="sub-meta">
-                          <span>{inv.email}</span> • <span>{inv.department}</span> •{' '}
-                          <span className="role-tag-sm">{inv.role}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="invite-actions">
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-xs"
-                        onClick={() => handleCopyLink(inviteUrl)}
-                      >
-                        Copy Link
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-xs"
-                        onClick={() => onTestAcceptInvite(inv.inviteToken)}
-                      >
-                        Accept
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+        {/* Department-Based Invitations Manager */}
+        <div className="pending-invites-card">
+          <div className="invites-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h4 style={{ margin: 0 }}>
+                Department Invitations <span className="count-tag">{allInvitations.length || pendingInvites.length}</span>
+              </h4>
+            </div>
+
+            <div className="invite-filter-pills" style={{ display: 'flex', gap: '6px' }}>
+              {['all', 'pending', 'expired', 'revoked'].map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  className={`btn btn-xs ${inviteFilter === filter ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ textTransform: 'capitalize' }}
+                  onClick={() => setInviteFilter(filter)}
+                >
+                  {filter}
+                </button>
+              ))}
             </div>
           </div>
-        )}
+
+          {inviteActionMsg && (
+            <div className="alert-box alert-success animate-fade-in" style={{ margin: '8px 0 14px' }}>
+              <CheckIcon size={14} />
+              <span>{inviteActionMsg}</span>
+            </div>
+          )}
+
+          {allInvitations.length === 0 && pendingInvites.length === 0 ? (
+            <div className="empty-sub-state" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <p>No invitations sent yet. Use the form above to invite employees by department.</p>
+            </div>
+          ) : (
+            <div className="invites-list">
+              {(allInvitations.length > 0 ? allInvitations : pendingInvites)
+                .filter((inv) => inviteFilter === 'all' || inv.status === inviteFilter)
+                .map((inv) => {
+                  const hasToken = Boolean(inv.inviteToken || (lastGeneratedInvite && lastGeneratedInvite.email === inv.email && lastGeneratedInvite.token));
+                  const currentToken = inv.inviteToken || (lastGeneratedInvite && lastGeneratedInvite.email === inv.email ? lastGeneratedInvite.token : null);
+                  const inviteUrl = currentToken ? `${window.location.origin}${window.location.pathname}?invite=${currentToken}` : '';
+
+                  const isExpired = inv.status === 'expired' || (inv.expiresAt && new Date(inv.expiresAt) < new Date() && inv.status === 'pending');
+                  const currentStatus = isExpired ? 'expired' : inv.status;
+
+                  return (
+                    <div key={inv._id || inv.id} className="invite-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '8px', background: 'var(--bg-card)' }}>
+                      <div className="invite-meta" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div className="avatar-circle-sm">
+                          {inv.name ? inv.name[0].toUpperCase() : 'E'}
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <strong>{inv.name}</strong>
+                            <span className="dept-tag-badge" style={{ fontSize: '11px', background: 'var(--primary-light)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '12px', fontWeight: 600 }}>
+                              <BuildingIcon size={11} style={{ marginRight: '3px' }} />
+                              {inv.department}
+                            </span>
+                            <span className={`status-pill status-${currentStatus}`} style={{
+                              fontSize: '10px',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                              background: currentStatus === 'pending' ? '#fef3c7' : currentStatus === 'expired' ? '#fee2e2' : currentStatus === 'revoked' ? '#e2e8f0' : '#d1fae5',
+                              color: currentStatus === 'pending' ? '#92400e' : currentStatus === 'expired' ? '#991b1b' : currentStatus === 'revoked' ? '#475569' : '#065f46'
+                            }}>
+                              {currentStatus}
+                            </span>
+                          </div>
+                          <div className="sub-meta" style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                            <span>{inv.email}</span> • <span>{inv.positionTitle || inv.role}</span>
+                            {inv.expiresAt && currentStatus === 'pending' && (
+                              <span> • Expires {new Date(inv.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="invite-actions" style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        {currentStatus === 'pending' && (
+                          <>
+                            {inviteUrl && (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-xs"
+                                onClick={() => handleCopyLink(inviteUrl)}
+                                title="Copy invitation link"
+                              >
+                                {copiedLink ? 'Copied!' : 'Copy Link'}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-xs"
+                              onClick={() => handleResendInvite(inv)}
+                              title="Resend invitation email & renew token"
+                            >
+                              Resend
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-outline-danger btn-xs"
+                              onClick={() => handleRevokeInvite(inv)}
+                              title="Revoke this invitation"
+                            >
+                              Revoke
+                            </button>
+                            {currentToken && (
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-xs"
+                                onClick={() => onTestAcceptInvite(currentToken)}
+                                title="Accept invite in current browser"
+                              >
+                                Accept
+                              </button>
+                            )}
+                          </>
+                        )}
+
+                        {(currentStatus === 'expired' || currentStatus === 'revoked') && (
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-xs"
+                            onClick={() => handleResendInvite(inv)}
+                          >
+                            Re-invite Employee
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
 
         {/* Active Members Table */}
         <div className="active-members-card">

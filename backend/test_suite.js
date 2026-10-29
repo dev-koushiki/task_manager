@@ -11,6 +11,8 @@ const taskRoutes = require("./routes/taskRoutes");
 const employeeRoutes = require("./routes/employeeRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const organizationRoutes = require("./routes/organizationRoutes");
+const meetingRoutes = require("./routes/meetingRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 
 const User = require("./models/User");
 const Organization = require("./models/Organization");
@@ -37,6 +39,8 @@ async function runTestSuite() {
   app.use("/api/employees", employeeRoutes);
   app.use("/api/admin", adminRoutes);
   app.use("/api/organization", organizationRoutes);
+  app.use("/api/meetings", meetingRoutes);
+  app.use("/api/notifications", notificationRoutes);
 
   const TEST_PORT = 5099;
   const server = http.createServer(app);
