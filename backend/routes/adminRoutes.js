@@ -439,7 +439,10 @@ router.get("/employees", authMiddleware, async (req, res) => {
 router.post("/invitations/:id/resend", authMiddleware, requireAdminOrEmployeeManager, async (req, res) => {
   try {
     const orgId = req.user.organizationId;
-    const invitation = await Invitation.findOne({ _id: req.params.id, organizationId: orgId });
+    let invitation = await Invitation.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!invitation && req.user.role === "admin") {
+      invitation = await Invitation.findById(req.params.id);
+    }
 
     if (!invitation) {
       return res.status(404).json({ message: "Invitation not found." });
@@ -483,7 +486,10 @@ router.post("/invitations/:id/resend", authMiddleware, requireAdminOrEmployeeMan
 router.post("/invitations/:id/revoke", authMiddleware, requireAdminOrEmployeeManager, async (req, res) => {
   try {
     const orgId = req.user.organizationId;
-    const invitation = await Invitation.findOne({ _id: req.params.id, organizationId: orgId });
+    let invitation = await Invitation.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!invitation && req.user.role === "admin") {
+      invitation = await Invitation.findById(req.params.id);
+    }
 
     if (!invitation) {
       return res.status(404).json({ message: "Invitation not found." });

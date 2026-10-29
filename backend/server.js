@@ -20,30 +20,40 @@ const app = express();
 
 // Middlewares
 app.use(cors());
-app.use(express.json());
+app.use((req, res, next) => {
+  if (req.body !== undefined && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
+    return next();
+  }
+  express.json()(req, res, next);
+});
 
 // MongoDB connection handling with cloud Atlas fallback and serverless connection caching
 const DEFAULT_MONGODB_URI =
   "mongodb+srv://koushikiudemy_db_user:koushiki123@cluster0.emsh8jh.mongodb.net/task_manager?retryWrites=true&w=majority";
 const MONGODB_URI = process.env.MONGODB_URI || DEFAULT_MONGODB_URI;
 
-let isDbConnecting = false;
+let dbConnectPromise = null;
 const connectDB = async () => {
   if (mongoose.connection.readyState >= 1) {
     return;
   }
-  if (isDbConnecting) return;
-  isDbConnecting = true;
-  try {
-    await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000,
-    });
-    console.log("MongoDB connected successfully!");
-  } catch (error) {
-    console.warn("MongoDB connection warning:", error.message);
-  } finally {
-    isDbConnecting = false;
+  if (dbConnectPromise) {
+    return dbConnectPromise;
   }
+  dbConnectPromise = mongoose
+    .connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000,
+    })
+    .then(() => {
+      console.log("MongoDB connected successfully!");
+    })
+    .catch((error) => {
+      console.warn("MongoDB connection warning:", error.message);
+    })
+    .finally(() => {
+      dbConnectPromise = null;
+    });
+  return dbConnectPromise;
 };
 
 // Immediate connect attempt

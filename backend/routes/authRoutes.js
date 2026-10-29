@@ -166,7 +166,9 @@ router.get("/invite-details/:token", async (req, res) => {
     const rawToken = req.params.token;
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
 
-    const invitation = await Invitation.findOne({ tokenHash });
+    const invitation = await Invitation.findOne({
+      $or: [{ tokenHash }, { tokenHash: rawToken }],
+    });
 
     if (!invitation) {
       return res.status(404).json({
@@ -236,7 +238,9 @@ router.post("/register/accept-invite", async (req, res) => {
 
     const tokenHash = crypto.createHash("sha256").update(inviteToken).digest("hex");
 
-    const invitation = await Invitation.findOne({ tokenHash });
+    const invitation = await Invitation.findOne({
+      $or: [{ tokenHash }, { tokenHash: inviteToken }],
+    });
 
     if (!invitation) {
       return res.status(404).json({
@@ -316,25 +320,48 @@ router.post("/register/accept-invite", async (req, res) => {
       orgId = org ? org._id : null;
     }
 
-    const newUser = await User.create({
-      firstName,
-      lastName,
-      email: invitation.email,
-      password: hashedPassword,
-      companyName: invitation.companyName,
-      organizationId: orgId,
-      designation: positionTitle,
-      department: invitation.department,
-      team: invitation.team || "",
-      role,
-      positionTitle,
-      hierarchyLevel: level,
-      permissions: userPermissions,
-      accessScopes: userScopes,
-      reportingRelationships: Array.isArray(invitation.reportingRelationships) ? invitation.reportingRelationships : [],
-      status: "active",
-      mfaEnabled: Boolean(mfaEnabled),
-    });
+    // Check if user already exists; update password & activate if so to prevent duplicate key errors
+    const existingUser = await User.findOne({ email: invitation.email });
+    let newUser;
+
+    if (existingUser) {
+      existingUser.password = hashedPassword;
+      existingUser.status = "active";
+      existingUser.mfaEnabled = Boolean(mfaEnabled);
+      existingUser.department = invitation.department;
+      existingUser.team = invitation.team || "";
+      existingUser.role = role;
+      existingUser.positionTitle = positionTitle;
+      existingUser.hierarchyLevel = level;
+      existingUser.permissions = userPermissions;
+      existingUser.accessScopes = userScopes;
+      if (orgId) existingUser.organizationId = orgId;
+      if (Array.isArray(invitation.reportingRelationships) && invitation.reportingRelationships.length > 0) {
+        existingUser.reportingRelationships = invitation.reportingRelationships;
+      }
+      await existingUser.save();
+      newUser = existingUser;
+    } else {
+      newUser = await User.create({
+        firstName,
+        lastName,
+        email: invitation.email,
+        password: hashedPassword,
+        companyName: invitation.companyName,
+        organizationId: orgId,
+        designation: positionTitle,
+        department: invitation.department,
+        team: invitation.team || "",
+        role,
+        positionTitle,
+        hierarchyLevel: level,
+        permissions: userPermissions,
+        accessScopes: userScopes,
+        reportingRelationships: Array.isArray(invitation.reportingRelationships) ? invitation.reportingRelationships : [],
+        status: "active",
+        mfaEnabled: Boolean(mfaEnabled),
+      });
+    }
 
     invitation.status = "accepted";
     await invitation.save();

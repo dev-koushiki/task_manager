@@ -32,20 +32,24 @@ export const emailService = {
       // fallback
     }
 
+    const cleanStoredService = (stored.serviceId && typeof stored.serviceId === 'string') ? stored.serviceId.trim() : '';
+    const cleanStoredTemplate = (stored.templateId && typeof stored.templateId === 'string') ? stored.templateId.trim() : '';
+    const cleanStoredPublic = (stored.publicKey && typeof stored.publicKey === 'string') ? stored.publicKey.trim() : '';
+
     const serviceId = (
-      stored.serviceId ||
+      cleanStoredService ||
       envServiceId ||
       DEFAULT_SERVICE_ID
     ).trim().replace(/^["']|["']$/g, '');
 
     const templateId = (
-      stored.templateId ||
+      cleanStoredTemplate ||
       envTemplateId ||
       DEFAULT_TEMPLATE_ID
     ).trim().replace(/^["']|["']$/g, '');
 
     const publicKey = (
-      stored.publicKey ||
+      cleanStoredPublic ||
       envPublicKey ||
       DEFAULT_PUBLIC_KEY
     ).trim().replace(/^["']|["']$/g, '');
@@ -129,6 +133,9 @@ export const emailService = {
     };
 
     try {
+      // Ensure SDK is initialized with public key
+      emailjs.init({ publicKey: config.publicKey.trim() });
+
       // Send using EmailJS v5 syntax with options object containing publicKey
       const response = await emailjs.send(
         config.serviceId.trim(),

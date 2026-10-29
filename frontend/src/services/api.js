@@ -334,7 +334,8 @@ export const api = {
   async getInviteDetails(inviteToken) {
     try {
       const data = await safeFetchJson(`${API_BASE_URL}/auth/invite-details/${inviteToken}`);
-      return data;
+      const inv = data.invitation || data;
+      return { ...inv, invitation: inv };
     } catch (err) {
       // First check local storage fallback (for offline or recently created local invitations)
       const localInvites = localStorage.getItem('tm_invitations');

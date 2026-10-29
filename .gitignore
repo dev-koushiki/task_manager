@@ -9,6 +9,7 @@ frontend/node_modules/
 .env.*.local
 backend/.env
 frontend/.env
+frontend/backend/.env
 
 # Build outputs
 dist/
