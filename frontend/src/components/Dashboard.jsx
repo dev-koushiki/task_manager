@@ -21,7 +21,6 @@ import {
   FilterIcon,
   HomeIcon,
   FolderIcon,
-  RocketIcon,
   ActivityIcon,
   ChevronDownIcon,
   MoreVerticalIcon,
@@ -92,7 +91,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const [isNotifDropdownOpen, setIsNotifDropdownOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   // Modal states
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
@@ -356,21 +354,133 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
     });
   }, [tasks, searchQuery, priorityFilter, statusFilter]);
 
-  // Metric Computations (matching the Reference UI)
-  const totalTasksCount = tasks.length || 48;
-  const inProgressTasksCount = tasks.filter((t) => t.status === 'in-progress').length || 16;
-  const completedTasksCount = tasks.filter((t) => t.status === 'completed').length || 24;
-  const todoTasksCount = tasks.filter((t) => !t.status || t.status === 'not-started').length || (totalTasksCount - inProgressTasksCount - completedTasksCount);
+  // Real Metric Computations (reflecting actual tasks in the workspace)
+  const totalTasksCount = tasks.length;
+  const inProgressTasksCount = tasks.filter((t) => t.status === 'in-progress').length;
+  const completedTasksCount = tasks.filter((t) => t.status === 'completed').length;
+  const todoTasksCount = tasks.filter((t) => !t.status || t.status === 'not-started').length;
 
-  // Completion percentages for Donut Chart
-  const pctCompleted = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 72;
-  const pctInProgress = totalTasksCount > 0 ? Math.round((inProgressTasksCount / totalTasksCount) * 100) : 18;
-  const pctTodo = Math.max(0, 100 - pctCompleted - pctInProgress);
+  // Real Tasks this week
+  const tasksThisWeekCount = useMemo(() => {
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    return tasks.filter((t) => new Date(t.createdAt || t.updatedAt || 0) >= startOfWeek).length;
+  }, [tasks]);
 
-  // Priority counts
-  const highPriorityCount = tasks.filter((t) => t.priority === 'urgent' || t.priority === 'high').length || 6;
-  const medPriorityCount = tasks.filter((t) => t.priority === 'medium').length || 14;
-  const lowPriorityCount = tasks.filter((t) => t.priority === 'low').length || 28;
+  // Real Completion percentages for Donut Chart
+  const pctCompleted = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
+  const pctInProgress = totalTasksCount > 0 ? Math.round((inProgressTasksCount / totalTasksCount) * 100) : 0;
+  const pctTodo = totalTasksCount > 0 ? Math.max(0, 100 - pctCompleted - pctInProgress) : 0;
+
+  // Real Priority counts
+  const highPriorityCount = tasks.filter((t) => t.priority === 'urgent' || t.priority === 'high').length;
+  const medPriorityCount = tasks.filter((t) => t.priority === 'medium').length;
+  const lowPriorityCount = tasks.filter((t) => t.priority === 'low').length;
+
+  // Real Today's Tasks
+  const todaysTasks = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    return tasks.filter((t) => {
+      const d = t.deadline || t.dueDate;
+      return d && d.startsWith(todayStr);
+    });
+  }, [tasks]);
+
+  // Real Upcoming Tasks & Meetings
+  const upcomingItems = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const items = [];
+    tasks.forEach((t) => {
+      const d = t.deadline || t.dueDate;
+      if (d && d >= todayStr && t.status !== 'completed') {
+        items.push({
+          id: t._id || t.id,
+          type: 'task',
+          title: t.title,
+          date: d,
+          priority: t.priority || 'medium',
+        });
+      }
+    });
+    meetings.forEach((m) => {
+      if (m.date && m.date >= todayStr && m.status === 'scheduled') {
+        items.push({
+          id: m._id || m.id,
+          type: 'meeting',
+          title: m.title,
+          date: m.date,
+          priority: 'medium',
+          isMeeting: true,
+        });
+      }
+    });
+    return items.sort((a, b) => (a.date || '').localeCompare(b.date || '')).slice(0, 5);
+  }, [tasks, meetings]);
+
+  // Real Task Timeline (Recent Activity derived from real tasks)
+  const recentActivities = useMemo(() => {
+    if (!tasks || tasks.length === 0) return [];
+    const sorted = [...tasks].sort(
+      (a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0)
+    );
+    return sorted.slice(0, 5).map((t) => {
+      const d = t.updatedAt || t.createdAt ? new Date(t.updatedAt || t.createdAt) : new Date();
+      const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const assignee = t.assignedToName && t.assignedToName !== 'Unassigned' ? t.assignedToName : 'Staff';
+      const userInitial = assignee ? assignee[0].toUpperCase() : 'U';
+
+      let action = `updated "${t.title}"`;
+      let dotClass = 'dot-blue';
+      if (t.status === 'completed') {
+        action = `${assignee} completed "${t.title}"`;
+        dotClass = 'dot-green';
+      } else if (t.status === 'submitted') {
+        action = `${assignee} submitted "${t.title}" for review`;
+        dotClass = 'dot-purple';
+      } else if (t.status === 'in-progress') {
+        action = `${assignee} moved "${t.title}" → In Progress`;
+        dotClass = 'dot-orange';
+      } else {
+        action = `created task "${t.title}"`;
+        dotClass = 'dot-blue';
+      }
+
+      return {
+        id: t._id || t.id,
+        time: timeStr,
+        userInitial,
+        text: action,
+        dotClass,
+      };
+    });
+  }, [tasks]);
+
+  // Real Team Workload derived from employees and tasks
+  const teamWorkloads = useMemo(() => {
+    if (!employees || employees.length === 0) return [];
+    return employees.slice(0, 5).map((emp) => {
+      const empId = (emp._id || emp.id || '').toString();
+      const empTasks = tasks.filter((t) => {
+        const assigned = (t.assignedTo?._id || t.assignedTo || '').toString();
+        return assigned === empId;
+      });
+      const total = empTasks.length;
+      const completed = empTasks.filter((t) => t.status === 'completed').length;
+      const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+      const initials = `${emp.firstName ? emp.firstName[0] : ''}${emp.lastName ? emp.lastName[0] : ''}`.toUpperCase() || 'E';
+      return {
+        id: empId,
+        name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || emp.name,
+        initials,
+        pct,
+        taskCount: total,
+      };
+    });
+  }, [employees, tasks]);
+
+  const totalAssignedTasks = tasks.filter((t) => t.assignedTo).length;
+  const overallCapacityPct = tasks.length > 0 ? Math.round((totalAssignedTasks / tasks.length) * 100) : 0;
 
   // Kanban Columns (matching Reference UI screenshot)
   const kanbanColumns = [
@@ -380,19 +490,19 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
     { id: 'completed', title: 'Done', accent: 'col-done', headerTint: 'tint-done' },
   ];
 
-  // User initials & presentation
+  // User initials & presentation from authenticated user
   const userInitials =
-    user && user.firstName && user.lastName
-      ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
-      : 'AJ';
+    user && user.firstName
+      ? `${user.firstName[0]}${user.lastName ? user.lastName[0] : ''}`.toUpperCase()
+      : 'U';
 
   const userDisplayName =
     user && user.firstName
       ? `${user.firstName} ${user.lastName || ''}`.trim()
-      : 'Alex Johnson';
+      : 'Workspace User';
 
   const userDisplayRole =
-    user?.positionTitle || user?.designation || (userRole === 'admin' ? 'Executive Lead' : 'Product Designer');
+    user?.positionTitle || user?.designation || (userRole === 'admin' ? 'Administrator' : 'Team Member');
 
   return (
     <div className="workspace-app-layout">
@@ -495,22 +605,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             <span>Settings</span>
           </button>
         </nav>
-
-        {/* Sidebar Upgrade Plan Card */}
-        <div className="sidebar-upgrade-card">
-          <div className="upgrade-rocket-circle">
-            <RocketIcon size={20} className="rocket-icon" />
-          </div>
-          <strong className="upgrade-title">Upgrade Plan</strong>
-          <p className="upgrade-subtitle">Unlock premium features</p>
-          <button
-            type="button"
-            className="upgrade-btn"
-            onClick={() => setShowUpgradeModal(true)}
-          >
-            Upgrade Now
-          </button>
-        </div>
 
         {/* Sidebar User Profile Capsule at Bottom */}
         <div className="sidebar-user-bottom" onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}>
@@ -642,14 +736,14 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               )}
             </div>
 
-            {/* + Add Task Button (Solid Blue) */}
+            {/* Add Task Button (Solid Blue) */}
             <button
               type="button"
               className="btn btn-primary top-add-task-btn"
               onClick={() => handleOpenNewTask()}
             >
               <PlusIcon size={16} />
-              <span>+ Add Task</span>
+              <span>Add Task</span>
             </button>
 
             {/* Notifications Bell Icon */}
@@ -747,10 +841,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                     </div>
                   </div>
                   <div className="metric-stat-number">{totalTasksCount}</div>
-                  <div className="metric-trend trend-green">
-                    <span className="trend-arrow">↑</span>
-                    <span>8 this week</span>
-                  </div>
+                  {totalTasksCount > 0 ? (
+                    <div className="metric-trend trend-green">
+                      <span className="trend-arrow">↑</span>
+                      <span>{tasksThisWeekCount} this week</span>
+                    </div>
+                  ) : (
+                    <div className="metric-trend trend-neutral">
+                      <span>No tasks yet</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Metric 2: In Progress */}
@@ -762,10 +862,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                     </div>
                   </div>
                   <div className="metric-stat-number">{inProgressTasksCount}</div>
-                  <div className="metric-trend trend-orange">
-                    <span className="trend-arrow">↓</span>
-                    <span>due today</span>
-                  </div>
+                  {inProgressTasksCount > 0 ? (
+                    <div className="metric-trend trend-orange">
+                      <span className="trend-arrow">●</span>
+                      <span>{inProgressTasksCount} active</span>
+                    </div>
+                  ) : (
+                    <div className="metric-trend trend-neutral">
+                      <span>None in progress</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Metric 3: Completed */}
@@ -777,10 +883,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                     </div>
                   </div>
                   <div className="metric-stat-number">{completedTasksCount}</div>
-                  <div className="metric-trend trend-green">
-                    <span className="trend-arrow">↑</span>
-                    <span>12 this week</span>
-                  </div>
+                  {completedTasksCount > 0 ? (
+                    <div className="metric-trend trend-green">
+                      <span className="trend-arrow">↑</span>
+                      <span>{completedTasksCount} completed</span>
+                    </div>
+                  ) : (
+                    <div className="metric-trend trend-neutral">
+                      <span>None completed</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Metric 4: Task Completion (Donut + Mini-bar) */}
@@ -797,23 +909,27 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                           stroke="#e2e8f0"
                           strokeWidth="4"
                         />
-                        <path
-                          className="donut-segment segment-completed"
-                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          fill="none"
-                          stroke="#2563eb"
-                          strokeWidth="4"
-                          strokeDasharray={`${pctCompleted}, 100`}
-                        />
-                        <path
-                          className="donut-segment segment-progress"
-                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          fill="none"
-                          stroke="#f59e0b"
-                          strokeWidth="4"
-                          strokeDasharray={`${pctInProgress}, 100`}
-                          strokeDashoffset={`-${pctCompleted}`}
-                        />
+                        {pctCompleted > 0 && (
+                          <path
+                            className="donut-segment segment-completed"
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                            fill="none"
+                            stroke="#2563eb"
+                            strokeWidth="4"
+                            strokeDasharray={`${pctCompleted}, 100`}
+                          />
+                        )}
+                        {pctInProgress > 0 && (
+                          <path
+                            className="donut-segment segment-progress"
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                            fill="none"
+                            stroke="#f59e0b"
+                            strokeWidth="4"
+                            strokeDasharray={`${pctInProgress}, 100`}
+                            strokeDashoffset={`-${pctCompleted}`}
+                          />
+                        )}
                       </svg>
                     </div>
 
@@ -838,11 +954,11 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
                     {/* Mini Vertical Bar Chart */}
                     <div className="mini-bar-chart">
-                      <div className="bar-col" style={{ height: '35%' }}></div>
-                      <div className="bar-col" style={{ height: '55%' }}></div>
-                      <div className="bar-col" style={{ height: '75%' }}></div>
-                      <div className="bar-col" style={{ height: '45%' }}></div>
-                      <div className="bar-col" style={{ height: '90%' }}></div>
+                      <div className="bar-col" style={{ height: totalTasksCount > 0 ? `${Math.max(15, pctTodo)}%` : '15%' }}></div>
+                      <div className="bar-col" style={{ height: totalTasksCount > 0 ? `${Math.max(15, pctInProgress)}%` : '15%' }}></div>
+                      <div className="bar-col" style={{ height: totalTasksCount > 0 ? `${Math.max(15, pctCompleted)}%` : '15%' }}></div>
+                      <div className="bar-col" style={{ height: totalTasksCount > 0 ? `${Math.max(15, Math.round((pctInProgress + pctCompleted) / 2))}%` : '15%' }}></div>
+                      <div className="bar-col" style={{ height: totalTasksCount > 0 ? `${Math.max(15, pctCompleted)}%` : '15%' }}></div>
                     </div>
                   </div>
                 </div>
@@ -911,51 +1027,57 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
                           {/* Cards List */}
                           <div className="ref-col-cards-list">
-                            {colTasks.map((t) => {
-                              const cat = getTaskCategory(t);
-                              const dotColor =
-                                t.status === 'completed'
-                                  ? 'dot-done'
-                                  : t.priority === 'urgent' || t.priority === 'high'
-                                  ? 'dot-red'
-                                  : t.priority === 'medium'
-                                  ? 'dot-yellow'
-                                  : 'dot-blue';
+                            {colTasks.length === 0 ? (
+                              <div className="ref-col-empty-placeholder">
+                                <span>No tasks</span>
+                              </div>
+                            ) : (
+                              colTasks.map((t) => {
+                                const cat = getTaskCategory(t);
+                                const dotColor =
+                                  t.status === 'completed'
+                                    ? 'dot-done'
+                                    : t.priority === 'urgent' || t.priority === 'high'
+                                    ? 'dot-red'
+                                    : t.priority === 'medium'
+                                    ? 'dot-yellow'
+                                    : 'dot-blue';
 
-                              return (
-                                <div key={t._id || t.id} className="ref-task-card animate-scale-up">
-                                  <div className="card-row-top">
-                                    <div className="title-with-dot">
-                                      <span className={`priority-indicator-dot ${dotColor}`}></span>
-                                      <strong className="card-task-title">{t.title}</strong>
+                                return (
+                                  <div key={t._id || t.id} className="ref-task-card animate-scale-up">
+                                    <div className="card-row-top">
+                                      <div className="title-with-dot">
+                                        <span className={`priority-indicator-dot ${dotColor}`}></span>
+                                        <strong className="card-task-title">{t.title}</strong>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        className="three-dots-btn"
+                                        onClick={() => handleDeleteTask(t._id || t.id)}
+                                        title="Delete task"
+                                      >
+                                        <MoreVerticalIcon size={14} />
+                                      </button>
                                     </div>
-                                    <button
-                                      type="button"
-                                      className="three-dots-btn"
-                                      onClick={() => handleDeleteTask(t._id || t.id)}
-                                      title="Delete task"
-                                    >
-                                      <MoreVerticalIcon size={14} />
-                                    </button>
-                                  </div>
 
-                                  <div className="card-tag-row">
-                                    <span className={`card-category-badge ${cat.color}`}>
-                                      {cat.label}
-                                    </span>
-                                  </div>
+                                    <div className="card-tag-row">
+                                      <span className={`card-category-badge ${cat.color}`}>
+                                        {cat.label}
+                                      </span>
+                                    </div>
 
-                                  <div className="card-row-bottom">
-                                    <span className="card-date-text">
-                                      {t.deadline ? new Date(t.deadline).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Aug 18'}
-                                    </span>
-                                    <div className="card-assignee-avatar">
-                                      {t.assignedToName ? t.assignedToName[0].toUpperCase() : 'A'}
+                                    <div className="card-row-bottom">
+                                      <span className="card-date-text">
+                                        {t.deadline ? new Date(t.deadline).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'No date'}
+                                      </span>
+                                      <div className="card-assignee-avatar">
+                                        {t.assignedToName && t.assignedToName !== 'Unassigned' ? t.assignedToName[0].toUpperCase() : 'A'}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              })
+                            )}
                           </div>
 
                           {/* + Add Task Button at bottom of Column */}
@@ -983,33 +1105,48 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                       </button>
                     </div>
 
-                    <div className="todays-tasks-list">
-                      {tasks.slice(0, 6).map((t, idx) => {
-                        const isDone = t.status === 'completed';
-                        const cat = getTaskCategory(t);
-                        const times = ['9:00 AM', '10:30 AM', '1:00 PM', '2:00 PM', '3:15 PM', '4:30 PM'];
-                        const timeStr = times[idx % times.length];
+                    {todaysTasks.length === 0 ? (
+                      <div className="side-card-empty-state">
+                        <CheckSquareIcon size={24} className="empty-icon-muted" />
+                        <p>No tasks scheduled for today</p>
+                        <button
+                          type="button"
+                          className="btn-link-sm"
+                          onClick={() => handleOpenNewTask()}
+                        >
+                          + Create a task
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="todays-tasks-list">
+                        {todaysTasks.slice(0, 6).map((t) => {
+                          const isDone = t.status === 'completed';
+                          const cat = getTaskCategory(t);
+                          const timeStr = t.deadline
+                            ? new Date(t.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : 'All Day';
 
-                        return (
-                          <div key={t._id || t.id} className="today-task-row">
-                            <button
-                              type="button"
-                              className={`checkbox-custom-btn ${isDone ? 'checked' : ''}`}
-                              onClick={() => handleToggleTaskDone(t)}
-                            >
-                              {isDone ? <CheckIcon size={12} className="check-mark-icon" /> : null}
-                            </button>
-                            <span className={`today-task-title ${isDone ? 'strikethrough' : ''}`}>
-                              {t.title}
-                            </span>
-                            <span className={`card-category-badge ${cat.color} tag-sm`}>
-                              {cat.label}
-                            </span>
-                            <span className="today-task-time">{timeStr}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                          return (
+                            <div key={t._id || t.id} className="today-task-row">
+                              <button
+                                type="button"
+                                className={`checkbox-custom-btn ${isDone ? 'checked' : ''}`}
+                                onClick={() => handleToggleTaskDone(t)}
+                              >
+                                {isDone ? <CheckIcon size={12} className="check-mark-icon" /> : null}
+                              </button>
+                              <span className={`today-task-title ${isDone ? 'strikethrough' : ''}`}>
+                                {t.title}
+                              </span>
+                              <span className={`card-category-badge ${cat.color} tag-sm`}>
+                                {cat.label}
+                              </span>
+                              <span className="today-task-time">{timeStr}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Card 2: Upcoming */}
@@ -1021,34 +1158,46 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                       </button>
                     </div>
 
-                    <div className="upcoming-items-list">
-                      <div className="upcoming-item-row">
-                        <div className="upcoming-date-box">
-                          <CalendarIcon size={13} className="text-primary" />
-                          <span>Aug 14</span>
-                        </div>
-                        <span className="upcoming-title">Design Homepage</span>
-                        <span className="priority-pill-tag tag-high">High</span>
+                    {upcomingItems.length === 0 ? (
+                      <div className="side-card-empty-state">
+                        <CalendarIcon size={24} className="empty-icon-muted" />
+                        <p>No upcoming tasks or meetings</p>
+                        <button
+                          type="button"
+                          className="btn-link-sm"
+                          onClick={() => handleOpenNewTask()}
+                        >
+                          + Schedule upcoming task
+                        </button>
                       </div>
+                    ) : (
+                      <div className="upcoming-items-list">
+                        {upcomingItems.map((item) => {
+                          const dateFormatted = item.date
+                            ? new Date(item.date).toLocaleDateString([], { month: 'short', day: 'numeric' })
+                            : 'TBD';
+                          const tagClass =
+                            item.priority === 'urgent' || item.priority === 'high'
+                              ? 'tag-high'
+                              : item.priority === 'low'
+                              ? 'tag-low'
+                              : 'tag-medium';
 
-                      <div className="upcoming-item-row">
-                        <div className="upcoming-date-box">
-                          <CalendarIcon size={13} className="text-primary" />
-                          <span>Aug 15</span>
-                        </div>
-                        <span className="upcoming-title">Client Meeting</span>
-                        <span className="priority-pill-tag tag-medium">Medium</span>
+                          return (
+                            <div key={item.id} className="upcoming-item-row">
+                              <div className="upcoming-date-box">
+                                <CalendarIcon size={13} className="text-primary" />
+                                <span>{dateFormatted}</span>
+                              </div>
+                              <span className="upcoming-title" title={item.title}>{item.title}</span>
+                              <span className={`priority-pill-tag ${tagClass}`}>
+                                {item.isMeeting ? 'Meeting' : item.priority ? item.priority.charAt(0).toUpperCase() + item.priority.slice(1) : 'Medium'}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
-
-                      <div className="upcoming-item-row">
-                        <div className="upcoming-date-box">
-                          <CalendarIcon size={13} className="text-primary" />
-                          <span>Aug 17</span>
-                        </div>
-                        <span className="upcoming-title">Review Prototype</span>
-                        <span className="priority-pill-tag tag-low">Low</span>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1064,58 +1213,26 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                     </button>
                   </div>
 
-                  <div className="timeline-items-list">
-                    <div className="timeline-item">
-                      <span className="timeline-time">09:20</span>
-                      <div className="timeline-dot-line">
-                        <span className="dot dot-blue"></span>
-                        <span className="vert-line"></span>
-                      </div>
-                      <div className="timeline-user-avatar">AJ</div>
-                      <div className="timeline-text">
-                        <strong>Alex</strong> moved &ldquo;Dashboard UI&rdquo; → In Progress
-                      </div>
-                      <span className="timeline-ago">2m ago</span>
+                  {recentActivities.length === 0 ? (
+                    <div className="side-card-empty-state">
+                      <ActivityIcon size={24} className="empty-icon-muted" />
+                      <p>No recent activity recorded yet</p>
                     </div>
-
-                    <div className="timeline-item">
-                      <span className="timeline-time">10:15</span>
-                      <div className="timeline-dot-line">
-                        <span className="dot dot-green"></span>
-                        <span className="vert-line"></span>
-                      </div>
-                      <div className="timeline-user-avatar">SM</div>
-                      <div className="timeline-text">
-                        <strong>Sarah</strong> completed &ldquo;Wireframe&rdquo;
-                      </div>
-                      <span className="timeline-ago">15m ago</span>
+                  ) : (
+                    <div className="timeline-items-list">
+                      {recentActivities.map((act) => (
+                        <div key={act.id} className="timeline-item">
+                          <span className="timeline-time">{act.time}</span>
+                          <div className="timeline-dot-line">
+                            <span className={`dot ${act.dotClass}`}></span>
+                            <span className="vert-line"></span>
+                          </div>
+                          <div className="timeline-user-avatar">{act.userInitial}</div>
+                          <div className="timeline-text">{act.text}</div>
+                        </div>
+                      ))}
                     </div>
-
-                    <div className="timeline-item">
-                      <span className="timeline-time">11:40</span>
-                      <div className="timeline-dot-line">
-                        <span className="dot dot-purple"></span>
-                        <span className="vert-line"></span>
-                      </div>
-                      <div className="timeline-user-avatar">MC</div>
-                      <div className="timeline-text">
-                        <strong>Mike</strong> added comment to &ldquo;Mobile App Layout&rdquo;
-                      </div>
-                      <span className="timeline-ago">1h ago</span>
-                    </div>
-
-                    <div className="timeline-item">
-                      <span className="timeline-time">13:10</span>
-                      <div className="timeline-dot-line">
-                        <span className="dot dot-orange"></span>
-                      </div>
-                      <div className="timeline-user-avatar">ED</div>
-                      <div className="timeline-text">
-                        <strong>Emma</strong> changed Priority → High
-                      </div>
-                      <span className="timeline-ago">3h ago</span>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Card 2: Team Workload */}
@@ -1131,43 +1248,25 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                   </div>
 
                   <div className="workload-card-body">
-                    <div className="workload-members-list">
-                      <div className="workload-member-row">
-                        <div className="member-avatar">AJ</div>
-                        <span className="member-name">Alex Johnson</span>
-                        <div className="progress-bar-container">
-                          <div className="progress-fill" style={{ width: '80%' }}></div>
-                        </div>
-                        <span className="member-pct">80%</span>
+                    {teamWorkloads.length === 0 ? (
+                      <div className="side-card-empty-state" style={{ flex: 1 }}>
+                        <UsersIcon size={24} className="empty-icon-muted" />
+                        <p>No team members assigned</p>
                       </div>
-
-                      <div className="workload-member-row">
-                        <div className="member-avatar">SM</div>
-                        <span className="member-name">Sarah Miller</span>
-                        <div className="progress-bar-container">
-                          <div className="progress-fill" style={{ width: '65%' }}></div>
-                        </div>
-                        <span className="member-pct">65%</span>
+                    ) : (
+                      <div className="workload-members-list">
+                        {teamWorkloads.map((m) => (
+                          <div key={m.id} className="workload-member-row">
+                            <div className="member-avatar">{m.initials}</div>
+                            <span className="member-name">{m.name}</span>
+                            <div className="progress-bar-container">
+                              <div className="progress-fill" style={{ width: `${m.pct}%` }}></div>
+                            </div>
+                            <span className="member-pct">{m.pct}%</span>
+                          </div>
+                        ))}
                       </div>
-
-                      <div className="workload-member-row">
-                        <div className="member-avatar">MC</div>
-                        <span className="member-name">Mike Chen</span>
-                        <div className="progress-bar-container">
-                          <div className="progress-fill" style={{ width: '48%' }}></div>
-                        </div>
-                        <span className="member-pct">48%</span>
-                      </div>
-
-                      <div className="workload-member-row">
-                        <div className="member-avatar">ED</div>
-                        <span className="member-name">Emma Davis</span>
-                        <div className="progress-bar-container">
-                          <div className="progress-fill" style={{ width: '72%' }}></div>
-                        </div>
-                        <span className="member-pct">72%</span>
-                      </div>
-                    </div>
+                    )}
 
                     {/* Donut Capacity Gauge */}
                     <div className="workload-gauge-container">
@@ -1180,27 +1279,29 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                             stroke="#e2e8f0"
                             strokeWidth="4"
                           />
-                          <path
-                            className="donut-segment segment-completed"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none"
-                            stroke="#2563eb"
-                            strokeWidth="4"
-                            strokeDasharray="65, 100"
-                          />
+                          {overallCapacityPct > 0 && (
+                            <path
+                              className="donut-segment segment-completed"
+                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                              fill="none"
+                              stroke="#2563eb"
+                              strokeWidth="4"
+                              strokeDasharray={`${overallCapacityPct}, 100`}
+                            />
+                          )}
                         </svg>
                         <div className="gauge-center-text">
-                          <strong>65%</strong>
+                          <strong>{overallCapacityPct}%</strong>
                           <span>Capacity</span>
                         </div>
                       </div>
 
                       <div className="gauge-legend">
                         <div className="gauge-legend-item">
-                          <span className="dot dot-gray"></span> Available 35%
+                          <span className="dot dot-gray"></span> Available {100 - overallCapacityPct}%
                         </div>
                         <div className="gauge-legend-item">
-                          <span className="dot dot-blue"></span> Utilized 65%
+                          <span className="dot dot-blue"></span> Utilized {overallCapacityPct}%
                         </div>
                       </div>
                     </div>
@@ -1232,18 +1333,24 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
                     {/* Stacked Distribution Bar */}
                     <div className="priority-stacked-bar">
-                      <div
-                        className="p-bar-seg seg-high"
-                        style={{ width: `${(highPriorityCount / (totalTasksCount || 1)) * 100}%` }}
-                      ></div>
-                      <div
-                        className="p-bar-seg seg-medium"
-                        style={{ width: `${(medPriorityCount / (totalTasksCount || 1)) * 100}%` }}
-                      ></div>
-                      <div
-                        className="p-bar-seg seg-low"
-                        style={{ width: `${(lowPriorityCount / (totalTasksCount || 1)) * 100}%` }}
-                      ></div>
+                      {totalTasksCount === 0 ? (
+                        <div className="p-bar-seg" style={{ width: '100%', background: '#e2e8f0' }}></div>
+                      ) : (
+                        <>
+                          <div
+                            className="p-bar-seg seg-high"
+                            style={{ width: `${(highPriorityCount / totalTasksCount) * 100}%` }}
+                          ></div>
+                          <div
+                            className="p-bar-seg seg-medium"
+                            style={{ width: `${(medPriorityCount / totalTasksCount) * 100}%` }}
+                          ></div>
+                          <div
+                            className="p-bar-seg seg-low"
+                            style={{ width: `${(lowPriorityCount / totalTasksCount) * 100}%` }}
+                          ></div>
+                        </>
+                      )}
                     </div>
 
                     <div className="priority-total-text">
@@ -1635,36 +1742,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           )}
         </main>
       </div>
-
-      {/* Upgrade Modal */}
-      {showUpgradeModal && (
-        <div className="modal-overlay animate-fade-in" onClick={() => setShowUpgradeModal(false)}>
-          <div className="modal-card modal-sm" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Upgrade to Premium</h3>
-              <button type="button" className="close-btn" onClick={() => setShowUpgradeModal(false)}>✕</button>
-            </div>
-            <div style={{ padding: '16px 0', textAlign: 'center' }}>
-              <RocketIcon size={40} className="text-primary" />
-              <h4 style={{ margin: '12px 0 6px' }}>Unlock All Advanced Features</h4>
-              <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
-                Unlimited project milestones, unlimited calendar sync, automated reminder emails, and enterprise RBAC controls.
-              </p>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ width: '100%', marginTop: '16px' }}
-                onClick={() => {
-                  alert('Thank you for choosing Workspace Premium! Your trial is activated.');
-                  setShowUpgradeModal(false);
-                }}
-              >
-                Start 30-Day Free Trial
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Modals */}
       <ProjectModal
