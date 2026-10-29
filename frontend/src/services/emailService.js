@@ -2,39 +2,63 @@ import emailjs from '@emailjs/browser';
 
 const STORAGE_KEY = 'tm_emailjs_config';
 
+const DEFAULT_SERVICE_ID = 'service_3937bmg';
+const DEFAULT_TEMPLATE_ID = 'almtr1p';
+const DEFAULT_PUBLIC_KEY = 'GoX15NC8DvUYOjl2M';
+
 export const emailService = {
-  // Get stored EmailJS configuration with 'almtr1p' prefilled from your EmailJS template
+  // Get stored EmailJS configuration with fallbacks from env and defaults
   getConfig() {
+    const envServiceId =
+      typeof import.meta !== 'undefined' && import.meta.env?.VITE_EMAILJS_SERVICE_ID
+        ? String(import.meta.env.VITE_EMAILJS_SERVICE_ID).trim()
+        : '';
+    const envTemplateId =
+      typeof import.meta !== 'undefined' && import.meta.env?.VITE_EMAILJS_TEMPLATE_ID
+        ? String(import.meta.env.VITE_EMAILJS_TEMPLATE_ID).trim()
+        : '';
+    const envPublicKey =
+      typeof import.meta !== 'undefined' && import.meta.env?.VITE_EMAILJS_PUBLIC_KEY
+        ? String(import.meta.env.VITE_EMAILJS_PUBLIC_KEY).trim()
+        : '';
+
+    let stored = {};
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        return {
-          serviceId: (parsed.serviceId || '').trim().replace(/^["']|["']$/g, ''),
-          templateId: (parsed.templateId || 'almtr1p').trim().replace(/^["']|["']$/g, ''),
-          publicKey: (parsed.publicKey || '').trim().replace(/^["']|["']$/g, ''),
-        };
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        stored = JSON.parse(raw) || {};
       }
     } catch {
       // fallback
     }
-    return {
-      serviceId:
-        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_EMAILJS_SERVICE_ID) || '',
-      templateId:
-        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_EMAILJS_TEMPLATE_ID) ||
-        'almtr1p',
-      publicKey:
-        (typeof import.meta !== 'undefined' && import.meta.env?.VITE_EMAILJS_PUBLIC_KEY) || '',
-    };
+
+    const serviceId = (
+      stored.serviceId ||
+      envServiceId ||
+      DEFAULT_SERVICE_ID
+    ).trim().replace(/^["']|["']$/g, '');
+
+    const templateId = (
+      stored.templateId ||
+      envTemplateId ||
+      DEFAULT_TEMPLATE_ID
+    ).trim().replace(/^["']|["']$/g, '');
+
+    const publicKey = (
+      stored.publicKey ||
+      envPublicKey ||
+      DEFAULT_PUBLIC_KEY
+    ).trim().replace(/^["']|["']$/g, '');
+
+    return { serviceId, templateId, publicKey };
   },
 
-  // Save configuration with sanitization (removes accidental quotes and spaces)
+  // Save configuration with sanitization
   saveConfig(config) {
     const sanitized = {
-      serviceId: (config.serviceId || '').trim().replace(/^["']|["']$/g, ''),
-      templateId: (config.templateId || '').trim().replace(/^["']|["']$/g, ''),
-      publicKey: (config.publicKey || '').trim().replace(/^["']|["']$/g, ''),
+      serviceId: (config.serviceId || DEFAULT_SERVICE_ID).trim().replace(/^["']|["']$/g, ''),
+      templateId: (config.templateId || DEFAULT_TEMPLATE_ID).trim().replace(/^["']|["']$/g, ''),
+      publicKey: (config.publicKey || DEFAULT_PUBLIC_KEY).trim().replace(/^["']|["']$/g, ''),
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
   },
@@ -52,13 +76,19 @@ export const emailService = {
     );
   },
 
-  // Send an invitation email using EmailJS - accepts flexible parameter naming
+  // Send an invitation email using EmailJS
   async sendInviteEmail(params = {}) {
     const config = this.getConfig();
 
     const toName = params.toName || params.employee_name || params.to_name || 'Team Member';
-    const toEmail = (params.toEmail || params.to_email || params.recipient_email || params.email || '').trim();
-    const inviteLink = params.inviteLink || params.invitation_link || params.link || '';
+    const toEmail = (
+      params.toEmail ||
+      params.to_email ||
+      params.recipient_email ||
+      params.email ||
+      ''
+    ).trim();
+    const inviteLink = params.inviteLink || params.invitation_link || params.link || params.url || '';
     const companyName = params.companyName || params.company_name || 'Company Workspace';
     const department = params.department || 'General';
     const role = (params.role || params.role_name || 'Specialist').replace(/_/g, ' ');
@@ -75,20 +105,22 @@ export const emailService = {
       return {
         success: false,
         reason: 'NOT_CONFIGURED',
-        message: 'EmailJS credentials are not configured yet. Please configure Service ID and Public Key.',
+        message: 'EmailJS credentials are not configured yet.',
       };
     }
 
-    // Matches template variables
+    // Comprehensive template parameters covering common template variable names
     const templateParams = {
       to_name: toName,
       name: companyName,
       to_email: toEmail,
       recipient_email: toEmail,
       email: toEmail,
+      user_email: toEmail,
       invite_link: inviteLink,
       link: inviteLink,
       invitation_link: inviteLink,
+      url: inviteLink,
       company_name: companyName,
       department: department,
       role: role,
@@ -97,12 +129,17 @@ export const emailService = {
     };
 
     try {
+      // Send using EmailJS v5 syntax with options object containing publicKey
       const response = await emailjs.send(
         config.serviceId.trim(),
         config.templateId.trim(),
         templateParams,
-        config.publicKey.trim()
+        {
+          publicKey: config.publicKey.trim(),
+        }
       );
+
+      console.log('EmailJS response:', response);
 
       return {
         success: true,
@@ -112,7 +149,9 @@ export const emailService = {
     } catch (err) {
       console.error('EmailJS error:', err);
       const errMsg =
-        err?.text || err?.message || 'Failed to send email through EmailJS.';
+        err?.text ||
+        err?.message ||
+        (typeof err === 'string' ? err : 'Failed to send email through EmailJS.');
       return {
         success: false,
         reason: 'SEND_FAILED',
@@ -121,7 +160,7 @@ export const emailService = {
     }
   },
 
-  // Alias for sendInviteEmail to prevent 'sendInvitation is not a function' errors
+  // Alias for sendInviteEmail
   async sendInvitation(params) {
     return this.sendInviteEmail(params);
   },

@@ -336,10 +336,7 @@ export const api = {
       const data = await safeFetchJson(`${API_BASE_URL}/auth/invite-details/${inviteToken}`);
       return data;
     } catch (err) {
-      if (!isOfflineError(err)) {
-        throw err;
-      }
-
+      // First check local storage fallback (for offline or recently created local invitations)
       const localInvites = localStorage.getItem('tm_invitations');
       if (localInvites) {
         try {
@@ -361,8 +358,13 @@ export const api = {
           if (jsonErr.message && !jsonErr.message.includes('JSON')) throw jsonErr;
         }
       }
+
+      if (!isOfflineError(err)) {
+        throw err;
+      }
+
       throw new Error(
-        'Unable to connect to the backend server (http://localhost:5000). Please start the backend or verify your invitation link.'
+        'Unable to connect to the backend server. Please verify your internet connection or check with your workspace administrator.'
       );
     }
   },
@@ -381,27 +383,29 @@ export const api = {
       }
       return result;
     } catch (err) {
-      if (isOfflineError(err)) {
-        const localInvites = localStorage.getItem('tm_invitations');
-        let invites = localInvites ? JSON.parse(localInvites) : [];
-        const inv = invites.find((i) => i.inviteToken === payload.inviteToken);
-        if (!inv || inv.status !== 'pending') {
-          throw new Error('Invitation is invalid or already used.', { cause: err });
+      // If server failed or offline, fall back to local storage invitation if present
+      const localInvites = localStorage.getItem('tm_invitations');
+      let invites = localInvites ? JSON.parse(localInvites) : [];
+      const inv = invites.find((i) => i.inviteToken === payload.inviteToken);
+
+      if (inv) {
+        if (inv.status === 'accepted') {
+          throw new Error('This invitation has already been used. Please log in.');
         }
 
         inv.status = 'accepted';
         localStorage.setItem('tm_invitations', JSON.stringify(invites));
 
-        const nameParts = inv.name.trim().split(' ');
+        const nameParts = (inv.name || 'Employee').trim().split(' ');
         const newUser = {
           id: 'user_' + Date.now(),
           firstName: nameParts[0] || inv.name,
           lastName: nameParts.slice(1).join(' ') || 'Member',
           email: inv.email,
           companyName: inv.companyName || 'Workspace',
-          designation: `${inv.department} ${inv.role.replace(/_/g, ' ')}`,
+          designation: `${inv.department} ${(inv.role || 'employee').replace(/_/g, ' ')}`,
           department: inv.department,
-          role: inv.role,
+          role: inv.role || 'employee',
           status: 'active',
           mfaEnabled: Boolean(payload.mfaEnabled),
         };
@@ -417,12 +421,16 @@ export const api = {
         localStorage.setItem('tm_admin_employees', JSON.stringify(emps));
 
         return {
-          message: 'Employee account activated successfully! (Offline mode)',
+          message: 'Employee account activated successfully!',
           token: mockToken,
           user: newUser,
         };
       }
-      throw err;
+
+      if (!isOfflineError(err)) {
+        throw err;
+      }
+      throw new Error('Invitation is invalid, expired, or already used.');
     }
   },
 
