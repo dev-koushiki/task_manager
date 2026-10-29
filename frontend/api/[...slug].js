@@ -1,45 +1,27 @@
-const path = require("path");
-
-function getApp() {
-  const candidates = [
-    "./backend/server",
-    "../backend/server",
-    "../../backend/server",
-    path.join(__dirname, "backend/server"),
-    path.join(__dirname, "../backend/server"),
-    path.join(__dirname, "../../backend/server"),
-    path.join(process.cwd(), "backend/server"),
-    path.join(process.cwd(), "frontend/backend/server"),
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      return require(candidate);
-    } catch (e) {
-      // try next
-    }
-  }
-  throw new Error("Could not locate backend/server module");
-}
-
+// Static requires for Vercel NFT bundling
 let app;
 try {
-  app = getApp();
-} catch (err) {
-  console.error("Frontend API Slug Init Warning:", err.message);
+  app = require("./backend/server");
+} catch (e1) {
+  try {
+    app = require("../backend/server");
+  } catch (e2) {
+    try {
+      app = require("../../backend/server");
+    } catch (e3) {
+      console.error("Frontend server module load error:", e1.message);
+    }
+  }
 }
 
 module.exports = (req, res) => {
   if (!app) {
-    try {
-      app = getApp();
-    } catch (e) {
-      return res.status(500).json({
-        error: "SERVERLESS_INIT_ERROR",
-        message: e.message,
-        cwd: process.cwd(),
-      });
-    }
+    return res.status(500).json({
+      error: "SERVERLESS_INIT_ERROR",
+      message: "Frontend server module could not be initialized",
+      cwd: process.cwd(),
+      dirname: __dirname,
+    });
   }
   return app(req, res);
 };
