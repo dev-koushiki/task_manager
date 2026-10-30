@@ -813,7 +813,7 @@ export const OrganizationStructureBuilder = ({ employees = [], onHierarchyUpdate
             <div>
               <h3>Company Roles & Access Control</h3>
               <p className="pane-desc">
-                Roles are organized by authority tiers. Each role defines the actions and data scope members have in the workspace.
+                Roles are organized by authority tiers. Each role defines the actions and data scope members have in Taskflow.
               </p>
             </div>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>

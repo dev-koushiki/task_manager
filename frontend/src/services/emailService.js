@@ -97,7 +97,7 @@ export const emailService = {
       ''
     ).trim();
     const inviteLink = params.inviteLink || params.invitation_link || params.link || params.url || '';
-    const companyName = params.companyName || params.company_name || 'Company Workspace';
+    const companyName = params.companyName || params.company_name || 'Taskflow';
     const department = params.department || 'General';
     const role = (params.role || params.role_name || 'Specialist').replace(/_/g, ' ');
 
@@ -186,7 +186,7 @@ export const emailService = {
   getMailtoLink({ toEmail, toName, companyName, role, department, inviteLink } = {}) {
     const email = toEmail || '';
     const name = toName || 'there';
-    const company = companyName || 'our workspace';
+    const company = companyName || 'Taskflow';
     const dept = department || 'General';
     const roleTitle = (role || 'team member').replace(/_/g, ' ');
 

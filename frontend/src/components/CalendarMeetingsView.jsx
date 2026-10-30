@@ -561,7 +561,7 @@ export const CalendarMeetingsView = ({
       {loading ? (
         <div className="loading-state">
           <div className="spinner"></div>
-          <p>Loading workspace calendar...</p>
+          <p>Loading taskflow calendar...</p>
         </div>
       ) : (
         <>

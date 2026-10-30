@@ -507,7 +507,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const userDisplayName =
     user && user.firstName
       ? `${user.firstName} ${user.lastName || ''}`.trim()
-      : 'Workspace User';
+      : 'Taskflow User';
 
   const userDisplayRole =
     user?.positionTitle || user?.designation || (userRole === 'admin' ? 'Administrator' : 'Team Member');
@@ -518,7 +518,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           1. LEFT SIDEBAR (Matching Reference UI Visuals)
           ======================================================== */}
       <aside className="workspace-sidebar">
-        {/* Workspace Brand Logo */}
+        {/* Taskflow Brand Logo */}
         <div className="sidebar-brand">
           <div className="brand-icon-hexagon">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -526,7 +526,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               <circle cx="12" cy="12" r="3" fill="#ffffff" stroke="#ffffff" />
             </svg>
           </div>
-          <span className="brand-text">Workspace</span>
+          <span className="brand-text">Taskflow</span>
         </div>
 
         {/* Sidebar Navigation Items */}
@@ -655,7 +655,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             <div className="user-popup-menu animate-fade-in" onClick={(e) => e.stopPropagation()}>
               <div className="menu-header">
                 <strong>{userDisplayName}</strong>
-                <span className="menu-email">{user?.email || 'alex@workspace.com'}</span>
+                <span className="menu-email">{user?.email || 'alex@taskflow.com'}</span>
               </div>
               <button
                 type="button"
@@ -688,7 +688,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           <div className="top-bar-left">
             <h1 className="page-heading">
               {activeTab === 'tree' && 'Organizational Tree & Hierarchy'}
-              {activeTab === 'tasks' && (!isAdmin ? 'Unified Employee Dashboard' : 'Task Workspace')}
+              {activeTab === 'tasks' && (!isAdmin ? 'Unified Employee Dashboard' : 'Taskflow Tasks')}
               {activeTab === 'calendar' && 'Calendar & Meetings'}
               {activeTab === 'overview' && 'Executive Administration Overview'}
               {activeTab === 'projects' && 'Projects'}
@@ -696,7 +696,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'documents' && 'Documents'}
               {activeTab === 'messages' && 'Messages & Notifications'}
               {activeTab === 'team' && 'Team & Personnel Management'}
-              {activeTab === 'settings' && 'Workspace Settings'}
+              {activeTab === 'settings' && 'Taskflow Settings'}
               {activeTab === 'profile' && 'User Profile'}
             </h1>
             <p className="page-subheading">
@@ -707,7 +707,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'projects' && 'Project deliverables, milestone tracks, and inspection'}
               {activeTab === 'analytics' && 'Performance analytics, team velocity, and task completion'}
               {activeTab === 'documents' && 'Review submissions, project attachments, and files'}
-              {activeTab === 'messages' && 'Workspace communications and meeting invitations'}
+              {activeTab === 'messages' && 'Taskflow communications and meeting invitations'}
               {activeTab === 'team' && 'Department structure, personnel, and secure invitations'}
               {activeTab === 'settings' && 'Organization hierarchy, access scopes, and permissions'}
               {activeTab === 'profile' && 'Manage your account credentials and personal information'}
@@ -715,17 +715,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           </div>
 
           <div className="top-bar-right">
-            {/* Search Input */}
-            <div className="search-bar-rounded">
-              <SearchIcon size={16} className="search-icon-muted" />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-
             {/* Filter Button */}
             <div className="filter-dropdown-container">
               <button
@@ -1481,7 +1470,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           {activeTab === 'messages' && (
             <div className="messages-center-card animate-fade-in" style={{ padding: '24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3>Workspace Notifications & Messages</h3>
+                <h3>Taskflow Notifications & Messages</h3>
                 {unreadNotifCount > 0 && (
                   <button type="button" className="btn btn-secondary btn-sm" onClick={handleMarkAllRead}>
                     Mark All as Read
@@ -1630,9 +1619,9 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                   {profileTab === 'overview' && (
                     <div className="profile-info-grid">
                       <div className="info-box">
-                        <span className="info-label">Company Workspace</span>
+                        <span className="info-label">Company Taskflow</span>
                         <span className="info-val">
-                          <BuildingIcon size={15} className="text-accent" /> {user?.companyName || 'Workspace'}
+                          <BuildingIcon size={15} className="text-accent" /> {user?.companyName || 'Taskflow'}
                         </span>
                       </div>
                       <div className="info-box">

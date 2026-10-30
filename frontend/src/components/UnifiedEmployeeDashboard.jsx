@@ -552,7 +552,7 @@ export const UnifiedEmployeeDashboard = ({
                 Your account is currently configured with <strong>Submission Panel access only</strong> (operational execution & milestone delivery).
               </p>
               <p className="restricted-subtext">
-                Task assignment and delegation are controlled by organizational permissions. To delegate tasks to reporting team members, an administrator can grant assignment permission in workspace settings.
+                Task assignment and delegation are controlled by organizational permissions. To delegate tasks to reporting team members, an administrator can grant assignment permission in Taskflow settings.
               </p>
               <button
                 type="button"

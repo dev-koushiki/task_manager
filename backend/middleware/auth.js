@@ -41,7 +41,7 @@ const authMiddleware = async (req, res, next) => {
 
     if (user.status === "disabled") {
       return res.status(403).json({
-        message: "Your account has been disabled. Please contact your workspace administrator.",
+        message: "Your account has been disabled. Please contact your taskflow administrator.",
       });
     }
 

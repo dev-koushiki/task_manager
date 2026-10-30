@@ -234,7 +234,7 @@ export const api = {
         localStorage.setItem('tm_user', JSON.stringify(mockUser));
         localStorage.setItem(`pwd_${data.email}`, data.password);
         return {
-          message: 'Admin workspace account created successfully! (Offline mode)',
+          message: 'Admin Taskflow account created successfully! (Offline mode)',
           token: mockToken,
           user: mockUser,
         };
@@ -365,7 +365,7 @@ export const api = {
       }
 
       throw new Error(
-        'Unable to connect to the backend server. Please verify your internet connection or check with your workspace administrator.'
+        'Unable to connect to the backend server. Please verify your internet connection or check with your taskflow administrator.'
       );
     }
   },
@@ -403,7 +403,7 @@ export const api = {
           firstName: nameParts[0] || inv.name,
           lastName: nameParts.slice(1).join(' ') || 'Member',
           email: inv.email,
-          companyName: inv.companyName || 'Workspace',
+          companyName: inv.companyName || 'Taskflow',
           designation: `${inv.department} ${(inv.role || 'employee').replace(/_/g, ' ')}`,
           department: inv.department,
           role: inv.role || 'employee',
@@ -457,7 +457,7 @@ export const api = {
           email: inviteData.email,
           department: inviteData.department,
           role: inviteData.role,
-          companyName: currentUser.companyName || 'Company Workspace',
+          companyName: currentUser.companyName || 'Company Taskflow',
           inviteToken: rawToken,
           status: 'pending',
           expiresAt,
@@ -946,7 +946,7 @@ export const api = {
       }
       const user = this.getUser();
       const defaultOrg = {
-        name: user?.companyName || 'Company Workspace',
+        name: user?.companyName || 'Company Taskflow',
         departments: [],
         levels: [],
         positions: [],

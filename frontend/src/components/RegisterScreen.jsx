@@ -113,7 +113,7 @@ export const RegisterScreen = ({ onGoToLogin, onGoBackToWelcome, onRegisterSucce
         <div className="auth-header">
           <h2 className="auth-title">Create Your Account</h2>
           <p className="auth-desc">
-            Enter your professional details to join your workspace and start managing tasks.
+            Enter your professional details to join Taskflow and start managing tasks.
           </p>
         </div>
 

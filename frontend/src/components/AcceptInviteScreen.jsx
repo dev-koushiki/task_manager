@@ -162,7 +162,7 @@ export const AcceptInviteScreen = ({
                 <span>{inviteDetails?.email}</span>
               </div>
               <small className="invite-locked-note">
-                🔒 Your role and department have been pre-assigned by your workspace administrator.
+                🔒 Your role and department have been pre-assigned by your taskflow administrator.
               </small>
             </div>
 
@@ -260,7 +260,7 @@ export const AcceptInviteScreen = ({
                   </span>
                 ) : (
                   <span className="btn-label-icon">
-                    <span>Activate Account & Access Workspace</span>
+                    <span>Activate Account & Access Taskflow</span>
                     <ArrowRightIcon size={18} />
                   </span>
                 )}

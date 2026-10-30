@@ -34,7 +34,7 @@ export const EmailConfigModal = ({ isOpen, onClose, onConfigSaved }) => {
         toName: 'Koushiki Podder',
         toEmail: testEmail.trim(),
         inviteLink: `${window.location.origin}/?invite=test_invitation_preview`,
-        companyName: 'TaskFlow Workspace',
+        companyName: 'TaskFlow',
         department: 'Engineering',
         role: 'employee',
       });

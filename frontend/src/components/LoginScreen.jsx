@@ -104,7 +104,7 @@ export const LoginScreen = ({
           <p className="auth-desc">
             {isMfaRequired
               ? `Enter the 6-digit verification code sent for ${email}`
-              : 'Sign in to access your authorized workspace dashboard.'}
+              : 'Sign in to access your authorized taskflow dashboard.'}
           </p>
         </div>
 
@@ -229,7 +229,7 @@ export const LoginScreen = ({
 
         {/* Footer switch to registration */}
         <div className="auth-footer">
-          <span>Register a new company workspace?</span>
+          <span>Register a new company on Taskflow?</span>
           <button type="button" className="link-btn" onClick={onGoToRegister}>
             Admin Registration
           </button>

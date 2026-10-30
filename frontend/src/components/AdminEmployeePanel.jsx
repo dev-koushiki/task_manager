@@ -233,7 +233,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
           const emailRes = await emailService.sendInvitation({
             toEmail: formData.email.trim(),
             toName: formData.name.trim(),
-            companyName: companyName || 'Our Workspace',
+            companyName: companyName || 'Our Taskflow',
             department: formData.department,
             role: positionTitle,
             inviteLink: inviteUrl,
@@ -251,7 +251,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
               mailtoUrl: emailService.getMailtoLink({
                 toEmail: formData.email.trim(),
                 toName: formData.name.trim(),
-                companyName: companyName || 'Our Workspace',
+                companyName: companyName || 'Our Taskflow',
                 department: formData.department,
                 role: positionTitle,
                 inviteLink: inviteUrl,
@@ -265,7 +265,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
             mailtoUrl: emailService.getMailtoLink({
               toEmail: formData.email.trim(),
               toName: formData.name.trim(),
-              companyName: companyName || 'Our Workspace',
+              companyName: companyName || 'Our Taskflow',
               department: formData.department,
               role: positionTitle,
               inviteLink: inviteUrl,
@@ -280,7 +280,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
           mailtoUrl: emailService.getMailtoLink({
             toEmail: formData.email.trim(),
             toName: formData.name.trim(),
-            companyName: companyName || 'Our Workspace',
+            companyName: companyName || 'Our Taskflow',
             department: formData.department,
             role: positionTitle,
             inviteLink: inviteUrl,
@@ -322,7 +322,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
           const emailRes = await emailService.sendInvitation({
             toEmail: inv.email,
             toName: inv.name,
-            companyName: companyName || 'Our Workspace',
+            companyName: companyName || 'Our Taskflow',
             department: inv.department,
             role: inv.positionTitle || `${inv.department} Specialist`,
             inviteLink: inviteUrl,
@@ -674,7 +674,7 @@ export const AdminEmployeePanel = ({ companyName, onTestAcceptInvite }) => {
                   <option value="director">Project Director / Executive</option>
                 </select>
               </div>
-              <span className="field-hint-text">Governs baseline workspace authorization tier</span>
+              <span className="field-hint-text">Governs baseline taskflow authorization tier</span>
             </div>
 
             <div className="form-field-group">

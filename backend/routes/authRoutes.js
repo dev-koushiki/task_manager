@@ -197,7 +197,7 @@ router.post("/register", async (req, res) => {
     );
 
     res.status(201).json({
-      message: "Admin workspace account created successfully!",
+      message: "Admin Taskflow account created successfully!",
       token,
       user: {
         id: newUser._id,
@@ -238,7 +238,7 @@ router.get("/invite-details/:token", async (req, res) => {
 
     if (!invitation) {
       return res.status(404).json({
-        message: "This invitation link was not found or is invalid. Please verify the URL or ask your workspace administrator for a new invite.",
+        message: "This invitation link was not found or is invalid. Please verify the URL or ask your taskflow administrator for a new invite.",
         reason: "NOT_FOUND",
       });
     }
@@ -262,7 +262,7 @@ router.get("/invite-details/:token", async (req, res) => {
     const now = new Date();
     if (invitation.expiresAt && new Date(invitation.expiresAt) <= now) {
       return res.status(400).json({
-        message: `This invitation link expired on ${new Date(invitation.expiresAt).toLocaleDateString()}. Please contact your workspace administrator to renew or resend it.`,
+        message: `This invitation link expired on ${new Date(invitation.expiresAt).toLocaleDateString()}. Please contact your taskflow administrator to renew or resend it.`,
         reason: "EXPIRED",
         email: invitation.email,
         expiresAt: invitation.expiresAt,
@@ -501,7 +501,7 @@ router.post("/login", async (req, res) => {
 
     if (user.status === "disabled") {
       return res.status(403).json({
-        message: "This account has been disabled by the administrator. Please contact your workspace admin.",
+        message: "This account has been disabled by the administrator. Please contact your taskflow admin.",
       });
     }
 
