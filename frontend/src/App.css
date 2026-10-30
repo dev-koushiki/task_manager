@@ -1717,6 +1717,9 @@
 .modal-card {
   max-width: 520px;
   width: 100%;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  box-sizing: border-box;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
@@ -5366,6 +5369,8 @@
   position: sticky;
   top: 0;
   box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
   z-index: 20;
 }
 
@@ -9541,3 +9546,548 @@
   gap: 6px;
   padding: 8px;
 }
+
+/* ==========================================================================
+   TASK REVIEW COMMENTS & EMPLOYEE DASHBOARD COMMUNICATION SYSTEM
+   ========================================================================== */
+
+.review-modal-card {
+  max-width: 660px !important;
+}
+
+.review-comments-section {
+  border-top: 1px solid var(--border-color);
+  padding-top: 16px;
+}
+
+.section-subheading-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.row-title-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.comments-count-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--primary-color);
+}
+
+[data-theme="dark"] .comments-count-pill {
+  background: rgba(96, 165, 250, 0.2);
+  color: #93c5fd;
+}
+
+.review-comments-thread {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card-hover);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.comments-empty-notice {
+  text-align: center;
+  padding: 18px 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.comments-bubble-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.review-comment-bubble {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.bubble-supervisor {
+  border-left: 3px solid var(--primary-color);
+}
+
+.bubble-reply {
+  border-left: 3px solid #10b981;
+  background: rgba(16, 185, 129, 0.03);
+}
+
+.bubble-approved {
+  border-left: 3px solid #10b981;
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.bubble-revision {
+  border-left: 3px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.bubble-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.author-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.author-avatar-sm {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.author-name {
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.author-role-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(100, 116, 139, 0.15);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.comment-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bubble-content {
+  font-size: 13px;
+  color: var(--text-main);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.decision-badge-pill {
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  margin-top: 2px;
+}
+
+.badge-approved {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.badge-revision {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.post-review-comment-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.comment-input-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 6px;
+  display: block;
+}
+
+.review-comment-textarea {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-main);
+  background: var(--bg-card-hover);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.review-comment-textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  background: var(--bg-card);
+}
+
+.post-comment-btn-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.help-text-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.btn-send-comment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-weight: 600;
+  border-radius: 6px;
+}
+
+/* ==========================================================================
+   EMPLOYEE DASHBOARD REVIEW COMMENTS SECTION (On Task Deliverable Cards)
+   ========================================================================== */
+
+.employee-review-comments-box {
+  background: rgba(37, 99, 235, 0.03);
+  border: 1px solid rgba(37, 99, 235, 0.15);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+[data-theme="dark"] .employee-review-comments-box {
+  background: rgba(30, 41, 59, 0.6);
+  border-color: rgba(96, 165, 250, 0.2);
+}
+
+.review-box-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.review-box-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-main);
+}
+
+.feedback-banner-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.mini-comments-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.mini-comment-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.comment-from-supervisor {
+  border-left: 3px solid var(--primary-color);
+}
+
+.comment-from-employee {
+  border-left: 3px solid #10b981;
+}
+
+.mini-comment-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.mini-comment-author {
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.mini-comment-role-tag {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-card-hover);
+  color: var(--text-muted);
+}
+
+.mini-comment-time {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.mini-comment-body {
+  color: var(--text-main);
+}
+
+.employee-reply-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.employee-reply-input-row input {
+  flex: 1;
+  padding: 7px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 12px;
+  background: var(--bg-card);
+  color: var(--text-main);
+  outline: none;
+}
+
+.employee-reply-input-row input:focus {
+  border-color: var(--primary-color);
+}
+
+.btn-reply-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   DESKTOP SCREEN SIZE FITTING & HIGH-STABILITY RESPONSIVE ENHANCEMENTS
+   ========================================================================== */
+
+/* Universal smooth, sleek custom scrollbar for clean desktop fit */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.65);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.4);
+}
+
+/* 1. Large 4K & Ultrawide Desktop Screens (>1920px) */
+@media (min-width: 1921px) {
+  .workspace-main-panel {
+    max-width: 2200px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .ref-metrics-row {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+  }
+
+  .ref-middle-row {
+    grid-template-columns: 2.2fr 1fr;
+    gap: 28px;
+  }
+}
+
+/* 2. Standard 1080p Desktop Screens (1440px to 1920px) */
+@media (min-width: 1441px) and (max-width: 1920px) {
+  .ref-metrics-row {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+
+  .ref-middle-row {
+    grid-template-columns: 2fr 1fr;
+    gap: 20px;
+  }
+
+  .ref-kanban-columns-grid {
+    grid-template-columns: repeat(4, minmax(210px, 1fr));
+  }
+}
+
+/* 3. Medium Desktop & Laptop Screens (1200px to 1440px) */
+@media (max-width: 1440px) {
+  .workspace-main-content {
+    padding: 20px 24px;
+  }
+
+  .ref-metrics-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .metric-stat-number {
+    font-size: 26px;
+  }
+
+  /* Kanban column horizontal scroll protection */
+  .ref-kanban-columns-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(200px, 1fr));
+    overflow-x: auto;
+    padding-bottom: 8px;
+    gap: 12px;
+  }
+
+  .ref-bottom-row {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .tasks-cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    gap: 16px;
+  }
+}
+
+/* 4. Compact Desktop & Sub-notebooks (1024px to 1200px) */
+@media (max-width: 1200px) {
+  .workspace-main-content {
+    padding: 18px 20px;
+  }
+
+  .workspace-top-bar {
+    padding: 14px 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .top-bar-left {
+    min-width: 260px;
+  }
+
+  .top-bar-right {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .search-bar-rounded {
+    width: 180px;
+  }
+
+  /* 2x2 metric cards layout */
+  .ref-metrics-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+
+  /* Stack middle row so Kanban board has full width */
+  .ref-middle-row {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .ref-kanban-columns-grid {
+    grid-template-columns: repeat(4, minmax(190px, 1fr));
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+
+  .ref-right-cards-col {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+  }
+
+  .ref-bottom-row {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .tasks-cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 14px;
+  }
+}
+
+/* 5. Desktop Height Constraints (<= 850px vertical height - common on 768p and 800p laptops) */
+@media (max-height: 850px) {
+  .workspace-sidebar {
+    padding: 16px 12px;
+  }
+
+  .sidebar-brand {
+    padding: 0 8px 16px;
+  }
+
+  .sidebar-nav-item {
+    padding: 8px 12px;
+  }
+
+  .modal-card {
+    max-height: calc(100vh - 36px);
+    padding: 20px;
+  }
+
+  .review-comments-thread {
+    max-height: 160px;
+  }
+}
+

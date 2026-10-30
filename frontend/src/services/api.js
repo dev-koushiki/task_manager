@@ -775,6 +775,62 @@ export const api = {
     }
   },
 
+  // POST /api/tasks/:id/review-comment - Post review comment sent to employee dashboard
+  async addReviewComment(id, comment) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/tasks/${id}/review-comment`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ comment }),
+      });
+      return data;
+    } catch (err) {
+      const user = this.getUser();
+      const commenterName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'Reviewer';
+      const newComment = {
+        _id: `comment_${Date.now()}`,
+        authorId: user?._id || user?.id,
+        authorName: commenterName,
+        authorRole: user?.role === 'admin' ? 'Administrator' : (user?.designation || 'Reviewer'),
+        comment: comment.trim(),
+        decision: 'comment',
+        createdAt: new Date().toISOString(),
+      };
+      const local = localStorage.getItem('tm_tasks');
+      let tasks = local ? JSON.parse(local) : [];
+      let updatedTask = null;
+      tasks = tasks.map((t) => {
+        if (t._id === id || t.id === id) {
+          const comments = Array.isArray(t.reviewComments) ? [...t.reviewComments, newComment] : [newComment];
+          updatedTask = { ...t, reviewComments: comments, reviewFeedback: comment.trim() };
+          return updatedTask;
+        }
+        return t;
+      });
+      localStorage.setItem('tm_tasks', JSON.stringify(tasks));
+      return { message: 'Comment saved locally', task: updatedTask, comment: newComment };
+    }
+  },
+
+  // GET /api/tasks/:id/reviews - Fetch review comments and history
+  async getTaskReviews(id) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/tasks/${id}/reviews`, {
+        headers: getHeaders(),
+      });
+      return data;
+    } catch {
+      const local = localStorage.getItem('tm_tasks');
+      const tasks = local ? JSON.parse(local) : [];
+      const found = tasks.find((t) => t._id === id || t.id === id);
+      return {
+        reviewComments: found?.reviewComments || [],
+        reviews: [],
+        reviewFeedback: found?.reviewFeedback || '',
+      };
+    }
+  },
+
   // PUT /api/tasks/:id - General update
   async updateTask(id, updateData) {
     try {

@@ -14,6 +14,9 @@ import {
   CheckIcon,
   CheckSquareIcon,
   ActivityIcon,
+  MessageSquareIcon,
+  SendIcon,
+  ClockIcon,
 } from './Icons';
 import { api } from '../services/api';
 
@@ -37,6 +40,8 @@ export const UnifiedEmployeeDashboard = ({
   const [errorNotice, setErrorNotice] = useState('');
   const [editingBlockerId, setEditingBlockerId] = useState(null);
   const [blockerInput, setBlockerInput] = useState('');
+  const [replyInputs, setReplyInputs] = useState({});
+  const [submittingReplyTaskId, setSubmittingReplyTaskId] = useState(null);
 
   const perms = user?.permissions || {};
   const hasAssignPermission = Boolean(perms.canAssignTasks || perms.canCreateTasks || user?.role === 'admin');
@@ -125,6 +130,24 @@ export const UnifiedEmployeeDashboard = ({
       if (onTasksUpdated) onTasksUpdated();
     } catch (err) {
       triggerError(err.message || 'Failed to update progress.');
+    }
+  };
+
+  // Reply to supervisor review comment from employee dashboard
+  const handleSendEmployeeReply = async (taskId) => {
+    const text = (replyInputs[taskId] || '').trim();
+    if (!text || submittingReplyTaskId === taskId) return;
+
+    try {
+      setSubmittingReplyTaskId(taskId);
+      await api.addReviewComment(taskId, text);
+      setReplyInputs((prev) => ({ ...prev, [taskId]: '' }));
+      triggerNotice('Response sent to supervisor review panel.');
+      if (onTasksUpdated) onTasksUpdated();
+    } catch (err) {
+      triggerError(err.message || 'Failed to send reply.');
+    } finally {
+      setSubmittingReplyTaskId(null);
     }
   };
 
@@ -324,11 +347,87 @@ export const UnifiedEmployeeDashboard = ({
                       </span>
                     </div>
 
-                    {/* Supervisor Feedback */}
-                    {t.reviewFeedback && (
-                      <div className={`feedback-banner ${isCompleted ? 'feedback-approved' : 'feedback-revision'}`}>
-                        <strong>Supervisor Feedback:</strong>
-                        <p>{t.reviewFeedback}</p>
+                    {/* Supervisor Feedback & Review Comments Section */}
+                    {(t.reviewFeedback || (Array.isArray(t.reviewComments) && t.reviewComments.length > 0)) && (
+                      <div className="employee-review-comments-box">
+                        <div className="review-box-header">
+                          <div className="review-box-title">
+                            <MessageSquareIcon size={14} className="text-primary" />
+                            <strong>Supervisor Review & Guidance</strong>
+                          </div>
+                          {Array.isArray(t.reviewComments) && t.reviewComments.length > 0 && (
+                            <span className="comments-count-pill">{t.reviewComments.length} note{t.reviewComments.length === 1 ? '' : 's'}</span>
+                          )}
+                        </div>
+
+                        {/* Primary supervisor decision banner */}
+                        {t.reviewFeedback && (
+                          <div className={`feedback-banner ${isCompleted ? 'feedback-approved' : 'feedback-revision'}`}>
+                            <div className="feedback-banner-title">
+                              {isCompleted ? <CheckCircleIcon size={14} /> : <AlertTriangleIcon size={14} />}
+                              <span>{isCompleted ? 'Deliverable Approved' : 'Supervisor Review Instructions'}:</span>
+                            </div>
+                            <p>{t.reviewFeedback}</p>
+                          </div>
+                        )}
+
+                        {/* Chronological Review Comments Thread */}
+                        {Array.isArray(t.reviewComments) && t.reviewComments.length > 0 && (
+                          <div className="mini-comments-thread">
+                            {t.reviewComments.map((rc, rIdx) => {
+                              const isFromSupervisor = rc.decision !== 'reply';
+                              return (
+                                <div
+                                  key={rc._id || rIdx}
+                                  className={`mini-comment-item ${isFromSupervisor ? 'comment-from-supervisor' : 'comment-from-employee'}`}
+                                >
+                                  <div className="mini-comment-header">
+                                    <span className="mini-comment-author">
+                                      {rc.authorName || (isFromSupervisor ? 'Supervisor' : 'Me')}
+                                    </span>
+                                    <span className="mini-comment-role-tag">
+                                      {rc.authorRole || (isFromSupervisor ? 'Supervisor' : 'Assignee')}
+                                    </span>
+                                    {rc.createdAt && (
+                                      <span className="mini-comment-time">
+                                        <ClockIcon size={10} /> {new Date(rc.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mini-comment-body">{rc.comment}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Employee Reply Input Row */}
+                        <div className="employee-reply-input-row">
+                          <input
+                            type="text"
+                            placeholder="Reply to supervisor review or send update..."
+                            value={replyInputs[t._id || t.id] || ''}
+                            onChange={(e) =>
+                              setReplyInputs({ ...replyInputs, [t._id || t.id]: e.target.value })
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleSendEmployeeReply(t._id || t.id);
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm btn-reply-send"
+                            disabled={!(replyInputs[t._id || t.id] || '').trim() || submittingReplyTaskId === (t._id || t.id)}
+                            onClick={() => handleSendEmployeeReply(t._id || t.id)}
+                            title="Send reply to supervisor review"
+                          >
+                            <SendIcon size={12} />
+                            <span>{submittingReplyTaskId === (t._id || t.id) ? '...' : 'Reply'}</span>
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -730,8 +829,15 @@ export const UnifiedEmployeeDashboard = ({
                               ✓ Approved by You
                             </div>
                           ) : (
-                            <div className="subordinate-working-stamp">
-                              <ActivityIcon size={14} /> Subordinate Working on Deliverables
+                            <div className="delegated-action-row" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <button
+                                type="button"
+                                className="btn btn-outline-primary btn-sm btn-block"
+                                onClick={() => onOpenReviewModal(t)}
+                                title="Open review panel to send comments and instructions to employee dashboard"
+                              >
+                                <MessageSquareIcon size={14} /> Review & Send Instructions
+                              </button>
                             </div>
                           )}
                         </div>

@@ -28,8 +28,19 @@ async function detectCircularReporting(employeeId, proposedManagers, organizatio
         message: "An employee cannot report to themselves.",
       };
     }
+  }
 
-    // 2. Transitive upward traversal from proposed manager
+  // 2. Fetch all organization users in a single query for lightning-fast in-memory traversal
+  const allOrgUsers = await User.find({ organizationId })
+    .select("_id reportsTo reportingRelationships")
+    .lean();
+
+  const userMap = new Map();
+  for (const u of allOrgUsers) {
+    userMap.set(u._id.toString(), u);
+  }
+
+  for (const mgrIdStr of managerIds) {
     const visited = new Set();
     const queue = [mgrIdStr];
 
@@ -47,13 +58,8 @@ async function detectCircularReporting(employeeId, proposedManagers, organizatio
       if (visited.has(currentId)) continue;
       visited.add(currentId);
 
-      const managerUser = await User.findOne({
-        _id: currentId,
-        organizationId,
-      }).select("reportingRelationships reportsTo");
-
+      const managerUser = userMap.get(currentId);
       if (managerUser) {
-        // Collect all managers of managerUser (direct, project, functional, and legacy reportsTo)
         if (
           Array.isArray(managerUser.reportingRelationships) &&
           managerUser.reportingRelationships.length > 0
@@ -75,31 +81,55 @@ async function detectCircularReporting(employeeId, proposedManagers, organizatio
 
 /**
  * Find all direct and indirect subordinate IDs for a user within an organization.
+ * Optimized with single batch query and in-memory graph traversal.
  */
 async function getEffectiveSubordinateIds(userId, organizationId) {
   if (!userId || !organizationId) return [];
 
   const targetId = userId.toString();
+
+  // Single fast batch query for the organization
+  const allOrgUsers = await User.find({ organizationId })
+    .select("_id reportsTo reportingRelationships")
+    .lean();
+
+  if (!allOrgUsers || allOrgUsers.length === 0) return [];
+
+  // Build manager -> subordinates mapping in memory
+  const managerToSubs = new Map();
+  for (const u of allOrgUsers) {
+    const mgrIds = new Set();
+    if (u.reportsTo) {
+      mgrIds.add(u.reportsTo.toString());
+    }
+    if (Array.isArray(u.reportingRelationships)) {
+      for (const rel of u.reportingRelationships) {
+        if (rel.managerId) {
+          mgrIds.add(rel.managerId.toString());
+        }
+      }
+    }
+    for (const mId of mgrIds) {
+      if (!managerToSubs.has(mId)) {
+        managerToSubs.set(mId, []);
+      }
+      managerToSubs.get(mId).push(u._id);
+    }
+  }
+
+  // Fast in-memory BFS
   const visited = new Set();
   const queue = [targetId];
   const subordinateIds = [];
 
   while (queue.length > 0) {
     const currentId = queue.shift();
-
-    const directSubs = await User.find({
-      organizationId,
-      $or: [
-        { "reportingRelationships.managerId": currentId },
-        { reportsTo: currentId },
-      ],
-    }).select("_id");
-
-    for (const sub of directSubs) {
-      const subIdStr = sub._id.toString();
+    const subs = managerToSubs.get(currentId) || [];
+    for (const subId of subs) {
+      const subIdStr = subId.toString();
       if (!visited.has(subIdStr)) {
         visited.add(subIdStr);
-        subordinateIds.push(sub._id);
+        subordinateIds.push(subId);
         queue.push(subIdStr);
       }
     }

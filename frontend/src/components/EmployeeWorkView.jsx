@@ -5,6 +5,8 @@ import {
   CheckCircleIcon,
   SparklesIcon,
   UserIcon,
+  MessageSquareIcon,
+  ClockIcon,
 } from './Icons';
 
 export const EmployeeWorkView = ({
@@ -92,11 +94,27 @@ export const EmployeeWorkView = ({
                   </span>
                 </div>
 
-                {/* Supervisor Feedback Banner if changes requested or approved */}
-                {t.reviewFeedback && (
+                {/* Supervisor Feedback Banner & Review Comments */}
+                {(t.reviewFeedback || (Array.isArray(t.reviewComments) && t.reviewComments.length > 0)) && (
                   <div className={`supervisor-feedback-card ${isCompleted ? 'feedback-approved' : 'feedback-revision'}`}>
-                    <strong>Supervisor Feedback:</strong>
-                    <p>{t.reviewFeedback}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <MessageSquareIcon size={14} />
+                      <strong>Supervisor Review Feedback & Instructions:</strong>
+                    </div>
+                    {t.reviewFeedback && <p style={{ margin: '0 0 6px' }}>{t.reviewFeedback}</p>}
+                    {Array.isArray(t.reviewComments) && t.reviewComments.length > 0 && (
+                      <div className="mini-comments-thread" style={{ marginTop: '8px' }}>
+                        {t.reviewComments.map((rc, rIdx) => (
+                          <div key={rc._id || rIdx} className="mini-comment-item" style={{ padding: '6px 8px', fontSize: '12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '11px' }}>
+                              <span><strong>{rc.authorName || 'Supervisor'}</strong> ({rc.authorRole || 'Reviewer'})</span>
+                              {rc.createdAt && <span>{new Date(rc.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>}
+                            </div>
+                            <div style={{ marginTop: '2px' }}>{rc.comment}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -529,17 +529,25 @@ router.post("/:id/action-items/:actionItemId/convert", authMiddleware, async (re
     actionItem.convertedToTaskId = newTask._id;
     await meeting.save();
 
-    // Notify assignee if assigned
+    // Notify assignee if assigned (deduplicated by taskId to avoid multiple notifications for same task)
     if (actionItem.assigneeId && actionItem.assigneeId.toString() !== req.user.id.toString()) {
-      await Notification.create({
+      const existingNotif = await Notification.findOne({
         userId: actionItem.assigneeId,
         organizationId: req.user.organizationId,
+        "metadata.taskId": newTask._id,
         type: "task_assigned",
-        title: "New Follow-up Task Assigned",
-        message: `Task "${newTask.title}" was generated from meeting "${meeting.title}" and assigned to you.`,
-        link: `/tasks?taskId=${newTask._id}`,
-        metadata: { taskId: newTask._id, meetingId: meeting._id },
-      }).catch((e) => console.warn("Notification error:", e.message));
+      });
+      if (!existingNotif) {
+        await Notification.create({
+          userId: actionItem.assigneeId,
+          organizationId: req.user.organizationId,
+          type: "task_assigned",
+          title: "New Follow-up Task Assigned",
+          message: `Task "${newTask.title}" was generated from meeting "${meeting.title}" and assigned to you.`,
+          link: `/tasks?taskId=${newTask._id}`,
+          metadata: { taskId: newTask._id, meetingId: meeting._id },
+        }).catch((e) => console.warn("Notification error:", e.message));
+      }
     }
 
     res.status(201).json({

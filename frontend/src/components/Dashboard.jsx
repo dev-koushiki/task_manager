@@ -116,16 +116,17 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
   const refreshAllData = async () => {
     try {
+      const isAdministrator = user?.role === 'admin';
       const [projectsData, tasksData, adminData, meetingsData, notifsData] = await Promise.all([
         api.getProjects().catch(() => []),
         api.getTasks().catch(() => []),
-        api.getAdminEmployees().catch(() => ({ employees: [] })),
+        isAdministrator ? api.getAdminEmployees().catch(() => ({ employees: [] })) : Promise.resolve({ employees: [] }),
         api.getMeetings().catch(() => []),
         api.getNotifications().catch(() => ({ notifications: [], unreadCount: 0 })),
       ]);
       setProjects(projectsData || []);
       setTasks(tasksData || []);
-      setEmployees(adminData?.employees || []);
+      if (isAdministrator) setEmployees(adminData?.employees || []);
       setMeetings(meetingsData || []);
       setNotifications(notifsData?.notifications || []);
       setUnreadNotifCount(notifsData?.unreadCount || 0);
@@ -136,10 +137,11 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
   useEffect(() => {
     let active = true;
+    const isAdministrator = user?.role === 'admin';
     Promise.all([
       api.getProjects().catch(() => []),
       api.getTasks().catch(() => []),
-      api.getAdminEmployees().catch(() => ({ employees: [] })),
+      isAdministrator ? api.getAdminEmployees().catch(() => ({ employees: [] })) : Promise.resolve({ employees: [] }),
       api.getMeetings().catch(() => []),
       api.getNotifications().catch(() => ({ notifications: [], unreadCount: 0 })),
     ])
@@ -147,7 +149,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
         if (active) {
           setProjects(projectsData || []);
           setTasks(tasksData || []);
-          setEmployees(adminData?.employees || []);
+          if (isAdministrator) setEmployees(adminData?.employees || []);
           setMeetings(meetingsData || []);
           setNotifications(notifsData?.notifications || []);
           setUnreadNotifCount(notifsData?.unreadCount || 0);
@@ -162,7 +164,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
     return () => {
       active = false;
     };
-  }, []);
+  }, [user]);
 
   // Project Actions
   const handleSaveProject = async (projectData) => {
@@ -1094,7 +1096,20 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                                     : 'dot-blue';
 
                                 return (
-                                  <div key={t._id || t.id} className="ref-task-card animate-scale-up">
+                                  <div
+                                    key={t._id || t.id}
+                                    className="ref-task-card animate-scale-up"
+                                    onClick={() => {
+                                      if (t.status === 'submitted') {
+                                        setReviewingTask(t);
+                                        setIsReviewModalOpen(true);
+                                      } else {
+                                        setEditingTask(t);
+                                        setIsTaskModalOpen(true);
+                                      }
+                                    }}
+                                    style={{ cursor: 'pointer' }}
+                                  >
                                     <div className="card-row-top">
                                       <div className="title-with-dot">
                                         <span className={`priority-indicator-dot ${dotColor}`}></span>
@@ -1103,7 +1118,10 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                                       <button
                                         type="button"
                                         className="three-dots-btn"
-                                        onClick={() => handleDeleteTask(t._id || t.id)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteTask(t._id || t.id);
+                                        }}
                                         title="Delete task"
                                       >
                                         <MoreVerticalIcon size={14} />
@@ -1124,6 +1142,21 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                                         {t.assignedToName && t.assignedToName !== 'Unassigned' ? t.assignedToName[0].toUpperCase() : 'A'}
                                       </div>
                                     </div>
+
+                                    {t.status === 'submitted' && (
+                                      <button
+                                        type="button"
+                                        className="btn btn-outline-warning btn-xs kanban-review-btn"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setReviewingTask(t);
+                                          setIsReviewModalOpen(true);
+                                        }}
+                                        style={{ marginTop: '8px', width: '100%', fontSize: '11px', padding: '4px 8px' }}
+                                      >
+                                        <CheckCircleIcon size={12} /> Review Deliverable
+                                      </button>
+                                    )}
                                   </div>
                                 );
                               })

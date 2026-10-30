@@ -12,6 +12,39 @@ const milestoneSchema = new mongoose.Schema(
   { _id: true }
 );
 
+const reviewCommentSchema = new mongoose.Schema(
+  {
+    authorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    authorName: {
+      type: String,
+      default: "",
+    },
+    authorRole: {
+      type: String,
+      default: "",
+    },
+    comment: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    decision: {
+      type: String,
+      enum: ["approved", "changes_requested", "comment", "reply"],
+      default: "comment",
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: true }
+);
+
 const taskSchema = new mongoose.Schema(
   {
     title: {
@@ -132,8 +165,19 @@ const taskSchema = new mongoose.Schema(
       type: [milestoneSchema],
       default: () => [],
     },
+    reviewComments: {
+      type: [reviewCommentSchema],
+      default: () => [],
+    },
   },
   { timestamps: true }
 );
+
+// Performance compound indexes for lightning-fast queries
+taskSchema.index({ organizationId: 1, status: 1 });
+taskSchema.index({ organizationId: 1, assignedTo: 1 });
+taskSchema.index({ organizationId: 1, assignedBy: 1 });
+taskSchema.index({ organizationId: 1, parentTaskId: 1 });
+taskSchema.index({ organizationId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Task", taskSchema);

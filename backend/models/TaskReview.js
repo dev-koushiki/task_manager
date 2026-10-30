@@ -18,8 +18,9 @@ const taskReviewSchema = new mongoose.Schema(
     },
     decision: {
       type: String,
-      enum: ["approved", "changes_requested"],
+      enum: ["approved", "changes_requested", "comment", "reply"],
       required: true,
+      default: "comment",
     },
     feedback: {
       type: String,
@@ -33,5 +34,8 @@ const taskReviewSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+taskReviewSchema.index({ taskId: 1, createdAt: -1 });
+taskReviewSchema.index({ reviewerId: 1 });
 
 module.exports = mongoose.model("TaskReview", taskReviewSchema);
