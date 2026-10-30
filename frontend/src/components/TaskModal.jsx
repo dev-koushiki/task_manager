@@ -52,15 +52,18 @@ const TaskModalDialog = ({
     api
       .getAuthorizedAssignees()
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setAssigneeOptions(data);
-          if (!formData.assignedTo && data.length > 0) {
-            setFormData((prev) => ({ ...prev, assignedTo: data[0]._id || data[0].id }));
+          if (!editingTask) {
+            setFormData((prev) => ({
+              ...prev,
+              assignedTo: data.length > 0 ? (data[0]._id || data[0].id) : '',
+            }));
           }
         }
       })
       .catch((err) => console.warn('Could not load authorized assignees:', err.message));
-  }, []);
+  }, [editingTask]);
 
   const handleAddMilestone = () => {
     if (!milestoneInput.trim()) return;
@@ -172,6 +175,11 @@ const TaskModalDialog = ({
                   </option>
                 ))}
               </select>
+              {assigneeOptions.length === 0 && (
+                <small style={{ display: 'block', marginTop: '4px', color: 'var(--text-muted, #64748b)', fontSize: '11px' }}>
+                  No reporting subordinates available under your position.
+                </small>
+              )}
             </div>
           </div>
 

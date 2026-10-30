@@ -265,6 +265,14 @@ async function runTests() {
     const deleteRes = await deleteJson(`${BASE}/organization/tree/nodes/${nodeF.id}`, adminToken);
     assert(deleteRes.status === 200, "Deleted node F successfully");
 
+    // Test cycle detection: Moving ancestor Node C under its descendant Node D must be rejected
+    const cycleRes = await postJson(
+      `${BASE}/organization/tree/move`,
+      { nodeId: "node_c", newParentId: "node_d" },
+      adminToken
+    );
+    assert(cycleRes.status === 400, "Backend detected and blocked circular hierarchy (moving ancestor under descendant)");
+
     // Merge Node E into Node D
     const mergeRes = await postJson(
       `${BASE}/organization/tree/merge`,
@@ -574,6 +582,16 @@ async function runTests() {
     );
     assert(ms2CompleteRes.status === 200, "Dave completed Milestone 2 independently");
     assert(ms2CompleteRes.data.task.progress === 100, "Task progress auto-updated to 100% on all milestones completed");
+
+    // Add Milestone 3 to verify progress recalculation & status reversion
+    const addMs3Res = await postJson(
+      `${BASE}/tasks/${task2._id}/milestones`,
+      { title: "Run Stress Benchmarks" },
+      charlieAuthToken
+    );
+    assert(addMs3Res.status === 201, "Added new milestone to task");
+    assert(addMs3Res.data.task.progress === 67, "Task progress recalculated to 67% (2 of 3 milestones done)");
+    assert(addMs3Res.data.task.status === "in-progress", "Task status reverted to in-progress after adding new milestone");
 
     // =========================================================
     // TEST 12: Existing functionality remains unaffected

@@ -288,7 +288,12 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
   // Recursive tree building for rendering
   const buildTreeHierarchy = (parentId = null) => {
     return treeNodes
-      .filter((n) => n.parentId === parentId)
+      .filter((n) => {
+        if (!parentId) {
+          return !n.parentId || !treeNodes.some((p) => p.id === n.parentId);
+        }
+        return n.parentId === parentId;
+      })
       .sort((a, b) => (a.order || 0) - (b.order || 0))
       .map((node) => ({
         ...node,
@@ -302,7 +307,7 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
   const renderTreeNode = (node, depth = 0) => {
     const hasEmployee = Boolean(node.employee);
     const emp = node.employee;
-    const isRoot = !node.parentId;
+    const isRoot = node.id === 'node_root' || (!node.parentId && !node.children?.length && depth === 0 && node.employeeCode === 'EMP-001');
     const isDropTarget = dragOverNodeId === node.id;
 
     return (

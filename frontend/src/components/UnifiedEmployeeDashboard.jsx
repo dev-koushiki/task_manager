@@ -411,6 +411,12 @@ export const UnifiedEmployeeDashboard = ({
                                 [t._id || t.id]: e.target.value,
                               })
                             }
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddMilestone(t._id || t.id);
+                              }
+                            }}
                           />
                           <button
                             type="button"

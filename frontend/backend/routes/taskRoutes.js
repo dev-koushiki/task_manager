@@ -629,6 +629,12 @@ router.post("/:id/milestones", authMiddleware, async (req, res) => {
     };
 
     task.milestones.push(newMilestone);
+    const totalCount = task.milestones.length;
+    const completedCount = task.milestones.filter((m) => m.completed).length;
+    task.progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : task.progress;
+    if (task.progress < 100 && task.status === "submitted") {
+      task.status = "in-progress";
+    }
     task.markModified("milestones");
     await task.save();
 
@@ -693,6 +699,10 @@ router.put("/:id", authMiddleware, async (req, res) => {
           return null;
         })
         .filter(Boolean);
+      if (task.milestones.length > 0) {
+        const completedCount = task.milestones.filter((m) => m.completed).length;
+        task.progress = Math.round((completedCount / task.milestones.length) * 100);
+      }
       task.markModified("milestones");
     }
 

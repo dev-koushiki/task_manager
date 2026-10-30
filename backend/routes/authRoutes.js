@@ -491,7 +491,8 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    const user = await User.findOne({ email: email.toLowerCase().trim() })
+      .populate("reportsTo", "firstName lastName designation positionTitle email");
     if (!user) {
       return res.status(401).json({
         message: "Invalid email or password.",
@@ -617,7 +618,8 @@ router.post("/mfa/verify", async (req, res) => {
       return res.status(400).json({ message: "Email and verification code are required." });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    const user = await User.findOne({ email: email.toLowerCase().trim() })
+      .populate("reportsTo", "firstName lastName designation positionTitle email");
     if (!user) {
       return res.status(404).json({ message: "User not found." });
     }

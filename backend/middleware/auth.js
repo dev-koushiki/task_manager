@@ -100,6 +100,7 @@ const authMiddleware = async (req, res, next) => {
       accessScopes,
       reportingRelationships: user.reportingRelationships || [],
       reportsTo: user.reportsTo,
+      employeeId: user.employeeId || "",
     };
 
     next();

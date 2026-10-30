@@ -169,11 +169,11 @@ const wouldCreateTreeCycle = (treeNodes, nodeId, newParentId) => {
   const nodesById = new Map(treeNodes.map((n) => [n.id, n]));
   let curr = nodesById.get(newParentId);
   const visited = new Set();
-  while (curr && curr.parentId) {
+  while (curr) {
     if (curr.id === nodeId) return true;
     if (visited.has(curr.id)) break;
     visited.add(curr.id);
-    curr = nodesById.get(curr.parentId);
+    curr = curr.parentId ? nodesById.get(curr.parentId) : null;
   }
   return false;
 };

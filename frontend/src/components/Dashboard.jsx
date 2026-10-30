@@ -117,9 +117,9 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const refreshAllData = async () => {
     try {
       const [projectsData, tasksData, adminData, meetingsData, notifsData] = await Promise.all([
-        api.getProjects(),
-        api.getTasks(),
-        api.getAdminEmployees(),
+        api.getProjects().catch(() => []),
+        api.getTasks().catch(() => []),
+        api.getAdminEmployees().catch(() => ({ employees: [] })),
         api.getMeetings().catch(() => []),
         api.getNotifications().catch(() => ({ notifications: [], unreadCount: 0 })),
       ]);
@@ -137,9 +137,9 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   useEffect(() => {
     let active = true;
     Promise.all([
-      api.getProjects(),
-      api.getTasks(),
-      api.getAdminEmployees(),
+      api.getProjects().catch(() => []),
+      api.getTasks().catch(() => []),
+      api.getAdminEmployees().catch(() => ({ employees: [] })),
       api.getMeetings().catch(() => []),
       api.getNotifications().catch(() => ({ notifications: [], unreadCount: 0 })),
     ])
@@ -766,15 +766,17 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               )}
             </div>
 
-            {/* Add Task Button (Solid Blue) */}
-            <button
-              type="button"
-              className="btn btn-primary top-add-task-btn"
-              onClick={() => handleOpenNewTask()}
-            >
-              <PlusIcon size={16} />
-              <span>Add Task</span>
-            </button>
+            {/* Add Task Button (Visible to authorized assigners) */}
+            {(isAdmin || perms.canAssignTasks || perms.canCreateTasks) && (
+              <button
+                type="button"
+                className="btn btn-primary top-add-task-btn"
+                onClick={() => handleOpenNewTask()}
+              >
+                <PlusIcon size={16} />
+                <span>Add Task</span>
+              </button>
+            )}
 
             {/* Notifications Bell Icon */}
             <div className="notif-bell-container">
