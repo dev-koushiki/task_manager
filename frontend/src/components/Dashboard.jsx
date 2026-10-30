@@ -29,6 +29,7 @@ import {
   CheckIcon,
   FileTextIcon,
   EditIcon,
+  GitBranchIcon,
 } from './Icons';
 import { TaskModal } from './TaskModal';
 import { ProjectModal } from './ProjectModal';
@@ -42,6 +43,8 @@ import { EmployeeWorkView } from './EmployeeWorkView';
 import { OrganizationStructureBuilder } from './OrganizationStructureBuilder';
 import { AdminEmployeePanel } from './AdminEmployeePanel';
 import { CalendarMeetingsView } from './CalendarMeetingsView';
+import { OrgTreeManagement } from './OrgTreeManagement';
+import { UnifiedEmployeeDashboard } from './UnifiedEmployeeDashboard';
 import { ThemeToggle } from './ThemeToggle';
 import { api } from '../services/api';
 
@@ -55,8 +58,8 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const canManageProjects = isAdmin || userRole === 'director' || Boolean(perms.canCreateProjects);
   const canManageTeams = isAdmin || userRole === 'manager' || Boolean(perms.canAssignTasks || perms.canApproveTasks || perms.canApproveWork);
 
-  // Active navigation tab governed by sidebar selection (defaults to 'tasks' to match Reference UI screenshot)
-  const [activeTab, setActiveTab] = useState('tasks'); // 'overview' | 'projects' | 'tasks' | 'calendar' | 'analytics' | 'documents' | 'messages' | 'team' | 'settings' | 'profile'
+  // Active navigation tab governed by sidebar selection (Admin defaults to 'tree', Employee to 'tasks')
+  const [activeTab, setActiveTab] = useState(() => (isAdmin ? 'tree' : 'tasks'));
 
   // Profile management states
   const [profileTab, setProfileTab] = useState('overview'); // 'overview' | 'edit' | 'security'
@@ -523,87 +526,112 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
         {/* Sidebar Navigation Items */}
         <nav className="sidebar-nav">
-          <button
-            type="button"
-            className={`sidebar-nav-item ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
-          >
-            <HomeIcon size={18} className="nav-icon" />
-            <span>Overview</span>
-          </button>
+          {isAdmin ? (
+            <>
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'tree' ? 'active' : ''}`}
+                onClick={() => setActiveTab('tree')}
+              >
+                <GitBranchIcon size={18} className="nav-icon" />
+                <span>Org Tree</span>
+              </button>
 
-          <button
-            type="button"
-            className={`sidebar-nav-item ${activeTab === 'projects' ? 'active' : ''}`}
-            onClick={() => setActiveTab('projects')}
-          >
-            <FolderIcon size={18} className="nav-icon" />
-            <span>Projects</span>
-          </button>
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'overview' ? 'active' : ''}`}
+                onClick={() => setActiveTab('overview')}
+              >
+                <HomeIcon size={18} className="nav-icon" />
+                <span>Overview</span>
+              </button>
 
-          <button
-            type="button"
-            className={`sidebar-nav-item ${activeTab === 'tasks' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tasks')}
-          >
-            <CheckSquareIcon size={18} className="nav-icon" />
-            <span>Tasks</span>
-          </button>
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'tasks' ? 'active' : ''}`}
+                onClick={() => setActiveTab('tasks')}
+              >
+                <CheckSquareIcon size={18} className="nav-icon" />
+                <span>Tasks</span>
+              </button>
 
-          <button
-            type="button"
-            className={`sidebar-nav-item ${activeTab === 'calendar' ? 'active' : ''}`}
-            onClick={() => setActiveTab('calendar')}
-          >
-            <CalendarIcon size={18} className="nav-icon" />
-            <span>Calendar</span>
-          </button>
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'calendar' ? 'active' : ''}`}
+                onClick={() => setActiveTab('calendar')}
+              >
+                <CalendarIcon size={18} className="nav-icon" />
+                <span>Calendar</span>
+              </button>
 
-          <button
-            type="button"
-            className={`sidebar-nav-item ${activeTab === 'analytics' ? 'active' : ''}`}
-            onClick={() => setActiveTab('analytics')}
-          >
-            <TrendingUpIcon size={18} className="nav-icon" />
-            <span>Analytics</span>
-          </button>
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'team' ? 'active' : ''}`}
+                onClick={() => setActiveTab('team')}
+              >
+                <UsersIcon size={18} className="nav-icon" />
+                <span>Team & Invites</span>
+              </button>
 
-          <button
-            type="button"
-            className={`sidebar-nav-item ${activeTab === 'documents' ? 'active' : ''}`}
-            onClick={() => setActiveTab('documents')}
-          >
-            <FileTextIcon size={18} className="nav-icon" />
-            <span>Documents</span>
-          </button>
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'messages' ? 'active' : ''}`}
+                onClick={() => setActiveTab('messages')}
+              >
+                <MessageSquareIcon size={18} className="nav-icon" />
+                <span>Messages</span>
+                {unreadNotifCount > 0 && <span className="sidebar-badge">{unreadNotifCount}</span>}
+              </button>
 
-          <button
-            type="button"
-            className={`sidebar-nav-item ${activeTab === 'messages' ? 'active' : ''}`}
-            onClick={() => setActiveTab('messages')}
-          >
-            <MessageSquareIcon size={18} className="nav-icon" />
-            <span>Messages</span>
-            {unreadNotifCount > 0 && <span className="sidebar-badge">{unreadNotifCount}</span>}
-          </button>
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'settings' ? 'active' : ''}`}
+                onClick={() => setActiveTab('settings')}
+              >
+                <SettingsIcon size={18} className="nav-icon" />
+                <span>Settings</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'tasks' || activeTab === 'overview' || activeTab === 'projects' || activeTab === 'team' ? 'active' : ''}`}
+                onClick={() => setActiveTab('tasks')}
+              >
+                <CheckSquareIcon size={18} className="nav-icon" />
+                <span>My Dashboard</span>
+              </button>
 
-          <button
-            type="button"
-            className={`sidebar-nav-item ${activeTab === 'team' ? 'active' : ''}`}
-            onClick={() => setActiveTab('team')}
-          >
-            <UsersIcon size={18} className="nav-icon" />
-            <span>Team</span>
-          </button>
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'calendar' ? 'active' : ''}`}
+                onClick={() => setActiveTab('calendar')}
+              >
+                <CalendarIcon size={18} className="nav-icon" />
+                <span>Calendar</span>
+              </button>
 
-          <button
-            type="button"
-            className={`sidebar-nav-item ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
-          >
-            <SettingsIcon size={18} className="nav-icon" />
-            <span>Settings</span>
-          </button>
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'messages' ? 'active' : ''}`}
+                onClick={() => setActiveTab('messages')}
+              >
+                <MessageSquareIcon size={18} className="nav-icon" />
+                <span>Messages</span>
+                {unreadNotifCount > 0 && <span className="sidebar-badge">{unreadNotifCount}</span>}
+              </button>
+
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'profile' ? 'active' : ''}`}
+                onClick={() => setActiveTab('profile')}
+              >
+                <UserIcon size={18} className="nav-icon" />
+                <span>My Profile</span>
+              </button>
+            </>
+          )}
         </nav>
 
         {/* Sidebar User Profile Capsule at Bottom */}
@@ -654,19 +682,21 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
         <header className="workspace-top-bar">
           <div className="top-bar-left">
             <h1 className="page-heading">
-              {activeTab === 'tasks' && 'Task'}
+              {activeTab === 'tree' && 'Organizational Tree & Hierarchy'}
+              {activeTab === 'tasks' && (!isAdmin ? 'Unified Employee Dashboard' : 'Task Workspace')}
               {activeTab === 'calendar' && 'Calendar & Meetings'}
-              {activeTab === 'overview' && 'Overview'}
+              {activeTab === 'overview' && 'Executive Administration Overview'}
               {activeTab === 'projects' && 'Projects'}
               {activeTab === 'analytics' && 'Analytics'}
               {activeTab === 'documents' && 'Documents'}
               {activeTab === 'messages' && 'Messages & Notifications'}
-              {activeTab === 'team' && 'Team Management'}
+              {activeTab === 'team' && 'Team & Personnel Management'}
               {activeTab === 'settings' && 'Workspace Settings'}
               {activeTab === 'profile' && 'User Profile'}
             </h1>
             <p className="page-subheading">
-              {activeTab === 'tasks' && "Manage and track your team's work"}
+              {activeTab === 'tree' && 'Parent-child tree structure, active employee mapping, and dynamic reporting relationships'}
+              {activeTab === 'tasks' && (!isAdmin ? 'Submission Panel (work delivery & milestone completion) and Assignment Panel (reporting delegation)' : "Manage and track organization team's work")}
               {activeTab === 'calendar' && 'Schedule meetings, monitor deadlines, and track action items'}
               {activeTab === 'overview' && 'Executive summary, progress health, and organization KPIs'}
               {activeTab === 'projects' && 'Project deliverables, milestone tracks, and inspection'}
@@ -827,8 +857,32 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             3. TAB CONTENT
             ======================================================== */}
         <main className="workspace-main-content">
-          {/* TAB: TASKS (Matches Reference UI Screenshot!) */}
-          {activeTab === 'tasks' && (
+          {/* NON-ADMIN EMPLOYEES: UNIFIED EMPLOYEE DASHBOARD (Submission Panel + Assignment Panel) */}
+          {!isAdmin && (activeTab === 'tasks' || activeTab === 'overview' || activeTab === 'projects' || activeTab === 'team') && (
+            <UnifiedEmployeeDashboard
+              user={user}
+              tasks={tasks}
+              projects={projects}
+              onOpenNewTask={(projId, parentId) => handleOpenNewTask(projId, parentId)}
+              onOpenSubmitModal={(task) => {
+                setSubmittingTask(task);
+                setIsSubmitModalOpen(true);
+              }}
+              onOpenReviewModal={(task) => {
+                setReviewingTask(task);
+                setIsReviewModalOpen(true);
+              }}
+              onTasksUpdated={refreshAllData}
+            />
+          )}
+
+          {/* MAIN ADMIN: ORGANIZATIONAL TREE TAB */}
+          {isAdmin && activeTab === 'tree' && (
+            <OrgTreeManagement onHierarchyUpdated={refreshAllData} />
+          )}
+
+          {/* MAIN ADMIN: TASKS TAB */}
+          {isAdmin && activeTab === 'tasks' && (
             <div className="ref-dashboard-view animate-fade-in">
               {/* Row 1: 4 Metric Cards */}
               <div className="ref-metrics-row">
@@ -1374,7 +1428,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           )}
 
           {/* TAB: OVERVIEW (Admin Executive Summary) */}
-          {activeTab === 'overview' && (
+          {isAdmin && activeTab === 'overview' && (
             <AdminSummaryView
               projects={projects}
               loading={loading}
@@ -1386,8 +1440,8 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             />
           )}
 
-          {/* TAB: PROJECTS (Project Director View) */}
-          {activeTab === 'projects' && (
+          {/* TAB: PROJECTS (Admin Project View) */}
+          {isAdmin && activeTab === 'projects' && (
             <ProjectDirectorView
               projects={projects}
               tasks={tasks}
@@ -1400,45 +1454,20 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             />
           )}
 
-          {/* TAB: TEAM (Admin Employee Panel with Department-Based Invitations or Manager Team) */}
-          {activeTab === 'team' && (
-            canManageEmployees ? (
-              <AdminEmployeePanel
-                companyName={user?.companyName}
-                onTestAcceptInvite={onTestAcceptInvite}
-              />
-            ) : (
-              <ManagerTeamView
-                tasks={tasks}
-                projects={projects}
-                employees={employees}
-                onOpenNewTask={(projId, parentId) => handleOpenNewTask(projId, parentId)}
-                onOpenReview={(task) => {
-                  setReviewingTask(task);
-                  setIsReviewModalOpen(true);
-                }}
-              />
-            )
+          {/* TAB: TEAM (Admin Employee Panel with Invitations & Profiles) */}
+          {isAdmin && activeTab === 'team' && (
+            <AdminEmployeePanel
+              companyName={user?.companyName}
+              onTestAcceptInvite={onTestAcceptInvite}
+            />
           )}
 
           {/* TAB: SETTINGS (Organization Structure & Permissions Builder) */}
-          {activeTab === 'settings' && (
-            canManageStructure ? (
-              <OrganizationStructureBuilder
-                employees={employees}
-                onHierarchyUpdated={refreshAllData}
-              />
-            ) : (
-              <div className="settings-user-card animate-fade-in" style={{ padding: '24px' }}>
-                <h3>Organization Settings</h3>
-                <p style={{ color: 'var(--text-muted)' }}>
-                  Workspace structure is managed by administrators. You can review your profile and account security below.
-                </p>
-                <button type="button" className="btn btn-primary" onClick={() => setActiveTab('profile')} style={{ marginTop: '12px' }}>
-                  View Profile & Security
-                </button>
-              </div>
-            )
+          {isAdmin && activeTab === 'settings' && (
+            <OrganizationStructureBuilder
+              employees={employees}
+              onHierarchyUpdated={refreshAllData}
+            />
           )}
 
           {/* TAB: MESSAGES (Notifications & Meeting Updates) */}

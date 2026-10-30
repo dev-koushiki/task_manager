@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { SparklesIcon, CornerDownRightIcon } from './Icons';
+import { useState, useEffect } from 'react';
+import { SparklesIcon, CornerDownRightIcon, PlusIcon, TrashIcon } from './Icons';
+import { api } from '../services/api';
 
 const TaskModalDialog = ({
   onClose,
@@ -10,6 +11,15 @@ const TaskModalDialog = ({
   defaultProjectId,
   parentTaskId,
 }) => {
+  const [assigneeOptions, setAssigneeOptions] = useState(employees);
+  const [milestones, setMilestones] = useState(() => {
+    if (editingTask && Array.isArray(editingTask.milestones)) {
+      return editingTask.milestones;
+    }
+    return [];
+  });
+  const [milestoneInput, setMilestoneInput] = useState('');
+
   const [formData, setFormData] = useState(() => {
     if (editingTask) {
       return {
@@ -37,13 +47,46 @@ const TaskModalDialog = ({
     };
   });
 
+  // Load authorized assignees from API
+  useEffect(() => {
+    api
+      .getAuthorizedAssignees()
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setAssigneeOptions(data);
+          if (!formData.assignedTo && data.length > 0) {
+            setFormData((prev) => ({ ...prev, assignedTo: data[0]._id || data[0].id }));
+          }
+        }
+      })
+      .catch((err) => console.warn('Could not load authorized assignees:', err.message));
+  }, []);
+
+  const handleAddMilestone = () => {
+    if (!milestoneInput.trim()) return;
+    setMilestones((prev) => [
+      ...prev,
+      {
+        id: `ms_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        title: milestoneInput.trim(),
+        completed: false,
+      },
+    ]);
+    setMilestoneInput('');
+  };
+
+  const handleRemoveMilestone = (index) => {
+    setMilestones((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.title.trim()) return;
 
     let assignedToName = 'Unassigned';
     if (formData.assignedTo) {
-      const emp = employees.find((e) => (e._id || e.id) === formData.assignedTo);
+      const emp = assigneeOptions.find((e) => (e._id || e.id) === formData.assignedTo) ||
+                  employees.find((e) => (e._id || e.id) === formData.assignedTo);
       if (emp) {
         assignedToName = `${emp.firstName || emp.name} ${emp.lastName || ''}`.trim();
       }
@@ -53,6 +96,7 @@ const TaskModalDialog = ({
       ...formData,
       assignedToName,
       dueDate: formData.deadline,
+      milestones,
     });
   };
 
@@ -61,7 +105,7 @@ const TaskModalDialog = ({
       <div
         className="modal-card animate-scale-up"
         onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: '580px' }}
+        style={{ maxWidth: '600px' }}
       >
         <div className="modal-header">
           <div className="modal-title-with-icon">
@@ -80,7 +124,7 @@ const TaskModalDialog = ({
         <p className="modal-subtitle">
           {parentTaskId
             ? 'Assign a specific subtask to a team member to break down workload.'
-            : 'Define task requirements, assign accountability, and set effort weights.'}
+            : 'Define task requirements, assign to reporting subordinates, and configure milestones.'}
         </p>
 
         <form onSubmit={handleSubmit} className="modal-form">
@@ -115,16 +159,16 @@ const TaskModalDialog = ({
             </div>
 
             <div className="form-group">
-              <label htmlFor="taskAssignedTo">Assign Subordinate *</label>
+              <label htmlFor="taskAssignedTo">Assign Reporting Employee *</label>
               <select
                 id="taskAssignedTo"
                 value={formData.assignedTo}
                 onChange={(e) => setFormData((prev) => ({ ...prev, assignedTo: e.target.value }))}
               >
                 <option value="">Unassigned</option>
-                {employees.map((emp) => (
+                {assigneeOptions.map((emp) => (
                   <option key={emp._id || emp.id} value={emp._id || emp.id}>
-                    {emp.firstName || emp.name} {emp.lastName || ''} ({emp.designation || emp.role?.toUpperCase()})
+                    {emp.firstName || emp.name} {emp.lastName || ''} ({emp.designation || emp.role?.toUpperCase() || 'Subordinate'})
                   </option>
                 ))}
               </select>
@@ -140,6 +184,62 @@ const TaskModalDialog = ({
               value={formData.description}
               onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
             />
+          </div>
+
+          {/* Milestone Breakdown Section */}
+          <div className="form-group">
+            <label>Milestones (Independent completion deliverables)</label>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+              <input
+                type="text"
+                placeholder="e.g. Draft initial mockups"
+                value={milestoneInput}
+                onChange={(e) => setMilestoneInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddMilestone();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleAddMilestone}
+              >
+                <PlusIcon size={14} /> Add
+              </button>
+            </div>
+
+            {milestones.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {milestones.map((m, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '6px 10px',
+                      background: 'var(--bg-card-hover)',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                    }}
+                  >
+                    <span>
+                      {m.completed ? '✓' : '○'} <strong>{m.title}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger-color)' }}
+                      onClick={() => handleRemoveMilestone(idx)}
+                    >
+                      <TrashIcon size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="form-row">

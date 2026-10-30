@@ -267,6 +267,19 @@ const relationshipTypeSchema = new mongoose.Schema({
   description: { type: String, default: "", trim: true },
 });
 
+const treeNodeSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true },
+    title: { type: String, required: true, trim: true, default: "New Position" },
+    parentId: { type: String, default: null }, // ID of parent node (null for root)
+    employeeId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    employeeCode: { type: String, trim: true, default: "" }, // e.g. "EMP-001"
+    department: { type: String, trim: true, default: "General" },
+    order: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
 const organizationSchema = new mongoose.Schema(
   {
     name: {
@@ -300,6 +313,10 @@ const organizationSchema = new mongoose.Schema(
     },
     relationshipTypes: {
       type: [relationshipTypeSchema],
+      default: () => [],
+    },
+    treeNodes: {
+      type: [treeNodeSchema],
       default: () => [],
     },
   },

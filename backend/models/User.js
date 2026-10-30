@@ -158,6 +158,11 @@ const userSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    employeeId: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     status: {
       type: String,
       enum: ["active", "disabled"],

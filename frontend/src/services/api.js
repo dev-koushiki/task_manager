@@ -2036,4 +2036,98 @@ export const api = {
       return { message: 'All notifications marked as read.' };
     }
   },
+
+  // ----------------------------------------------------
+  // ORGANIZATIONAL TREE
+  // ----------------------------------------------------
+  async getOrgTree() {
+    return safeFetchJson(`${API_BASE_URL}/organization/tree`, {
+      headers: getHeaders(),
+    });
+  },
+
+  async addTreeNode(nodeData) {
+    return safeFetchJson(`${API_BASE_URL}/organization/tree/nodes`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(nodeData),
+    });
+  },
+
+  async updateTreeNode(nodeId, nodeData) {
+    return safeFetchJson(`${API_BASE_URL}/organization/tree/nodes/${nodeId}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(nodeData),
+    });
+  },
+
+  async deleteTreeNode(nodeId) {
+    return safeFetchJson(`${API_BASE_URL}/organization/tree/nodes/${nodeId}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+  },
+
+  async assignEmployeeToNode(nodeId, { userId, employeeCode }) {
+    return safeFetchJson(`${API_BASE_URL}/organization/tree/nodes/${nodeId}/assign`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ userId, employeeCode }),
+    });
+  },
+
+  async unassignEmployeeFromNode(nodeId) {
+    return safeFetchJson(`${API_BASE_URL}/organization/tree/nodes/${nodeId}/unassign`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+  },
+
+  async moveTreeNode(nodeId, newParentId) {
+    return safeFetchJson(`${API_BASE_URL}/organization/tree/move`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ nodeId, newParentId }),
+    });
+  },
+
+  async mergeTreeNodes(sourceNodeId, targetNodeId) {
+    return safeFetchJson(`${API_BASE_URL}/organization/tree/merge`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ sourceNodeId, targetNodeId }),
+    });
+  },
+
+  async syncOrgTree() {
+    return safeFetchJson(`${API_BASE_URL}/organization/tree/sync`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+  },
+
+  // ----------------------------------------------------
+  // AUTHORIZED ASSIGNEES & MILESTONES
+  // ----------------------------------------------------
+  async getAuthorizedAssignees() {
+    return safeFetchJson(`${API_BASE_URL}/tasks/authorized-assignees`, {
+      headers: getHeaders(),
+    });
+  },
+
+  async completeMilestone(taskId, milestoneId) {
+    return safeFetchJson(`${API_BASE_URL}/tasks/${taskId}/milestones/${milestoneId}/complete`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+    });
+  },
+
+  async addMilestone(taskId, title) {
+    return safeFetchJson(`${API_BASE_URL}/tasks/${taskId}/milestones`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ title }),
+    });
+  },
 };

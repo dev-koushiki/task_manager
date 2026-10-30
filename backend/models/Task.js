@@ -1,5 +1,17 @@
 const mongoose = require("mongoose");
 
+const milestoneSchema = new mongoose.Schema(
+  {
+    id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+    title: { type: String, required: true, trim: true },
+    completed: { type: Boolean, default: false },
+    completedAt: { type: Date, default: null },
+    completedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    completedByName: { type: String, default: "" },
+  },
+  { _id: true }
+);
+
 const taskSchema = new mongoose.Schema(
   {
     title: {
@@ -115,6 +127,10 @@ const taskSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+    },
+    milestones: {
+      type: [milestoneSchema],
+      default: () => [],
     },
   },
   { timestamps: true }

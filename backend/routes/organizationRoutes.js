@@ -27,6 +27,157 @@ const getUserOrg = async (user) => {
   return org;
 };
 
+// Ensure default tree exists for an organization
+const ensureDefaultTree = async (org, user) => {
+  if (!org.treeNodes || org.treeNodes.length === 0) {
+    const adminId = org.adminId || user?._id || user?.id;
+    let adminUser = null;
+    if (adminId) {
+      adminUser = await User.findById(adminId);
+    }
+    const adminTitle = adminUser?.designation || "Main Admin";
+    const adminCode = adminUser?.employeeId || "EMP-001";
+    if (adminUser && !adminUser.employeeId) {
+      adminUser.employeeId = adminCode;
+      await adminUser.save();
+    }
+
+    org.treeNodes = [
+      {
+        id: "node_root",
+        title: adminTitle,
+        parentId: null,
+        employeeId: adminId || null,
+        employeeCode: adminCode,
+        department: adminUser?.department || "Executive Leadership",
+        order: 0,
+      },
+      {
+        id: "node_b",
+        title: "Role B",
+        parentId: "node_root",
+        employeeId: null,
+        employeeCode: "",
+        department: "Operations",
+        order: 0,
+      },
+      {
+        id: "node_c",
+        title: "Role C",
+        parentId: "node_root",
+        employeeId: null,
+        employeeCode: "",
+        department: "Engineering",
+        order: 1,
+      },
+      {
+        id: "node_d",
+        title: "Role D",
+        parentId: "node_c",
+        employeeId: null,
+        employeeCode: "",
+        department: "Engineering",
+        order: 0,
+      },
+      {
+        id: "node_e",
+        title: "Role E",
+        parentId: "node_c",
+        employeeId: null,
+        employeeCode: "",
+        department: "Engineering",
+        order: 1,
+      },
+    ];
+    org.markModified("treeNodes");
+    await org.save();
+  }
+};
+
+// Synchronize reporting relationships based on organizational tree
+const syncTreeReportingRelationships = async (orgId) => {
+  if (!orgId) return;
+  const org = await Organization.findById(orgId);
+  if (!org || !Array.isArray(org.treeNodes) || org.treeNodes.length === 0) return;
+
+  const nodesById = new Map();
+  org.treeNodes.forEach((node) => {
+    nodesById.set(node.id, node);
+  });
+
+  const assignedUserIds = new Set();
+
+  for (const node of org.treeNodes) {
+    if (!node.employeeId) continue;
+    const empIdStr = node.employeeId.toString();
+    assignedUserIds.add(empIdStr);
+
+    // Walk up the tree to find nearest ancestor with an employee assigned
+    let managerEmployeeId = null;
+    let curr = node;
+    const visited = new Set([node.id]);
+
+    while (curr && curr.parentId) {
+      if (visited.has(curr.parentId)) break; // Prevent cycle
+      visited.add(curr.parentId);
+      curr = nodesById.get(curr.parentId);
+      if (!curr) break;
+
+      if (curr.employeeId && curr.employeeId.toString() !== empIdStr) {
+        managerEmployeeId = curr.employeeId;
+        break;
+      }
+    }
+
+    const updateFields = {};
+    if (node.employeeCode) {
+      updateFields.employeeId = node.employeeCode;
+    }
+
+    if (managerEmployeeId) {
+      updateFields.reportsTo = managerEmployeeId;
+      updateFields.reportingRelationships = [
+        { managerId: managerEmployeeId, relationshipType: "direct", assignedAt: new Date() },
+      ];
+    } else {
+      updateFields.reportsTo = null;
+      updateFields.reportingRelationships = [];
+    }
+
+    await User.findByIdAndUpdate(node.employeeId, { $set: updateFields });
+  }
+
+  // Clear reporting relationships for users in this org not in the tree
+  const unassignedUsers = await User.find({
+    organizationId: orgId,
+    _id: { $nin: Array.from(assignedUserIds) },
+    role: { $ne: "admin" },
+  });
+
+  for (const u of unassignedUsers) {
+    if (u.reportsTo || (u.reportingRelationships && u.reportingRelationships.length > 0)) {
+      u.reportsTo = null;
+      u.reportingRelationships = [];
+      await u.save();
+    }
+  }
+};
+
+const wouldCreateTreeCycle = (treeNodes, nodeId, newParentId) => {
+  if (!newParentId) return false;
+  if (nodeId === newParentId) return true;
+  const nodesById = new Map(treeNodes.map((n) => [n.id, n]));
+  let curr = nodesById.get(newParentId);
+  const visited = new Set();
+  while (curr && curr.parentId) {
+    if (curr.id === nodeId) return true;
+    if (visited.has(curr.id)) break;
+    visited.add(curr.id);
+    curr = nodesById.get(curr.parentId);
+  }
+  return false;
+};
+
 // GET /api/organization - Current workspace structure
 router.get("/", authMiddleware, async (req, res) => {
   try {
@@ -48,6 +199,429 @@ router.put("/", authMiddleware, requirePermission("canManageStructure"), async (
 
     await org.save();
     res.json({ message: "Organization updated successfully", organization: org });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// ======================== ORGANIZATIONAL TREE ========================
+
+// GET /api/organization/tree - Get full tree with populated employees and active profiles
+router.get("/tree", authMiddleware, async (req, res) => {
+  try {
+    const org = await getUserOrg(req.user);
+    await ensureDefaultTree(org, req.user);
+
+    // Fetch all active employees in this organization
+    const activeUsers = await User.find({
+      organizationId: org._id,
+      status: "active",
+    }).select("firstName lastName email role designation department employeeId status");
+
+    const assignedEmployeeMap = new Map();
+    org.treeNodes.forEach((n) => {
+      if (n.employeeId) {
+        assignedEmployeeMap.set(n.employeeId.toString(), {
+          nodeId: n.id,
+          nodeTitle: n.title,
+          employeeCode: n.employeeCode,
+        });
+      }
+    });
+
+    const activeEmployees = activeUsers.map((u) => {
+      const assigned = assignedEmployeeMap.get(u._id.toString());
+      return {
+        _id: u._id,
+        id: u._id,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        email: u.email,
+        role: u.role,
+        designation: u.designation,
+        department: u.department,
+        employeeId: u.employeeId || assigned?.employeeCode || "",
+        isAssigned: Boolean(assigned),
+        assignedNodeId: assigned?.nodeId || null,
+        assignedNodeTitle: assigned?.nodeTitle || null,
+      };
+    });
+
+    // Populate employee details onto treeNodes
+    const userMap = new Map(activeUsers.map((u) => [u._id.toString(), u]));
+    const populatedTreeNodes = org.treeNodes.map((n) => {
+      const nodeObj = n.toObject ? n.toObject() : { ...n };
+      if (n.employeeId) {
+        const u = userMap.get(n.employeeId.toString());
+        nodeObj.employee = u
+          ? {
+              _id: u._id,
+              firstName: u.firstName,
+              lastName: u.lastName,
+              email: u.email,
+              role: u.role,
+              designation: u.designation,
+              department: u.department,
+              employeeId: u.employeeId || n.employeeCode || "",
+            }
+          : null;
+      } else {
+        nodeObj.employee = null;
+      }
+      return nodeObj;
+    });
+
+    res.json({
+      organization: {
+        _id: org._id,
+        name: org.name,
+        code: org.code,
+        adminId: org.adminId,
+      },
+      treeNodes: populatedTreeNodes,
+      activeEmployees,
+    });
+  } catch (error) {
+    console.error("Error fetching organizational tree:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/organization/tree/nodes - Add new node
+router.post("/tree/nodes", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const { title, parentId, department } = req.body;
+    if (!title || !title.trim()) {
+      return res.status(400).json({ message: "Position / Node title is required." });
+    }
+
+    const org = await getUserOrg(req.user);
+    await ensureDefaultTree(org, req.user);
+
+    let resolvedParentId = parentId || null;
+    if (!resolvedParentId) {
+      const rootNode = org.treeNodes.find((n) => !n.parentId);
+      resolvedParentId = rootNode ? rootNode.id : null;
+    } else {
+      const parentExists = org.treeNodes.some((n) => n.id === resolvedParentId);
+      if (!parentExists) {
+        return res.status(400).json({ message: "Parent node does not exist in this organization." });
+      }
+    }
+
+    const newNodeId = `node_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const siblingCount = org.treeNodes.filter((n) => n.parentId === resolvedParentId).length;
+
+    const newNode = {
+      id: newNodeId,
+      title: title.trim(),
+      parentId: resolvedParentId,
+      employeeId: null,
+      employeeCode: "",
+      department: department ? department.trim() : "General",
+      order: siblingCount,
+    };
+
+    org.treeNodes.push(newNode);
+    org.markModified("treeNodes");
+    await org.save();
+
+    res.status(201).json({
+      message: "Tree node created successfully",
+      node: newNode,
+      organization: org,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// PUT /api/organization/tree/nodes/:id - Update node details or change parent
+router.put("/tree/nodes/:id", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const nodeId = req.params.id;
+    const { title, department, parentId, order } = req.body;
+
+    const org = await getUserOrg(req.user);
+    await ensureDefaultTree(org, req.user);
+
+    const nodeIndex = org.treeNodes.findIndex((n) => n.id === nodeId);
+    if (nodeIndex === -1) {
+      return res.status(404).json({ message: "Tree node not found." });
+    }
+
+    const targetNode = org.treeNodes[nodeIndex];
+
+    if (title && title.trim()) targetNode.title = title.trim();
+    if (department !== undefined) targetNode.department = department.trim();
+    if (order !== undefined) targetNode.order = Number(order);
+
+    if (parentId !== undefined && parentId !== targetNode.parentId) {
+      if (targetNode.parentId === null) {
+        return res.status(400).json({ message: "Cannot change parent of root node." });
+      }
+      if (wouldCreateTreeCycle(org.treeNodes, nodeId, parentId)) {
+        return res.status(400).json({ message: "Moving this node would create a circular hierarchy." });
+      }
+      targetNode.parentId = parentId;
+    }
+
+    org.treeNodes[nodeIndex] = targetNode;
+    org.markModified("treeNodes");
+    await org.save();
+
+    await syncTreeReportingRelationships(org._id);
+
+    res.json({
+      message: "Tree node updated successfully",
+      node: targetNode,
+      organization: org,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// DELETE /api/organization/tree/nodes/:id - Delete node and re-parent children
+router.delete("/tree/nodes/:id", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const nodeId = req.params.id;
+    const org = await getUserOrg(req.user);
+    await ensureDefaultTree(org, req.user);
+
+    const targetNode = org.treeNodes.find((n) => n.id === nodeId);
+    if (!targetNode) {
+      return res.status(404).json({ message: "Tree node not found." });
+    }
+
+    if (!targetNode.parentId) {
+      return res.status(400).json({ message: "Cannot delete the root organization node." });
+    }
+
+    const parentId = targetNode.parentId;
+
+    // Re-parent children of this node to the deleted node's parent
+    org.treeNodes.forEach((n) => {
+      if (n.parentId === nodeId) {
+        n.parentId = parentId;
+      }
+    });
+
+    // Remove the node
+    org.treeNodes = org.treeNodes.filter((n) => n.id !== nodeId);
+    org.markModified("treeNodes");
+    await org.save();
+
+    await syncTreeReportingRelationships(org._id);
+
+    res.json({
+      message: "Tree node deleted and subordinate relationships reorganized successfully",
+      organization: org,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/organization/tree/nodes/:id/assign - Map activated employee to node
+router.post("/tree/nodes/:id/assign", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const nodeId = req.params.id;
+    const { userId, employeeCode } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required for node assignment." });
+    }
+
+    const org = await getUserOrg(req.user);
+    await ensureDefaultTree(org, req.user);
+
+    const targetNode = org.treeNodes.find((n) => n.id === nodeId);
+    if (!targetNode) {
+      return res.status(404).json({ message: "Tree node not found." });
+    }
+
+    // Verify employee belongs to this organization and is activated
+    const employee = await User.findOne({ _id: userId, organizationId: org._id });
+    if (!employee) {
+      return res.status(404).json({ message: "Employee not found in your organization." });
+    }
+
+    if (employee.status !== "active") {
+      return res.status(400).json({
+        message: "Only activated employees can be assigned to organizational nodes.",
+      });
+    }
+
+    // Prevent duplicate assignment: unassign employee from any other node in this organization
+    org.treeNodes.forEach((n) => {
+      if (n.employeeId && n.employeeId.toString() === userId.toString() && n.id !== nodeId) {
+        n.employeeId = null;
+        n.employeeCode = "";
+      }
+    });
+
+    // Determine Employee Code / ID
+    let finalCode = (employeeCode && employeeCode.trim()) || employee.employeeId;
+    if (!finalCode) {
+      const assignedCount = org.treeNodes.filter((n) => n.employeeId).length + 1;
+      finalCode = `EMP-${String(assignedCount).padStart(3, "0")}`;
+    }
+
+    targetNode.employeeId = employee._id;
+    targetNode.employeeCode = finalCode;
+
+    employee.employeeId = finalCode;
+    await employee.save();
+
+    org.markModified("treeNodes");
+    await org.save();
+
+    await syncTreeReportingRelationships(org._id);
+
+    res.json({
+      message: `Employee ${employee.firstName} ${employee.lastName} (${finalCode}) mapped to node successfully.`,
+      node: targetNode,
+      employee,
+      organization: org,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/organization/tree/nodes/:id/unassign - Unmap employee from node
+router.post("/tree/nodes/:id/unassign", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const nodeId = req.params.id;
+    const org = await getUserOrg(req.user);
+    await ensureDefaultTree(org, req.user);
+
+    const targetNode = org.treeNodes.find((n) => n.id === nodeId);
+    if (!targetNode) {
+      return res.status(404).json({ message: "Tree node not found." });
+    }
+
+    if (!targetNode.parentId && req.user.role === "admin" && targetNode.employeeId?.toString() === req.user.id.toString()) {
+      return res.status(400).json({ message: "Cannot unassign Main Admin from the root organization node." });
+    }
+
+    targetNode.employeeId = null;
+    targetNode.employeeCode = "";
+
+    org.markModified("treeNodes");
+    await org.save();
+
+    await syncTreeReportingRelationships(org._id);
+
+    res.json({
+      message: "Employee unassigned from node successfully",
+      node: targetNode,
+      organization: org,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/organization/tree/move - Move node to a different parent (drag & drop)
+router.post("/tree/move", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const { nodeId, newParentId } = req.body;
+    if (!nodeId || !newParentId) {
+      return res.status(400).json({ message: "Both nodeId and newParentId are required." });
+    }
+
+    const org = await getUserOrg(req.user);
+    await ensureDefaultTree(org, req.user);
+
+    const targetNode = org.treeNodes.find((n) => n.id === nodeId);
+    const parentNode = org.treeNodes.find((n) => n.id === newParentId);
+
+    if (!targetNode || !parentNode) {
+      return res.status(404).json({ message: "Specified node or parent node not found." });
+    }
+
+    if (!targetNode.parentId) {
+      return res.status(400).json({ message: "Cannot move the root node." });
+    }
+
+    if (wouldCreateTreeCycle(org.treeNodes, nodeId, newParentId)) {
+      return res.status(400).json({ message: "Circular hierarchy detected: cannot move node under its own descendant." });
+    }
+
+    targetNode.parentId = newParentId;
+    org.markModified("treeNodes");
+    await org.save();
+
+    await syncTreeReportingRelationships(org._id);
+
+    res.json({
+      message: `Node "${targetNode.title}" moved under "${parentNode.title}" successfully.`,
+      organization: org,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/organization/tree/merge - Merge two nodes
+router.post("/tree/merge", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const { sourceNodeId, targetNodeId } = req.body;
+    if (!sourceNodeId || !targetNodeId || sourceNodeId === targetNodeId) {
+      return res.status(400).json({ message: "Valid sourceNodeId and different targetNodeId are required." });
+    }
+
+    const org = await getUserOrg(req.user);
+    await ensureDefaultTree(org, req.user);
+
+    const sourceNode = org.treeNodes.find((n) => n.id === sourceNodeId);
+    const targetNode = org.treeNodes.find((n) => n.id === targetNodeId);
+
+    if (!sourceNode || !targetNode) {
+      return res.status(404).json({ message: "Source or target node not found." });
+    }
+
+    if (!sourceNode.parentId) {
+      return res.status(400).json({ message: "Cannot merge root node away." });
+    }
+
+    // Re-parent children of source node to target node
+    org.treeNodes.forEach((n) => {
+      if (n.parentId === sourceNodeId) {
+        n.parentId = targetNodeId;
+      }
+    });
+
+    // If target has no employee but source did, transfer employee
+    if (!targetNode.employeeId && sourceNode.employeeId) {
+      targetNode.employeeId = sourceNode.employeeId;
+      targetNode.employeeCode = sourceNode.employeeCode;
+    }
+
+    org.treeNodes = org.treeNodes.filter((n) => n.id !== sourceNodeId);
+    org.markModified("treeNodes");
+    await org.save();
+
+    await syncTreeReportingRelationships(org._id);
+
+    res.json({
+      message: `Node "${sourceNode.title}" merged into "${targetNode.title}" successfully.`,
+      organization: org,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// POST /api/organization/tree/sync - Explicit sync recalculation
+router.post("/tree/sync", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const org = await getUserOrg(req.user);
+    await ensureDefaultTree(org, req.user);
+    await syncTreeReportingRelationships(org._id);
+    res.json({ message: "Organizational tree and reporting relationships synchronized." });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

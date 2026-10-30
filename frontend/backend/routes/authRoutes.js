@@ -11,12 +11,71 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "super_secret_jwt_key_task_manager_2026_secure";
 
 // Helper to ensure an existing user has a linked Organization workspace
-const ensureUserOrganization = async (user) => {
-  if (user.organizationId) return user.organizationId;
+const ensureDefaultTree = (org, adminUser) => {
+  if (!org.treeNodes || org.treeNodes.length === 0) {
+    const adminId = adminUser?._id || org.adminId;
+    const adminDesignation = adminUser?.designation || "Main Admin";
+    org.treeNodes = [
+      {
+        id: "node_root",
+        title: adminDesignation,
+        parentId: null,
+        employeeId: adminId || null,
+        employeeCode: adminUser?.employeeId || "EMP-001",
+        department: adminUser?.department || "Executive Leadership",
+        order: 0,
+      },
+      {
+        id: "node_b",
+        title: "Role B",
+        parentId: "node_root",
+        employeeId: null,
+        employeeCode: "",
+        department: "Operations",
+        order: 0,
+      },
+      {
+        id: "node_c",
+        title: "Role C",
+        parentId: "node_root",
+        employeeId: null,
+        employeeCode: "",
+        department: "Engineering",
+        order: 1,
+      },
+      {
+        id: "node_d",
+        title: "Role D",
+        parentId: "node_c",
+        employeeId: null,
+        employeeCode: "",
+        department: "Engineering",
+        order: 0,
+      },
+      {
+        id: "node_e",
+        title: "Role E",
+        parentId: "node_c",
+        employeeId: null,
+        employeeCode: "",
+        department: "Engineering",
+        order: 1,
+      },
+    ];
+  }
+};
 
-  let org = await Organization.findOne({
-    $or: [{ adminId: user._id }, { name: user.companyName }],
-  });
+const ensureUserOrganization = async (user) => {
+  let org = null;
+  if (user.organizationId) {
+    org = await Organization.findById(user.organizationId);
+  }
+
+  if (!org) {
+    org = await Organization.findOne({
+      $or: [{ adminId: user._id }, { name: user.companyName }],
+    });
+  }
 
   if (!org) {
     org = await Organization.create({
@@ -24,6 +83,9 @@ const ensureUserOrganization = async (user) => {
       adminId: user._id,
     });
   }
+
+  ensureDefaultTree(org, user);
+  await org.save();
 
   user.organizationId = org._id;
   await user.save();
@@ -98,6 +160,7 @@ router.post("/register", async (req, res) => {
       designation: designation.trim(),
       role: "admin", // Initial registrant is the Workspace Admin
       organizationId: newOrg._id,
+      employeeId: "EMP-001",
       positionTitle: designation.trim() || "Chief Executive / Administrator",
       hierarchyLevel: 1,
       permissions: adminPermissions,
@@ -108,8 +171,9 @@ router.post("/register", async (req, res) => {
       department: "Executive Leadership",
     });
 
-    // Link org adminId
+    // Link org adminId and populate default tree
     newOrg.adminId = newUser._id;
+    ensureDefaultTree(newOrg, newUser);
     await newOrg.save();
 
     const token = jwt.sign(
@@ -126,6 +190,7 @@ router.post("/register", async (req, res) => {
         positionTitle: newUser.positionTitle,
         hierarchyLevel: newUser.hierarchyLevel,
         organizationId: newOrg._id,
+        employeeId: newUser.employeeId,
       },
       JWT_SECRET,
       { expiresIn: "7d" }
@@ -150,6 +215,7 @@ router.post("/register", async (req, res) => {
         accessScopes: newUser.accessScopes,
         reportingRelationships: newUser.reportingRelationships,
         organizationId: newOrg._id,
+        employeeId: newUser.employeeId,
       },
     });
   } catch (error) {
@@ -404,6 +470,7 @@ router.post("/register/accept-invite", async (req, res) => {
         accessScopes: newUser.accessScopes,
         reportingRelationships: newUser.reportingRelationships,
         organizationId: newUser.organizationId,
+        employeeId: newUser.employeeId || "",
         mfaEnabled: newUser.mfaEnabled,
       },
     });
@@ -530,6 +597,7 @@ router.post("/login", async (req, res) => {
         reportingRelationships: user.reportingRelationships || [],
         reportsTo: user.reportsTo,
         organizationId,
+        employeeId: user.employeeId || "",
         mfaEnabled: user.mfaEnabled,
       },
     });

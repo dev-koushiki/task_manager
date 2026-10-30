@@ -4,6 +4,7 @@ const Meeting = require("../models/Meeting");
 const Task = require("../models/Task");
 const Project = require("../models/Project");
 const Notification = require("../models/Notification");
+const User = require("../models/User");
 const authMiddleware = require("../middleware/auth");
 
 // Helper function to check scheduling conflicts
@@ -136,7 +137,9 @@ router.post("/", authMiddleware, async (req, res) => {
       if (proj) projectName = proj.title || proj.name || "";
     }
 
-    const participantIds = participants.map((p) => p.userId).filter(Boolean);
+    const participantIds = participants
+      .map((p) => ((p && typeof p === "object" && p.userId) ? p.userId : (p?._id || p?.id || p)))
+      .filter(Boolean);
     participantIds.push(req.user._id);
 
     // Check conflicts
@@ -151,13 +154,32 @@ router.post("/", authMiddleware, async (req, res) => {
     const organizerName = `${req.user.firstName} ${req.user.lastName}`.trim();
 
     // Map participants ensuring organizer or user is handled
-    const mappedParticipants = participants.map((p) => ({
-      userId: p.userId,
-      name: p.name,
-      email: p.email,
-      status: p.userId.toString() === req.user.id.toString() ? "accepted" : (p.status || "pending"),
-      respondedAt: p.userId.toString() === req.user.id.toString() ? new Date() : null,
-    }));
+    const mappedParticipants = await Promise.all(
+      participants.map(async (p) => {
+        const uId = (p && typeof p === "object" && p.userId) ? p.userId : (p?._id || p?.id || p);
+        let name = p?.name;
+        let email = p?.email;
+        if ((!name || !email) && uId) {
+          try {
+            const userDoc = await User.findById(uId);
+            if (userDoc) {
+              name = name || `${userDoc.firstName} ${userDoc.lastName}`.trim();
+              email = email || userDoc.email;
+            }
+          } catch (e) {
+            // fallback
+          }
+        }
+        const isSelf = uId && uId.toString() === req.user.id.toString();
+        return {
+          userId: uId,
+          name: name || "Participant",
+          email: email || "participant@example.com",
+          status: isSelf ? "accepted" : (p?.status || "pending"),
+          respondedAt: isSelf ? new Date() : null,
+        };
+      })
+    );
 
     const meeting = await Meeting.create({
       title: title.trim(),
