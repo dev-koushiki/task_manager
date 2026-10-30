@@ -12,6 +12,7 @@ const TaskModalDialog = ({
   parentTaskId,
 }) => {
   const [assigneeOptions, setAssigneeOptions] = useState(employees);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [milestones, setMilestones] = useState(() => {
     if (editingTask && Array.isArray(editingTask.milestones)) {
       return editingTask.milestones;
@@ -82,9 +83,19 @@ const TaskModalDialog = ({
     setMilestones((prev) => prev.filter((_, idx) => idx !== index));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.title.trim()) return;
+    if (!formData.title.trim() || isSubmitting) return;
+
+    let finalMilestones = [...milestones];
+    if (milestoneInput.trim()) {
+      finalMilestones.push({
+        id: `ms_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        title: milestoneInput.trim(),
+        completed: false,
+      });
+      setMilestoneInput('');
+    }
 
     let assignedToName = 'Unassigned';
     if (formData.assignedTo) {
@@ -95,12 +106,17 @@ const TaskModalDialog = ({
       }
     }
 
-    onSave({
-      ...formData,
-      assignedToName,
-      dueDate: formData.deadline,
-      milestones,
-    });
+    try {
+      setIsSubmitting(true);
+      await onSave({
+        ...formData,
+        assignedToName,
+        dueDate: formData.deadline,
+        milestones: finalMilestones,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -117,7 +133,7 @@ const TaskModalDialog = ({
             ) : (
               <SparklesIcon size={20} className="text-accent" />
             )}
-            <h3>{editingTask ? 'Edit Task' : parentTaskId ? 'Create Subtask' : 'Create Task / Milestone'}</h3>
+            <h3>{editingTask ? 'Edit Task' : parentTaskId ? 'Create Subtask' : 'Create & Assign Task (with Milestones)'}</h3>
           </div>
           <button type="button" className="close-btn" onClick={onClose}>
             &times;
@@ -127,7 +143,7 @@ const TaskModalDialog = ({
         <p className="modal-subtitle">
           {parentTaskId
             ? 'Assign a specific subtask to a team member to break down workload.'
-            : 'Define task requirements, assign to reporting subordinates, and configure milestones.'}
+            : 'Create a single assigned task and add multiple milestones within it for the employee to complete.'}
         </p>
 
         <form onSubmit={handleSubmit} className="modal-form">
@@ -308,11 +324,11 @@ const TaskModalDialog = ({
           </div>
 
           <div className="modal-actions" style={{ marginTop: '16px' }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSubmitting}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary">
-              {editingTask ? 'Save Changes' : parentTaskId ? 'Create Subtask' : 'Assign Task'}
+            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+              {isSubmitting ? 'Assigning Task...' : editingTask ? 'Save Changes' : parentTaskId ? 'Create Subtask' : 'Assign Task'}
             </button>
           </div>
         </form>

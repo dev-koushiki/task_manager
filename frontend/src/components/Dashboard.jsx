@@ -186,19 +186,24 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   };
 
   const handleSaveTask = async (taskData) => {
-    if (editingTask) {
-      await api.updateTask(editingTask._id || editingTask.id, taskData);
-    } else {
-      await api.createTask({
-        ...taskData,
-        projectId: taskData.projectId || taskModalProjectId,
-        parentTaskId: taskData.parentTaskId || taskModalParentId,
-        status: taskData.status || taskModalInitialStatus || 'not-started',
-      });
-    }
-    setEditingTask(null);
     setIsTaskModalOpen(false);
-    refreshAllData();
+    try {
+      if (editingTask) {
+        await api.updateTask(editingTask._id || editingTask.id, taskData);
+      } else {
+        await api.createTask({
+          ...taskData,
+          projectId: taskData.projectId || taskModalProjectId,
+          parentTaskId: taskData.parentTaskId || taskModalParentId,
+          status: taskData.status || taskModalInitialStatus || 'not-started',
+        });
+      }
+      setEditingTask(null);
+      await refreshAllData();
+    } catch (err) {
+      console.error('Failed to save task:', err);
+      alert(err.message || 'Failed to save task');
+    }
   };
 
   const handleDeleteTask = async (id) => {

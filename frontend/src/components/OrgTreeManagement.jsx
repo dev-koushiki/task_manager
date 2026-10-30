@@ -44,6 +44,17 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
   const [mergeSourceId, setMergeSourceId] = useState('');
   const [mergeTargetId, setMergeTargetId] = useState('');
 
+  // In-app Confirmation Modals
+  const [nodeToDelete, setNodeToDelete] = useState(null);
+  const [nodeToUnassign, setNodeToUnassign] = useState(null);
+
+  // Admin Employee ID Generator Modal
+  const [isManageIdModalOpen, setIsManageIdModalOpen] = useState(false);
+  const [targetEmployeeForId, setTargetEmployeeForId] = useState(null);
+  const [customEmployeeIdInput, setCustomEmployeeIdInput] = useState('');
+  const [isSavingId, setIsSavingId] = useState(false);
+
+  // Drag and drop state
   const [draggedEmployee, setDraggedEmployee] = useState(null);
   const [draggedNodeId, setDraggedNodeId] = useState(null);
   const [dragOverNodeId, setDragOverNodeId] = useState(null);
@@ -78,6 +89,26 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
   const triggerError = (msg) => {
     setErrorNotice(msg);
     setTimeout(() => setErrorNotice(''), 5000);
+  };
+
+  // Helper to calculate next sequential Employee ID
+  const generateNextEmployeeId = (prefix = 'EMP') => {
+    const allIds = [
+      ...activeEmployees.map((e) => e.employeeId || ''),
+      ...treeNodes.map((n) => n.employeeCode || ''),
+    ].filter(Boolean);
+
+    let maxNum = 0;
+    allIds.forEach((id) => {
+      const match = id.match(/\d+/);
+      if (match) {
+        const num = parseInt(match[0], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+
+    const nextNum = maxNum + 1;
+    return `${prefix}-${String(nextNum).padStart(3, '0')}`;
   };
 
   // Node operations
@@ -132,13 +163,12 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
     }
   };
 
-  const handleDeleteNode = async (nodeId, title) => {
-    if (!window.confirm(`Are you sure you want to delete "${title}"? Any reporting subordinates will be moved to its supervisor.`)) {
-      return;
-    }
+  const handleConfirmDeleteNode = async () => {
+    if (!nodeToDelete) return;
     try {
-      await api.deleteTreeNode(nodeId);
-      triggerNotice(`Position "${title}" deleted.`);
+      await api.deleteTreeNode(nodeToDelete.id);
+      triggerNotice(`Position "${nodeToDelete.title}" deleted.`);
+      setNodeToDelete(null);
       await loadTreeData();
       if (onHierarchyUpdated) onHierarchyUpdated();
     } catch (err) {
@@ -151,8 +181,7 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
     setAssignNodeId(nodeId);
     setSelectedUserId('');
     // Auto-suggest next employee code
-    const assignedCount = treeNodes.filter((n) => n.employeeId).length + 1;
-    setEmployeeCodeInput(`EMP-${String(assignedCount).padStart(3, '0')}`);
+    setEmployeeCodeInput(generateNextEmployeeId('EMP'));
     setIsAssignModalOpen(true);
   };
 
@@ -173,15 +202,44 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
     }
   };
 
-  const handleUnassignEmployee = async (nodeId, name) => {
-    if (!window.confirm(`Unassign ${name} from this position?`)) return;
+  const handleConfirmUnassign = async () => {
+    if (!nodeToUnassign) return;
     try {
-      await api.unassignEmployeeFromNode(nodeId);
-      triggerNotice('Employee unassigned from position.');
+      await api.unassignEmployeeFromNode(nodeToUnassign.nodeId);
+      triggerNotice(`Employee unassigned from position.`);
+      setNodeToUnassign(null);
       await loadTreeData();
       if (onHierarchyUpdated) onHierarchyUpdated();
     } catch (err) {
       triggerError(err.message || 'Failed to unassign employee.');
+    }
+  };
+
+  // Admin ID Management
+  const handleOpenManageIdModal = (emp) => {
+    setTargetEmployeeForId(emp);
+    if (emp.employeeId) {
+      setCustomEmployeeIdInput(emp.employeeId);
+    } else {
+      setCustomEmployeeIdInput(generateNextEmployeeId('EMP'));
+    }
+    setIsManageIdModalOpen(true);
+  };
+
+  const handleSaveEmployeeId = async (e) => {
+    e.preventDefault();
+    if (!targetEmployeeForId || !customEmployeeIdInput.trim()) return;
+    try {
+      setIsSavingId(true);
+      const res = await api.updateEmployeeId(targetEmployeeForId._id, customEmployeeIdInput.trim());
+      setIsManageIdModalOpen(false);
+      triggerNotice(res.message || `Employee ID set to ${customEmployeeIdInput.trim()}`);
+      await loadTreeData();
+      if (onHierarchyUpdated) onHierarchyUpdated();
+    } catch (err) {
+      triggerError(err.message || 'Failed to update employee ID.');
+    } finally {
+      setIsSavingId(false);
     }
   };
 
@@ -224,7 +282,7 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
       if (data.type === 'employee' || draggedEmployee) {
         const emp = draggedEmployee || activeEmployees.find((u) => u._id === data.userId);
         if (!emp) return;
-        const code = emp.employeeId || `EMP-${String(treeNodes.filter((n) => n.employeeId).length + 1).padStart(3, '0')}`;
+        const code = emp.employeeId || generateNextEmployeeId('EMP');
         await api.assignEmployeeToNode(targetNodeId, {
           userId: emp._id,
           employeeCode: code,
@@ -307,7 +365,7 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
   const renderTreeNode = (node, depth = 0) => {
     const hasEmployee = Boolean(node.employee);
     const emp = node.employee;
-    const isRoot = node.id === 'node_root' || (!node.parentId && !node.children?.length && depth === 0 && node.employeeCode === 'EMP-001');
+    const isRoot = node.id === 'node_root' || (!node.parentId && depth === 0 && node.employeeCode === 'EMP-001');
     const isDropTarget = dragOverNodeId === node.id;
 
     return (
@@ -315,14 +373,21 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
         <div
           className={`org-tree-node-card ${isRoot ? 'node-root' : ''} ${hasEmployee ? 'node-occupied' : 'node-vacant'} ${isDropTarget ? 'node-drop-highlight' : ''}`}
           draggable={!isRoot}
-          onDragStart={(e) => handleDragStartNode(e, node.id)}
+          onDragStart={(e) => {
+            // Prevent dragging if mousedown originated on a button or interactive child
+            if (e.target.closest('button') || e.target.closest('.node-card-actions') || e.target.closest('.node-vacant-placeholder')) {
+              e.preventDefault();
+              return false;
+            }
+            handleDragStartNode(e, node.id);
+          }}
           onDragOver={(e) => handleDragOverNode(e, node.id)}
           onDragLeave={handleDragLeaveNode}
           onDrop={(e) => handleDropOnNode(e, node.id)}
         >
           <div className="node-card-header">
             <div className="node-title-wrap">
-              <span className="node-badge-level">{isRoot ? '👑 ROOT' : `LEVEL ${depth + 1}`}</span>
+              <span className="node-badge-level">{isRoot ? '👑 MAIN ADMIN' : `LEVEL ${depth + 1}`}</span>
               <strong className="node-title">{node.title}</strong>
             </div>
             <span className="node-dept-pill">
@@ -340,7 +405,7 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
                   <div className="node-emp-name-row">
                     <strong>{emp.firstName} {emp.lastName}</strong>
                     {node.employeeCode && (
-                      <span className="node-empid-pill">{node.employeeCode}</span>
+                      <span className="node-empid-pill" title="Employee ID">{node.employeeCode}</span>
                     )}
                   </div>
                   <small className="node-emp-email">{emp.email}</small>
@@ -350,7 +415,11 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
             ) : (
               <div
                 className="node-vacant-placeholder"
-                onClick={() => handleOpenAssignModal(node.id)}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenAssignModal(node.id);
+                }}
                 title="Click to assign or drag an active employee here"
               >
                 <UserIcon size={18} className="vacant-icon" />
@@ -362,11 +431,19 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
             )}
           </div>
 
-          <div className="node-card-actions">
+          <div
+            className="node-card-actions"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
               className="node-action-btn btn-add-child"
-              onClick={() => handleOpenAddNode(node.id)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenAddNode(node.id);
+              }}
               title="Add subordinate role under this position"
             >
               <PlusIcon size={12} /> Add Child
@@ -377,7 +454,11 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
                 <button
                   type="button"
                   className="node-action-btn btn-unassign"
-                  onClick={() => handleUnassignEmployee(node.id, `${emp.firstName} ${emp.lastName}`)}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setNodeToUnassign({ nodeId: node.id, name: `${emp.firstName} ${emp.lastName}` });
+                  }}
                   title="Unassign employee from this position"
                 >
                   Unassign
@@ -387,7 +468,11 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
               <button
                 type="button"
                 className="node-action-btn btn-assign"
-                onClick={() => handleOpenAssignModal(node.id)}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenAssignModal(node.id);
+                }}
                 title="Map an activated employee to this position"
               >
                 Assign
@@ -397,7 +482,11 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
             <button
               type="button"
               className="node-action-btn"
-              onClick={() => handleOpenEditNode(node)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenEditNode(node);
+              }}
               title="Edit position title or department"
             >
               <EditIcon size={12} />
@@ -407,7 +496,11 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
               <button
                 type="button"
                 className="node-action-btn btn-delete"
-                onClick={() => handleDeleteNode(node.id, node.title)}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNodeToDelete(node);
+                }}
                 title="Delete position"
               >
                 <TrashIcon size={12} />
@@ -449,7 +542,7 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
           <div>
             <h3>Dynamic Organizational Tree & Node Hierarchy</h3>
             <p className="controls-subtext">
-              Customizable parent-child hierarchy. Drag & drop activated employees onto positions, assign employee IDs, and establish dynamic reporting relationships.
+              Customizable parent-child hierarchy. Manage positions, assign activated employees, generate official Employee IDs, and configure dynamic reporting relationships.
             </p>
           </div>
         </div>
@@ -482,7 +575,7 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
               Visual Organization Hierarchy{' '}
               <span className="count-pill">{treeNodes.length} Nodes</span>
             </h4>
-            <span className="canvas-hint">Drag nodes to reorganize · Drop employees to assign</span>
+            <span className="canvas-hint">Drag nodes to reorganize · Drop employees to assign · Click buttons to manage</span>
           </div>
 
           {loading ? (
@@ -515,7 +608,7 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
           <div className="profiles-header-bar">
             <div>
               <h4>Active Profiles</h4>
-              <small className="profiles-subtext">Activated employees available for tree assignment</small>
+              <small className="profiles-subtext">Activated employees available for tree assignment & ID generation</small>
             </div>
             <span className="count-pill">{activeEmployees.length} Total</span>
           </div>
@@ -525,7 +618,7 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
             <SearchIcon size={14} className="search-icon-muted" />
             <input
               type="text"
-              placeholder="Search active employees..."
+              placeholder="Search active employees by name, email, ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -579,8 +672,10 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
                         <strong className="profile-name">{fullName}</strong>
                         <span className="profile-email">{emp.email}</span>
                       </div>
-                      {emp.employeeId && (
-                        <span className="profile-empid-pill">{emp.employeeId}</span>
+                      {emp.employeeId ? (
+                        <span className="profile-empid-pill" title="Official Employee ID">{emp.employeeId}</span>
+                      ) : (
+                        <span className="profile-no-id-pill" title="No Employee ID assigned yet">No ID</span>
                       )}
                     </div>
 
@@ -590,15 +685,30 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
                         <small>{emp.designation || emp.role}</small>
                       </div>
 
-                      {emp.isAssigned ? (
-                        <span className="assigned-status-badge assigned" title={`Mapped to: ${emp.assignedNodeTitle}`}>
-                          ✓ {emp.assignedNodeTitle || 'Assigned'}
-                        </span>
-                      ) : (
-                        <span className="assigned-status-badge unassigned">
-                          Ready to Map
-                        </span>
-                      )}
+                      <div className="profile-actions-row">
+                        {emp.isAssigned ? (
+                          <span className="assigned-status-badge assigned" title={`Mapped to: ${emp.assignedNodeTitle}`}>
+                            ✓ {emp.assignedNodeTitle || 'Assigned'}
+                          </span>
+                        ) : (
+                          <span className="assigned-status-badge unassigned">
+                            Ready to Map
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          className="profile-id-manage-btn"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenManageIdModal(emp);
+                          }}
+                          title="Generate or edit official employee ID"
+                        >
+                          <SparklesIcon size={11} /> {emp.employeeId ? 'Edit ID' : 'Gen ID'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -612,49 +722,48 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
 
       {/* 1. Add Node Modal */}
       {isAddNodeModalOpen && (
-        <div className="modal-backdrop animate-fade-in" onClick={() => setIsAddNodeModalOpen(false)}>
-          <div className="modal-dialog-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay animate-fade-in" onClick={() => setIsAddNodeModalOpen(false)}>
+          <div className="modal-card animate-scale-up" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h4>Add New Organization Position Node</h4>
-              <button type="button" className="modal-close-btn" onClick={() => setIsAddNodeModalOpen(false)}>×</button>
+              <h3>Add New Position Node</h3>
+              <button type="button" className="close-btn" onClick={() => setIsAddNodeModalOpen(false)}>×</button>
             </div>
-            <form onSubmit={handleCreateNode}>
-              <div className="modal-body-content">
-                <div className="form-group">
-                  <label>Position / Node Title *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Lead Frontend Engineer, QA Specialist"
-                    value={newNodeTitle}
-                    onChange={(e) => setNewNodeTitle(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Department</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Engineering, Product, Operations"
-                    value={newNodeDept}
-                    onChange={(e) => setNewNodeDept(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Reporting Supervisor (Parent Node)</label>
-                  <select
-                    value={targetParentId || ''}
-                    onChange={(e) => setTargetParentId(e.target.value || null)}
-                  >
-                    <option value="">(Select Parent Node)</option>
-                    {treeNodes.map((n) => (
-                      <option key={n.id} value={n.id}>
-                        {n.title} ({n.department}) {n.employee ? `— ${n.employee.firstName} ${n.employee.lastName}` : '— Vacant'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <form onSubmit={handleCreateNode} className="modal-form">
+              <div className="form-group">
+                <label>Position / Node Title *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Lead Frontend Engineer, QA Specialist"
+                  value={newNodeTitle}
+                  onChange={(e) => setNewNodeTitle(e.target.value)}
+                />
               </div>
-              <div className="modal-footer">
+              <div className="form-group">
+                <label>Department</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Engineering, Product, Operations"
+                  value={newNodeDept}
+                  onChange={(e) => setNewNodeDept(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>Reporting Supervisor (Parent Node)</label>
+                <select
+                  value={targetParentId || ''}
+                  onChange={(e) => setTargetParentId(e.target.value || null)}
+                >
+                  <option value="">(Select Parent Node - Root level if none)</option>
+                  {treeNodes.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.title} ({n.department}) {n.employee ? `— ${n.employee.firstName} ${n.employee.lastName}` : '— Vacant'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setIsAddNodeModalOpen(false)}>
                   Cancel
                 </button>
@@ -669,50 +778,49 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
 
       {/* 2. Edit Node Modal */}
       {isEditNodeModalOpen && editingNode && (
-        <div className="modal-backdrop animate-fade-in" onClick={() => setIsEditNodeModalOpen(false)}>
-          <div className="modal-dialog-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay animate-fade-in" onClick={() => setIsEditNodeModalOpen(false)}>
+          <div className="modal-card animate-scale-up" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h4>Edit Organization Position Node</h4>
-              <button type="button" className="modal-close-btn" onClick={() => setIsEditNodeModalOpen(false)}>×</button>
+              <h3>Edit Position Node</h3>
+              <button type="button" className="close-btn" onClick={() => setIsEditNodeModalOpen(false)}>×</button>
             </div>
-            <form onSubmit={handleUpdateNode}>
-              <div className="modal-body-content">
-                <div className="form-group">
-                  <label>Position Title *</label>
-                  <input
-                    type="text"
-                    required
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Department</label>
-                  <input
-                    type="text"
-                    value={editDept}
-                    onChange={(e) => setEditDept(e.target.value)}
-                  />
-                </div>
-                {editingNode.parentId !== null && (
-                  <div className="form-group">
-                    <label>Parent Node (Reporting Line)</label>
-                    <select
-                      value={editParentId}
-                      onChange={(e) => setEditParentId(e.target.value)}
-                    >
-                      {treeNodes
-                        .filter((n) => n.id !== editingNode.id)
-                        .map((n) => (
-                          <option key={n.id} value={n.id}>
-                            {n.title} ({n.department})
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                )}
+            <form onSubmit={handleUpdateNode} className="modal-form">
+              <div className="form-group">
+                <label>Position Title *</label>
+                <input
+                  type="text"
+                  required
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                />
               </div>
-              <div className="modal-footer">
+              <div className="form-group">
+                <label>Department</label>
+                <input
+                  type="text"
+                  value={editDept}
+                  onChange={(e) => setEditDept(e.target.value)}
+                />
+              </div>
+              {editingNode.parentId !== null && (
+                <div className="form-group">
+                  <label>Parent Node (Reporting Line)</label>
+                  <select
+                    value={editParentId}
+                    onChange={(e) => setEditParentId(e.target.value)}
+                  >
+                    {treeNodes
+                      .filter((n) => n.id !== editingNode.id)
+                      .map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {n.title} ({n.department})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setIsEditNodeModalOpen(false)}>
                   Cancel
                 </button>
@@ -725,51 +833,65 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
         </div>
       )}
 
-      {/* 3. Assign Employee Modal */}
+      {/* 3. Assign Employee Modal (With Auto-Generate ID) */}
       {isAssignModalOpen && (
-        <div className="modal-backdrop animate-fade-in" onClick={() => setIsAssignModalOpen(false)}>
-          <div className="modal-dialog-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay animate-fade-in" onClick={() => setIsAssignModalOpen(false)}>
+          <div className="modal-card animate-scale-up" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h4>Assign Activated Employee to Position</h4>
-              <button type="button" className="modal-close-btn" onClick={() => setIsAssignModalOpen(false)}>×</button>
+              <h3>Assign Activated Employee to Position</h3>
+              <button type="button" className="close-btn" onClick={() => setIsAssignModalOpen(false)}>×</button>
             </div>
-            <form onSubmit={handleSaveAssignment}>
-              <div className="modal-body-content">
-                <div className="form-group">
-                  <label>Select Activated Employee *</label>
-                  <select
-                    required
-                    value={selectedUserId}
-                    onChange={(e) => {
-                      const uId = e.target.value;
-                      setSelectedUserId(uId);
-                      const u = activeEmployees.find((emp) => emp._id === uId);
-                      if (u && u.employeeId) {
-                        setEmployeeCodeInput(u.employeeId);
-                      }
-                    }}
-                  >
-                    <option value="">-- Choose Employee --</option>
-                    {activeEmployees.map((emp) => (
-                      <option key={emp._id} value={emp._id}>
-                        {emp.firstName} {emp.lastName} ({emp.email}) {emp.isAssigned ? `[Assigned to: ${emp.assignedNodeTitle}]` : '[Unassigned]'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Employee ID / Code *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. EMP-001, EMP-002"
-                    value={employeeCodeInput}
-                    onChange={(e) => setEmployeeCodeInput(e.target.value)}
-                  />
-                  <small className="form-help-hint">Unique identification code saved with employee profile and reporting tree.</small>
-                </div>
+            <form onSubmit={handleSaveAssignment} className="modal-form">
+              <div className="form-group">
+                <label>Select Activated Employee *</label>
+                <select
+                  required
+                  value={selectedUserId}
+                  onChange={(e) => {
+                    const uId = e.target.value;
+                    setSelectedUserId(uId);
+                    const u = activeEmployees.find((emp) => emp._id === uId);
+                    if (u && u.employeeId) {
+                      setEmployeeCodeInput(u.employeeId);
+                    } else {
+                      setEmployeeCodeInput(generateNextEmployeeId('EMP'));
+                    }
+                  }}
+                >
+                  <option value="">-- Choose Employee --</option>
+                  {activeEmployees.map((emp) => (
+                    <option key={emp._id} value={emp._id}>
+                      {emp.firstName} {emp.lastName} ({emp.email}) {emp.employeeId ? `[${emp.employeeId}]` : ''} {emp.isAssigned ? `[Assigned to: ${emp.assignedNodeTitle}]` : '[Unassigned]'}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="modal-footer">
+
+              <div className="form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ margin: 0 }}>Official Employee ID / Code *</label>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs auto-gen-btn"
+                    onClick={() => setEmployeeCodeInput(generateNextEmployeeId('EMP'))}
+                    title="Generate next sequential employee code"
+                  >
+                    <SparklesIcon size={12} /> Auto-Generate
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. EMP-001, EMP-002"
+                  value={employeeCodeInput}
+                  onChange={(e) => setEmployeeCodeInput(e.target.value)}
+                />
+                <small className="form-help-hint">
+                  Admin-generated unique ID. Saved with employee profile and reporting tree.
+                </small>
+              </div>
+
+              <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setIsAssignModalOpen(false)}>
                   Cancel
                 </button>
@@ -784,49 +906,49 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
 
       {/* 4. Merge Nodes Modal */}
       {isMergeModalOpen && (
-        <div className="modal-backdrop animate-fade-in" onClick={() => setIsMergeModalOpen(false)}>
-          <div className="modal-dialog-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay animate-fade-in" onClick={() => setIsMergeModalOpen(false)}>
+          <div className="modal-card animate-scale-up" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h4>Merge Organizational Nodes</h4>
-              <button type="button" className="modal-close-btn" onClick={() => setIsMergeModalOpen(false)}>×</button>
+              <h3>Merge Organizational Positions</h3>
+              <button type="button" className="close-btn" onClick={() => setIsMergeModalOpen(false)}>×</button>
             </div>
-            <form onSubmit={handleMergeNodes}>
-              <div className="modal-body-content">
-                <p className="modal-info-p">
-                  Merging will transfer all subordinates and assignments from the source position into the target position, removing the source node.
-                </p>
-                <div className="form-group">
-                  <label>Source Node to Merge (will be removed) *</label>
-                  <select
-                    required
-                    value={mergeSourceId}
-                    onChange={(e) => setMergeSourceId(e.target.value)}
-                  >
-                    <option value="">-- Select Source Position --</option>
-                    {treeNodes.filter((n) => n.parentId !== null).map((n) => (
-                      <option key={n.id} value={n.id}>
-                        {n.title} ({n.department})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Target Node to Keep *</label>
-                  <select
-                    required
-                    value={mergeTargetId}
-                    onChange={(e) => setMergeTargetId(e.target.value)}
-                  >
-                    <option value="">-- Select Target Position --</option>
-                    {treeNodes.filter((n) => n.id !== mergeSourceId).map((n) => (
-                      <option key={n.id} value={n.id}>
-                        {n.title} ({n.department})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <form onSubmit={handleMergeNodes} className="modal-form">
+              <p className="modal-info-note">
+                Merging transfers all subordinates and assignments from the source position into the target position, then removes the source node.
+              </p>
+              <div className="form-group">
+                <label>Source Position to Merge (will be removed) *</label>
+                <select
+                  required
+                  value={mergeSourceId}
+                  onChange={(e) => setMergeSourceId(e.target.value)}
+                >
+                  <option value="">-- Select Source Position --</option>
+                  {treeNodes.filter((n) => n.parentId !== null).map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.title} ({n.department})
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="modal-footer">
+
+              <div className="form-group">
+                <label>Target Position to Keep *</label>
+                <select
+                  required
+                  value={mergeTargetId}
+                  onChange={(e) => setMergeTargetId(e.target.value)}
+                >
+                  <option value="">-- Select Target Position --</option>
+                  {treeNodes.filter((n) => n.id !== mergeSourceId).map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.title} ({n.department})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setIsMergeModalOpen(false)}>
                   Cancel
                 </button>
@@ -835,6 +957,135 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Admin Employee ID Generator & Customizer Modal */}
+      {isManageIdModalOpen && targetEmployeeForId && (
+        <div className="modal-overlay animate-fade-in" onClick={() => setIsManageIdModalOpen(false)}>
+          <div className="modal-card animate-scale-up" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Generate / Edit Employee ID</h3>
+              <button type="button" className="close-btn" onClick={() => setIsManageIdModalOpen(false)}>×</button>
+            </div>
+            <form onSubmit={handleSaveEmployeeId} className="modal-form">
+              <div className="emp-id-preview-box">
+                <div className="emp-preview-avatar">
+                  {targetEmployeeForId.firstName ? targetEmployeeForId.firstName[0].toUpperCase() : 'U'}
+                </div>
+                <div>
+                  <strong>{targetEmployeeForId.firstName} {targetEmployeeForId.lastName}</strong>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{targetEmployeeForId.email}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--primary-color)', marginTop: '2px' }}>
+                    {targetEmployeeForId.department} · {targetEmployeeForId.designation || targetEmployeeForId.role}
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ margin: 0 }}>Official Employee ID *</label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-xs auto-gen-btn"
+                      onClick={() => setCustomEmployeeIdInput(generateNextEmployeeId('EMP'))}
+                      title="Generate sequential EMP-xxx ID"
+                    >
+                      <SparklesIcon size={12} /> Auto-EMP
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-xs auto-gen-btn"
+                      onClick={() => setCustomEmployeeIdInput(generateNextEmployeeId('ENG'))}
+                      title="Generate sequential ENG-xxx ID"
+                    >
+                      ENG
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. EMP-001, EMP-002, ENG-003"
+                  value={customEmployeeIdInput}
+                  onChange={(e) => setCustomEmployeeIdInput(e.target.value)}
+                />
+                <small className="form-help-hint">
+                  Admin-managed unique ID. This ID will appear across the organizational tree, tasks, and reports.
+                </small>
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setIsManageIdModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={isSavingId}>
+                  {isSavingId ? 'Saving...' : 'Save Employee ID'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Delete Node Confirmation Modal */}
+      {nodeToDelete && (
+        <div className="modal-overlay animate-fade-in" onClick={() => setNodeToDelete(null)}>
+          <div className="modal-card animate-scale-up" style={{ maxWidth: '440px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444' }}>
+                <TrashIcon size={18} /> Delete Position Node
+              </h3>
+              <button type="button" className="close-btn" onClick={() => setNodeToDelete(null)}>×</button>
+            </div>
+            <div className="modal-form">
+              <p style={{ fontSize: '13px', color: 'var(--text-main)', lineHeight: '1.5', margin: 0 }}>
+                Are you sure you want to delete position <strong>"{nodeToDelete.title}"</strong> ({nodeToDelete.department})?
+              </p>
+              <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', color: '#ef4444' }}>
+                Any subordinate positions reporting directly to this node will automatically be re-linked to its supervisor.
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setNodeToDelete(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-danger" onClick={handleConfirmDeleteNode}>
+                  Confirm Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Unassign Employee Confirmation Modal */}
+      {nodeToUnassign && (
+        <div className="modal-overlay animate-fade-in" onClick={() => setNodeToUnassign(null)}>
+          <div className="modal-card animate-scale-up" style={{ maxWidth: '440px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <UsersIcon size={18} /> Unassign Employee
+              </h3>
+              <button type="button" className="close-btn" onClick={() => setNodeToUnassign(null)}>×</button>
+            </div>
+            <div className="modal-form">
+              <p style={{ fontSize: '13px', color: 'var(--text-main)', lineHeight: '1.5', margin: 0 }}>
+                Are you sure you want to unassign <strong>{nodeToUnassign.name}</strong> from this position?
+              </p>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                The position will become vacant and available for another active employee.
+              </p>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setNodeToUnassign(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-primary" onClick={handleConfirmUnassign}>
+                  Confirm Unassign
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

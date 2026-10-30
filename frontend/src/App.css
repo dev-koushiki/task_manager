@@ -8736,6 +8736,173 @@
   color: #f59e0b;
 }
 
+.profile-no-id-pill {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  font-weight: 700;
+}
+
+.profile-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.profile-id-manage-btn {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(79, 70, 229, 0.3);
+  background: rgba(79, 70, 229, 0.08);
+  color: #4f46e5;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.profile-id-manage-btn:hover {
+  background: #4f46e5;
+  color: #ffffff;
+}
+
+[data-theme="dark"] .profile-id-manage-btn {
+  border-color: rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+}
+
+[data-theme="dark"] .profile-id-manage-btn:hover {
+  background: #6366f1;
+  color: #ffffff;
+}
+
+.btn-xs {
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.auto-gen-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.emp-id-preview-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card-hover);
+  margin-bottom: 4px;
+}
+
+.emp-preview-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.modal-info-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  padding: 10px 12px;
+  background: var(--bg-card-hover);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  margin: 0;
+}
+
+.form-help-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: block;
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: #fff;
+  border: 1px solid #dc2626;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.28);
+}
+
+/* Fallback styling for modal-backdrop & modal-dialog-card */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 16px;
+}
+
+[data-theme="dark"] .modal-backdrop {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.modal-dialog-card {
+  max-width: 520px;
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+}
+
+.modal-close-btn {
+  font-size: 22px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.modal-body-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 /* =========================================================
    UNIFIED EMPLOYEE DASHBOARD STYLING
    ========================================================= */

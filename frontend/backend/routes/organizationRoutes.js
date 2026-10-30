@@ -627,6 +627,50 @@ router.post("/tree/sync", authMiddleware, requirePermission("canManageStructure"
   }
 });
 
+// PATCH /api/organization/employees/:userId/employee-id - Admin generates or updates employee ID
+router.patch("/employees/:userId/employee-id", authMiddleware, requirePermission("canManageStructure"), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { employeeId } = req.body;
+
+    if (!employeeId || !employeeId.trim()) {
+      return res.status(400).json({ message: "Employee ID is required." });
+    }
+
+    const org = await getUserOrg(req.user);
+    const user = await User.findOne({ _id: userId, organizationId: org._id });
+    if (!user) {
+      return res.status(404).json({ message: "Employee not found in your organization." });
+    }
+
+    user.employeeId = employeeId.trim();
+    await user.save();
+
+    // Update in treeNodes if mapped
+    if (Array.isArray(org.treeNodes)) {
+      let modified = false;
+      org.treeNodes.forEach((n) => {
+        if (n.employeeId && n.employeeId.toString() === userId.toString()) {
+          n.employeeCode = user.employeeId;
+          modified = true;
+        }
+      });
+      if (modified) {
+        org.markModified("treeNodes");
+        await org.save();
+      }
+    }
+
+    res.json({
+      message: `Employee ID updated to "${user.employeeId}" for ${user.firstName} ${user.lastName}.`,
+      employeeId: user.employeeId,
+      user,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // ======================== DEPARTMENTS ========================
 
 // POST /api/organization/departments - Add department

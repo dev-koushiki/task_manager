@@ -65,11 +65,22 @@ export const UnifiedEmployeeDashboard = ({
 
   const userIdStr = (user?._id || user?.id || '').toString();
 
-  // Tasks assigned TO current employee (Submission Panel)
-  const myAssignedTasks = tasks.filter((t) => {
+  // Tasks assigned TO current employee (Submission Panel) - 1 card per assigned task
+  const rawAssignedTasks = tasks.filter((t) => {
     const assignedToId = t.assignedTo?._id || t.assignedTo?.id || t.assignedTo;
     return assignedToId && assignedToId.toString() === userIdStr;
   });
+
+  // Ensure each assigned task card is unique (multiple milestones belong to one task)
+  const myAssignedTasks = [];
+  const seenTaskIds = new Set();
+  for (const t of rawAssignedTasks) {
+    const idKey = (t._id || t.id || '').toString();
+    if (idKey && !seenTaskIds.has(idKey)) {
+      seenTaskIds.add(idKey);
+      myAssignedTasks.push(t);
+    }
+  }
 
   // Tasks assigned BY current employee to reporting subordinates (Assignment Panel)
   const myDelegatedTasks = tasks.filter((t) => {

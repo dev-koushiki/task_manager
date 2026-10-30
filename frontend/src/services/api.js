@@ -2107,6 +2107,14 @@ export const api = {
     });
   },
 
+  async updateEmployeeId(userId, employeeId) {
+    return safeFetchJson(`${API_BASE_URL}/organization/employees/${userId}/employee-id`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify({ employeeId }),
+    });
+  },
+
   // ----------------------------------------------------
   // AUTHORIZED ASSIGNEES & MILESTONES
   // ----------------------------------------------------

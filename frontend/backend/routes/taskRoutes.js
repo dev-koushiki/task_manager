@@ -258,6 +258,24 @@ router.post("/", authMiddleware, async (req, res) => {
           message: "Unauthorized task assignment: You can only assign tasks to your team members, subordinates, or yourself.",
         });
       }
+
+      // Duplicate submission guard: prevent double-clicks from generating multiple identical tasks
+      const recentDuplicate = await Task.findOne({
+        organizationId: orgId,
+        assignedTo: assignedToUser._id,
+        title: title.trim(),
+        createdAt: { $gte: new Date(Date.now() - 4000) },
+      });
+      if (recentDuplicate) {
+        const populated = await Task.findById(recentDuplicate._id)
+          .populate("assignedTo", "firstName lastName email designation positionTitle role")
+          .populate("assignedBy", "firstName lastName email role")
+          .populate("projectId", "name deadline status");
+        return res.status(200).json({
+          message: "Task created and assigned successfully",
+          task: populated,
+        });
+      }
     }
 
     // Verify projectId belongs to this company
