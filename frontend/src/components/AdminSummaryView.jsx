@@ -8,35 +8,48 @@ import {
   CheckCircleIcon,
   TrendingUpIcon,
   LayersIcon,
+  EyeIcon,
+  SearchIcon,
 } from './Icons';
 
 export const AdminSummaryView = ({
   projects = [],
+  tasks = [],
   onOpenNewProject,
   onInspectProject,
   loading = false,
 }) => {
   const [filter, setFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const totalProjects = projects.length;
-  const onTrackCount = projects.filter((p) => p.status === 'on-track').length;
-  const delayedCount = projects.filter((p) => p.status === 'delayed').length;
-  const completedCount = projects.filter((p) => p.status === 'completed').length;
+  const onTrackCount = projects.filter((p) => (p.status || p.metrics?.calculatedStatus) === 'on-track').length;
+  const delayedCount = projects.filter((p) => (p.status || p.metrics?.calculatedStatus) === 'delayed').length;
+  const completedCount = projects.filter((p) => (p.status || p.metrics?.calculatedStatus) === 'completed').length;
 
   const totalProgress =
     totalProjects > 0
       ? Math.round(
-          projects.reduce((sum, p) => sum + (p.progressPercentage || p.metrics?.progressPercentage || 0), 0) /
+          projects.reduce((sum, p) => sum + (p.progressPercentage ?? p.metrics?.progressPercentage ?? 0), 0) /
             totalProjects
         )
       : 0;
 
   const filteredProjects = projects.filter((p) => {
-    const status = p.status || p.metrics?.calculatedStatus;
-    if (filter === 'all') return true;
-    if (filter === 'on-track') return status === 'on-track';
-    if (filter === 'delayed') return status === 'delayed';
-    if (filter === 'completed') return status === 'completed';
+    const status = p.status || p.metrics?.calculatedStatus || 'not-started';
+    if (filter === 'on-track' && status !== 'on-track') return false;
+    if (filter === 'delayed' && status !== 'delayed') return false;
+    if (filter === 'completed' && status !== 'completed') return false;
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const matchName = p.name?.toLowerCase().includes(q);
+      const matchDirector = p.directorName?.toLowerCase().includes(q);
+      const matchDept = p.department?.toLowerCase().includes(q);
+      const matchOutcome = p.targetOutcome?.toLowerCase().includes(q);
+      if (!matchName && !matchDirector && !matchDept && !matchOutcome) return false;
+    }
+
     return true;
   });
 
@@ -104,7 +117,7 @@ export const AdminSummaryView = ({
         </div>
       </div>
 
-      {/* Filter Tabs */}
+      {/* Filter Tabs & Search Controls */}
       <div className="summary-filter-row">
         <div className="summary-tabs">
           <button
@@ -136,9 +149,20 @@ export const AdminSummaryView = ({
             Completed ({completedCount})
           </button>
         </div>
+
+        <div className="overview-search-wrap">
+          <SearchIcon size={16} className="overview-search-icon" />
+          <input
+            type="text"
+            className="overview-search-input"
+            placeholder="Search projects, directors, departments..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
       </div>
 
-      {/* Projects Matrix */}
+      {/* Overview Projects Table */}
       {loading ? (
         <div className="loading-state">
           <div className="spinner"></div>
@@ -147,115 +171,160 @@ export const AdminSummaryView = ({
       ) : filteredProjects.length === 0 ? (
         <div className="empty-state animate-fade-in">
           <LayersIcon size={44} className="text-accent" />
-          <h3>No projects registered</h3>
-          <p>Initialize your first project and assign a Project Director to begin tracking progress.</p>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onOpenNewProject}
-            style={{ marginTop: '12px' }}
-          >
-            <PlusIcon size={18} />
-            <span>Launch New Project</span>
-          </button>
+          <h3>No projects found</h3>
+          <p>
+            {searchQuery || filter !== 'all'
+              ? 'No projects match your current filters. Try resetting search or filter.'
+              : 'Initialize your first project and assign a Project Director to begin tracking progress.'}
+          </p>
+          {searchQuery || filter !== 'all' ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                setFilter('all');
+                setSearchQuery('');
+              }}
+              style={{ marginTop: '12px' }}
+            >
+              Clear Filters
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={onOpenNewProject}
+              style={{ marginTop: '12px' }}
+            >
+              <PlusIcon size={18} />
+              <span>Launch New Project</span>
+            </button>
+          )}
         </div>
       ) : (
-        <div className="project-matrix-grid">
-          {filteredProjects.map((p) => {
-            const progress = p.progressPercentage ?? (p.metrics?.progressPercentage || 0);
-            const status = p.status || p.metrics?.calculatedStatus || 'on-track';
-            const completedTasks = p.completedTasks ?? (p.metrics?.completedTasks || 0);
-            const totalTasks = p.totalTasks ?? (p.metrics?.totalTasks || 0);
-            const overdueTasks = p.overdueTasks ?? (p.metrics?.overdueTasks || 0);
+        <div className="table-wrapper overview-table-wrapper animate-fade-in">
+          <table className="task-table project-overview-table">
+            <thead>
+              <tr>
+                <th style={{ minWidth: '240px' }}>Project Name</th>
+                <th style={{ minWidth: '180px' }}>Director</th>
+                <th style={{ minWidth: '140px' }}>Target Deadline</th>
+                <th style={{ minWidth: '180px' }}>Tasks Completed</th>
+                <th style={{ width: '110px', textAlign: 'center' }}>View</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProjects.map((p) => {
+                const projId = p._id || p.id;
+                const progress = p.progressPercentage ?? (p.metrics?.progressPercentage || 0);
+                const status = p.status || p.metrics?.calculatedStatus || 'on-track';
 
-            return (
-              <div key={p.id || p._id} className="executive-project-card animate-scale-up">
-                <div className="proj-card-header">
-                  <div>
-                    <span className="project-badge-tag">EXECUTIVE SUMMARY</span>
-                    <h3 className="project-name-heading">{p.name}</h3>
-                  </div>
+                // Calculate task metrics accurately from project or tasks array
+                const projectTasks = Array.isArray(tasks)
+                  ? tasks.filter(
+                      (t) =>
+                        t.projectId === projId ||
+                        t.projectId?._id === projId ||
+                        t.projectId === String(projId)
+                    )
+                  : [];
 
-                  <span className={`status-pill status-${status}`}>
-                    {status === 'completed' && <CheckCircleIcon size={14} />}
-                    {status === 'delayed' && <AlertTriangleIcon size={14} />}
-                    {status === 'on-track' && <TrendingUpIcon size={14} />}
-                    <span style={{ textTransform: 'uppercase' }}>{status.replace('-', ' ')}</span>
-                  </span>
-                </div>
+                const completedTasks =
+                  p.completedTasks ??
+                  (p.metrics?.completedTasks !== undefined
+                    ? p.metrics.completedTasks
+                    : projectTasks.filter((t) => t.status === 'completed').length);
 
-                {p.targetOutcome && (
-                  <p className="project-outcome-text">
-                    <strong>Expected Outcome:</strong> {p.targetOutcome}
-                  </p>
-                )}
+                const totalTasks =
+                  p.totalTasks ??
+                  (p.metrics?.totalTasks !== undefined
+                    ? p.metrics.totalTasks
+                    : projectTasks.length);
 
-                <div className="project-meta-grid">
-                  <div className="meta-box">
-                    <span className="meta-label">Project Director</span>
-                    <span className="meta-value">
-                      <UserIcon size={14} />
-                      <strong>{p.directorName || 'Assigned Director'}</strong>
-                    </span>
-                  </div>
+                return (
+                  <tr key={projId} className="project-overview-row">
+                    {/* 1. Project Name */}
+                    <td>
+                      <div className="project-name-cell">
+                        <div className="project-title-row">
+                          <strong className="project-table-title">{p.name}</strong>
+                          <span className={`status-pill status-${status} project-status-pill`}>
+                            {status === 'completed' && <CheckCircleIcon size={12} />}
+                            {status === 'delayed' && <AlertTriangleIcon size={12} />}
+                            {status === 'on-track' && <TrendingUpIcon size={12} />}
+                            <span style={{ textTransform: 'uppercase' }}>
+                              {status.replace('-', ' ')}
+                            </span>
+                          </span>
+                        </div>
+                        {p.targetOutcome && (
+                          <p className="project-table-outcome" title={p.targetOutcome}>
+                            <span className="outcome-tag">Deliverables:</span> {p.targetOutcome}
+                          </p>
+                        )}
+                        {p.department && (
+                          <span className="project-table-dept">Dept: {p.department}</span>
+                        )}
+                      </div>
+                    </td>
 
-                  <div className="meta-box">
-                    <span className="meta-label">Target Deadline</span>
-                    <span className="meta-value">
-                      <CalendarIcon size={14} />
-                      <strong>{p.deadline || 'Ongoing'}</strong>
-                    </span>
-                  </div>
+                    {/* 2. Director */}
+                    <td>
+                      <div className="director-cell">
+                        <div className="director-avatar-chip">
+                          <UserIcon size={14} />
+                        </div>
+                        <div className="director-info">
+                          <strong className="director-name">
+                            {p.directorName || 'Assigned Director'}
+                          </strong>
+                        </div>
+                      </div>
+                    </td>
 
-                  <div className="meta-box">
-                    <span className="meta-label">Tasks Completed</span>
-                    <span className="meta-value">
-                      <strong>{completedTasks} / {totalTasks}</strong>
-                    </span>
-                  </div>
+                    {/* 3. Target Deadline */}
+                    <td>
+                      <div className="deadline-cell">
+                        <CalendarIcon size={14} className="deadline-icon" />
+                        <span className="deadline-date">{p.deadline || 'Ongoing'}</span>
+                      </div>
+                    </td>
 
-                  <div className="meta-box">
-                    <span className="meta-label">Overdue Tasks</span>
-                    <span className={`meta-value ${overdueTasks > 0 ? 'text-danger' : ''}`}>
-                      {overdueTasks > 0 ? (
-                        <>
-                          <AlertTriangleIcon size={14} />
-                          <strong>{overdueTasks} Overdue</strong>
-                        </>
-                      ) : (
-                        <span>0 Overdue</span>
-                      )}
-                    </span>
-                  </div>
-                </div>
+                    {/* 4. Tasks Completed */}
+                    <td>
+                      <div className="tasks-completed-cell">
+                        <div className="tasks-count-row">
+                          <span className="tasks-completed-count">
+                            <strong>{completedTasks}</strong> / {totalTasks} tasks
+                          </span>
+                          <span className="tasks-completed-pct">{progress}%</span>
+                        </div>
+                        <div className="mini-progress-track">
+                          <div
+                            className={`mini-progress-fill ${progress === 100 ? 'fill-completed' : ''}`}
+                            style={{ width: `${progress}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </td>
 
-                {/* Progress Bar */}
-                <div className="project-progress-wrap">
-                  <div className="progress-labels-row">
-                    <span className="progress-title">Overall Completion</span>
-                    <strong className="progress-pct">{progress}%</strong>
-                  </div>
-                  <div className="progress-bar-track">
-                    <div
-                      className={`progress-bar-fill ${progress === 100 ? 'fill-completed' : ''}`}
-                      style={{ width: `${progress}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* Card Action Row */}
-                <div className="project-card-footer">
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => onInspectProject(p)}
-                  >
-                    <span>Inspect Deliverables</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+                    {/* 5. View */}
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm project-view-btn"
+                        onClick={() => onInspectProject(p)}
+                        title={`View drill-down for ${p.name}`}
+                      >
+                        <EyeIcon size={14} />
+                        <span>View</span>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

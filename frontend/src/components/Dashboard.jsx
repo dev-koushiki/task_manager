@@ -1391,6 +1391,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           {isAdmin && activeTab === 'overview' && (
             <AdminSummaryView
               projects={projects}
+              tasks={tasks}
               loading={loading}
               onOpenNewProject={() => {
                 setEditingProject(null);
@@ -1489,6 +1490,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           {activeTab === 'analytics' && (
             <AdminSummaryView
               projects={projects}
+              tasks={tasks}
               loading={loading}
               onOpenNewProject={() => {
                 setEditingProject(null);
