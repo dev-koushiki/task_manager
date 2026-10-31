@@ -24,7 +24,10 @@ app.use((req, res, next) => {
   if (req.body !== undefined && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
     return next();
   }
-  express.json()(req, res, next);
+  express.json({ limit: "15mb" })(req, res, (err) => {
+    if (err) return next(err);
+    express.urlencoded({ limit: "15mb", extended: true })(req, res, next);
+  });
 });
 
 // MongoDB connection handling with cloud Atlas fallback and serverless connection caching

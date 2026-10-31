@@ -1645,9 +1645,7 @@ export const api = {
     const current = this.getUser() || {};
     const merged = updatedUser || {
       ...current,
-      ...(profileData.firstName ? { firstName: profileData.firstName.trim() } : {}),
-      ...(profileData.lastName ? { lastName: profileData.lastName.trim() } : {}),
-      ...(profileData.designation ? { designation: profileData.designation.trim() } : {}),
+      ...profileData,
     };
 
     localStorage.setItem('tm_user', JSON.stringify(merged));

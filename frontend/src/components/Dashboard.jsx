@@ -45,6 +45,7 @@ import { AdminEmployeePanel } from './AdminEmployeePanel';
 import { CalendarMeetingsView } from './CalendarMeetingsView';
 import { OrgTreeManagement } from './OrgTreeManagement';
 import { UnifiedEmployeeDashboard } from './UnifiedEmployeeDashboard';
+import { EmployeeProfileView } from './EmployeeProfileView';
 import { ThemeToggle } from './ThemeToggle';
 import { api } from '../services/api';
 
@@ -60,22 +61,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
   // Active navigation tab governed by sidebar selection (Admin defaults to 'tree', Employee to 'tasks')
   const [activeTab, setActiveTab] = useState(() => (isAdmin ? 'tree' : 'tasks'));
-
-  // Profile management states
-  const [profileTab, setProfileTab] = useState('overview'); // 'overview' | 'edit' | 'security'
-  const [profileForm, setProfileForm] = useState({
-    firstName: user?.firstName || '',
-    lastName: user?.lastName || '',
-    designation: user?.designation || '',
-  });
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
-  });
-  const [profileNotice, setProfileNotice] = useState('');
-  const [profileError, setProfileError] = useState('');
-  const [savingProfile, setSavingProfile] = useState(false);
 
   // Data states
   const [projects, setProjects] = useState([]);
@@ -259,68 +244,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const handleInspectProject = (project) => {
     setInspectingProject(project);
     setIsInspectModalOpen(true);
-  };
-
-  // Profile management handlers
-  useEffect(() => {
-    if (user) {
-      setProfileForm({
-        firstName: user.firstName || '',
-        lastName: user.lastName || '',
-        designation: user.designation || '',
-      });
-    }
-  }, [user]);
-
-  const handleSaveProfile = async (e) => {
-    e.preventDefault();
-    if (!profileForm.firstName.trim() || !profileForm.lastName.trim()) {
-      setProfileError('First name and last name are required.');
-      return;
-    }
-    setSavingProfile(true);
-    setProfileNotice('');
-    setProfileError('');
-    try {
-      const updated = await api.updateProfile({
-        firstName: profileForm.firstName.trim(),
-        lastName: profileForm.lastName.trim(),
-        designation: profileForm.designation.trim(),
-      });
-      if (onUpdateUser) onUpdateUser(updated);
-      setProfileNotice('Profile information saved successfully!');
-    } catch (err) {
-      setProfileError(err.message || 'Failed to update profile.');
-    } finally {
-      setSavingProfile(false);
-    }
-  };
-
-  const handleChangePassword = async (e) => {
-    e.preventDefault();
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setProfileError('New password and confirm password do not match.');
-      return;
-    }
-    if (passwordForm.newPassword.length < 6) {
-      setProfileError('New password must be at least 6 characters.');
-      return;
-    }
-    setSavingProfile(true);
-    setProfileNotice('');
-    setProfileError('');
-    try {
-      await api.changePassword({
-        currentPassword: passwordForm.currentPassword,
-        newPassword: passwordForm.newPassword,
-      });
-      setProfileNotice('Password updated successfully!');
-      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    } catch (err) {
-      setProfileError(err.message || 'Failed to update password.');
-    } finally {
-      setSavingProfile(false);
-    }
   };
 
   // Notifications
@@ -644,7 +567,11 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
         {/* Sidebar User Profile Capsule at Bottom */}
         <div className="sidebar-user-bottom" onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}>
           <div className="user-avatar-circle">
-            {userInitials}
+            {user?.profilePhoto ? (
+              <img src={user.profilePhoto} alt="User Avatar" className="avatar-img-fit" />
+            ) : (
+              userInitials
+            )}
           </div>
           <div className="user-details-text">
             <span className="user-full-name">{userDisplayName}</span>
@@ -846,7 +773,11 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
             {/* Top Bar User Avatar */}
             <div className="top-user-avatar-circle" onClick={() => setActiveTab('profile')}>
-              {userInitials}
+              {user?.profilePhoto ? (
+                <img src={user.profilePhoto} alt="User Avatar" className="avatar-img-fit" />
+              ) : (
+                userInitials
+              )}
             </div>
           </div>
         </header>
@@ -1567,236 +1498,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             />
           )}
 
-          {/* TAB: PROFILE */}
+          {/* TAB: PROFILE (LINKEDIN-INSPIRED ENHANCED EMPLOYEE PROFILE) */}
           {activeTab === 'profile' && (
-            <div className="profile-container animate-fade-in">
-              <div className="profile-card">
-                <div className="profile-header-banner">
-                  <div className="profile-avatar-lg">{userInitials}</div>
-                </div>
-                <div className="profile-body">
-                  <div className="profile-body-top">
-                    <div>
-                      <h2>
-                        {user?.firstName} {user?.lastName}
-                      </h2>
-                      <p className="profile-mail">{user?.email}</p>
-                    </div>
-                    <div className="profile-role-badge">
-                      <span className="role-chip">
-                        <ShieldIcon size={13} /> {user?.positionTitle || userRole.toUpperCase()}
-                      </span>
-                      <span className="tier-chip">
-                        Tier {user?.hierarchyLevel || (isAdmin ? 1 : 4)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Profile Subtabs */}
-                  <div className="profile-subtabs-bar">
-                    <button
-                      type="button"
-                      className={`profile-subtab-btn ${profileTab === 'overview' ? 'active' : ''}`}
-                      onClick={() => {
-                        setProfileTab('overview');
-                        setProfileNotice('');
-                        setProfileError('');
-                      }}
-                    >
-                      Account Overview
-                    </button>
-                    <button
-                      type="button"
-                      className={`profile-subtab-btn ${profileTab === 'edit' ? 'active' : ''}`}
-                      onClick={() => {
-                        setProfileTab('edit');
-                        setProfileNotice('');
-                        setProfileError('');
-                        setProfileForm({
-                          firstName: user?.firstName || '',
-                          lastName: user?.lastName || '',
-                          designation: user?.designation || '',
-                        });
-                      }}
-                    >
-                      Edit Profile
-                    </button>
-                    <button
-                      type="button"
-                      className={`profile-subtab-btn ${profileTab === 'security' ? 'active' : ''}`}
-                      onClick={() => {
-                        setProfileTab('security');
-                        setProfileNotice('');
-                        setProfileError('');
-                        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-                      }}
-                    >
-                      Security & Password
-                    </button>
-                  </div>
-
-                  {profileNotice && (
-                    <div className="alert-box alert-success animate-fade-in" style={{ margin: '14px 0' }}>
-                      <CheckCircleIcon size={16} />
-                      <span>{profileNotice}</span>
-                    </div>
-                  )}
-                  {profileError && (
-                    <div className="alert-box alert-danger animate-fade-in" style={{ margin: '14px 0' }}>
-                      <AlertTriangleIcon size={16} />
-                      <span>{profileError}</span>
-                    </div>
-                  )}
-
-                  {/* Subtab 1: Account Overview */}
-                  {profileTab === 'overview' && (
-                    <div className="profile-info-grid">
-                      <div className="info-box">
-                        <span className="info-label">Company Taskflow</span>
-                        <span className="info-val">
-                          <BuildingIcon size={15} className="text-accent" /> {user?.companyName || 'Taskflow'}
-                        </span>
-                      </div>
-                      <div className="info-box">
-                        <span className="info-label">Authority Tier & Role</span>
-                        <span className="info-val">
-                          <ShieldIcon size={15} className="text-accent" /> Tier {user?.hierarchyLevel || (isAdmin ? 1 : 4)} • {user?.positionTitle || userRole.toUpperCase()}
-                        </span>
-                      </div>
-                      <div className="info-box">
-                        <span className="info-label">Department</span>
-                        <span className="info-val">{user?.department || 'Leadership & Administration'}</span>
-                      </div>
-                      <div className="info-box">
-                        <span className="info-label">Team / Squad</span>
-                        <span className="info-val">
-                          <UsersIcon size={15} className="text-accent" /> {user?.team || 'General (No squad assigned)'}
-                        </span>
-                      </div>
-                      <div className="info-box">
-                        <span className="info-label">Job Title / Designation</span>
-                        <span className="info-val">{user?.designation || 'Staff Member'}</span>
-                      </div>
-                      <div className="info-box">
-                        <span className="info-label">Account Status</span>
-                        <span className="info-val status-badge-active">
-                          <CheckCircleIcon size={14} /> Active & Verified
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Subtab 2: Edit Profile Form */}
-                  {profileTab === 'edit' && (
-                    <form onSubmit={handleSaveProfile} className="profile-edit-form">
-                      <div className="form-row-2">
-                        <div className="form-group">
-                          <label className="form-label">First Name *</label>
-                          <input
-                            type="text"
-                            className="input-field"
-                            value={profileForm.firstName}
-                            onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })}
-                            required
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label">Last Name *</label>
-                          <input
-                            type="text"
-                            className="input-field"
-                            value={profileForm.lastName}
-                            onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })}
-                            required
-                          />
-                        </div>
-                      </div>
-
-                      <div className="form-group">
-                        <label className="form-label">Designation / Professional Title</label>
-                        <input
-                          type="text"
-                          className="input-field"
-                          value={profileForm.designation}
-                          onChange={(e) => setProfileForm({ ...profileForm, designation: e.target.value })}
-                          placeholder="e.g. Lead Engineer, Project Director"
-                        />
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => setProfileTab('overview')}
-                        >
-                          Cancel
-                        </button>
-                        <button type="submit" className="btn btn-primary" disabled={savingProfile}>
-                          {savingProfile ? 'Saving Changes...' : 'Save Profile Changes'}
-                        </button>
-                      </div>
-                    </form>
-                  )}
-
-                  {/* Subtab 3: Change Password Form */}
-                  {profileTab === 'security' && (
-                    <form onSubmit={handleChangePassword} className="profile-edit-form">
-                      <div className="form-group">
-                        <label className="form-label">Current Password *</label>
-                        <input
-                          type="password"
-                          className="input-field"
-                          placeholder="Enter current password"
-                          value={passwordForm.currentPassword}
-                          onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                          required
-                        />
-                      </div>
-
-                      <div className="form-row-2">
-                        <div className="form-group">
-                          <label className="form-label">New Password * (min 6 characters)</label>
-                          <input
-                            type="password"
-                            className="input-field"
-                            placeholder="Enter new password"
-                            value={passwordForm.newPassword}
-                            onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                            minLength={6}
-                            required
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label">Confirm New Password *</label>
-                          <input
-                            type="password"
-                            className="input-field"
-                            placeholder="Re-enter new password"
-                            value={passwordForm.confirmPassword}
-                            onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                            minLength={6}
-                            required
-                          />
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => setProfileTab('overview')}
-                        >
-                          Cancel
-                        </button>
-                        <button type="submit" className="btn btn-primary" disabled={savingProfile}>
-                          {savingProfile ? 'Updating Password...' : 'Update Password'}
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </div>
-              </div>
-            </div>
+            <EmployeeProfileView
+              user={user}
+              isAdmin={isAdmin}
+              onProfileUpdated={(updatedUser) => {
+                if (onUpdateUser) onUpdateUser(updatedUser);
+                refreshAllData();
+              }}
+            />
           )}
         </main>
       </div>
