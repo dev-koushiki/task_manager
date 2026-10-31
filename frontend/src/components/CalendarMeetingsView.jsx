@@ -26,6 +26,7 @@ export const CalendarMeetingsView = ({
   projects = [],
   employees = [],
   onTasksUpdated,
+  onJoinConnectMeeting,
 }) => {
   const [viewMode, setViewMode] = useState('month'); // 'month' | 'week' | 'day'
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -47,8 +48,11 @@ export const CalendarMeetingsView = ({
     date: new Date().toISOString().split('T')[0],
     startTime: '10:00',
     endTime: '11:00',
+    mode: 'online', // 'online' | 'offline'
     location: '',
+    roomCode: '',
     meetingLink: '',
+    syncGoogle: false,
     projectId: '',
     participants: [],
   });
@@ -164,14 +168,18 @@ export const CalendarMeetingsView = ({
   // Open Schedule Modal
   const handleOpenSchedule = (dateStr = null) => {
     setEditingMeeting(null);
+    const roomCode = `con-${Math.random().toString(36).substring(2, 5)}-${Math.random().toString(36).substring(2, 6)}`;
     setMeetingForm({
       title: '',
       agenda: '',
       date: dateStr || formatDateKey(currentDate),
       startTime: '10:00',
       endTime: '11:00',
+      mode: 'online',
       location: '',
-      meetingLink: '',
+      roomCode,
+      meetingLink: `/connect?room=${roomCode}`,
+      syncGoogle: false,
       projectId: projects.length > 0 ? (projects[0]._id || projects[0].id) : '',
       participants: [],
     });
@@ -182,14 +190,19 @@ export const CalendarMeetingsView = ({
   // Open Edit Meeting Modal
   const handleOpenEditMeeting = (m) => {
     setEditingMeeting(m);
+    const mMode = m.mode || (m.location ? 'offline' : 'online');
+    const mRoomCode = m.roomCode || (mMode === 'online' ? `con-${Math.random().toString(36).substring(2, 5)}-${Math.random().toString(36).substring(2, 6)}` : '');
     setMeetingForm({
       title: m.title || '',
       agenda: m.agenda || '',
       date: m.date || formatDateKey(new Date()),
       startTime: m.startTime || '10:00',
       endTime: m.endTime || '11:00',
+      mode: mMode,
       location: m.location || '',
-      meetingLink: m.meetingLink || '',
+      roomCode: mRoomCode,
+      meetingLink: m.meetingLink || (mMode === 'online' ? `/connect?room=${mRoomCode}` : ''),
+      syncGoogle: Boolean(m.googleSynced),
       projectId: m.projectId || '',
       participants: (m.participants || []).map((p) => ({
         userId: p.userId || p.id,
@@ -684,12 +697,11 @@ export const CalendarMeetingsView = ({
                                     <span>{item.data.startTime} - {item.data.endTime}</span>
                                   </div>
                                   <strong className="card-title">{item.data.title}</strong>
-                                  {item.data.location && (
+                                  {item.data.mode === 'online' || item.data.roomCode ? (
+                                    <span className="card-meta link-meta"><VideoIcon size={11} /> Connect Video</span>
+                                  ) : item.data.location ? (
                                     <span className="card-meta"><MapPinIcon size={11} /> {item.data.location}</span>
-                                  )}
-                                  {item.data.meetingLink && (
-                                    <span className="card-meta link-meta"><VideoIcon size={11} /> Link Attached</span>
-                                  )}
+                                  ) : null}
                                   <div className="card-participants-row">
                                     <UsersIcon size={11} /> {item.data.participants?.length || 0} participants
                                   </div>
@@ -796,11 +808,20 @@ export const CalendarMeetingsView = ({
                                     <MapPinIcon size={13} /> {m.location}
                                   </span>
                                 )}
-                                {m.meetingLink && (
-                                  <a href={m.meetingLink} target="_blank" rel="noopener noreferrer" className="meta-point link-btn">
-                                    <VideoIcon size={13} /> Join Online Meeting
-                                  </a>
-                                )}
+                                {m.mode === 'online' || m.roomCode ? (
+                                  <button
+                                    type="button"
+                                    className="meta-point link-btn join-connect-pill"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (onJoinConnectMeeting) {
+                                        onJoinConnectMeeting(m.roomCode || m._id);
+                                      }
+                                    }}
+                                  >
+                                    <VideoIcon size={13} /> Join Connect Meeting
+                                  </button>
+                                ) : null}
                                 <span className="meta-point">
                                   <UsersIcon size={13} /> {m.participants?.length || 0} invited
                                 </span>
@@ -956,29 +977,90 @@ export const CalendarMeetingsView = ({
                 </div>
               </div>
 
-              <div className="form-row-2">
-                <div className="form-group">
-                  <label className="form-label">Meeting Location</label>
+              {/* Meeting Mode Selector (Online vs Offline) */}
+              <div className="form-group">
+                <label className="form-label">Meeting Mode *</label>
+                <div className="mode-selector-tabs">
+                  <button
+                    type="button"
+                    className={`mode-tab-btn ${meetingForm.mode === 'online' ? 'active' : ''}`}
+                    onClick={() =>
+                      setMeetingForm((prev) => ({
+                        ...prev,
+                        mode: 'online',
+                        roomCode: prev.roomCode || `con-${Math.random().toString(36).substring(2, 5)}-${Math.random().toString(36).substring(2, 6)}`,
+                        meetingLink: `/connect?room=${prev.roomCode || ''}`,
+                      }))
+                    }
+                  >
+                    <VideoIcon size={16} />
+                    <span>Online (Built-in Connect)</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`mode-tab-btn ${meetingForm.mode === 'offline' ? 'active' : ''}`}
+                    onClick={() =>
+                      setMeetingForm((prev) => ({
+                        ...prev,
+                        mode: 'offline',
+                        meetingLink: '',
+                      }))
+                    }
+                  >
+                    <MapPinIcon size={16} />
+                    <span>Offline (Physical Location)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Mode Specific Inputs */}
+              {meetingForm.mode === 'online' ? (
+                <div className="online-room-card animate-fade-in">
+                  <div className="room-info-row">
+                    <div>
+                      <span className="room-code-label">Built-in Connect Room Code:</span>
+                      <strong className="room-code-value">{meetingForm.roomCode}</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-xs"
+                      onClick={() => {
+                        const freshCode = `con-${Math.random().toString(36).substring(2, 5)}-${Math.random().toString(36).substring(2, 6)}`;
+                        setMeetingForm((prev) => ({
+                          ...prev,
+                          roomCode: freshCode,
+                          meetingLink: `/connect?room=${freshCode}`,
+                        }));
+                      }}
+                    >
+                      Regenerate Code
+                    </button>
+                  </div>
+                  <p className="room-info-help">
+                    A secure native WebRTC room will be generated. Participants can join the video meeting directly inside our website with camera, microphone, screen sharing, and chat.
+                  </p>
+                  <label className="checkbox-label" style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                    <input
+                      type="checkbox"
+                      checked={meetingForm.syncGoogle}
+                      onChange={(e) => setMeetingForm({ ...meetingForm, syncGoogle: e.target.checked })}
+                    />
+                    <span>Synchronize with Google Calendar & generate Google Meet space</span>
+                  </label>
+                </div>
+              ) : (
+                <div className="form-group animate-fade-in">
+                  <label className="form-label">Physical Meeting Location *</label>
                   <input
                     type="text"
                     className="input-field"
                     placeholder="e.g. Conference Room A, HQ Floor 3"
                     value={meetingForm.location}
                     onChange={(e) => setMeetingForm({ ...meetingForm, location: e.target.value })}
+                    required
                   />
                 </div>
-
-                <div className="form-group">
-                  <label className="form-label">Online Meeting Link (Google Meet / Zoom)</label>
-                  <input
-                    type="url"
-                    className="input-field"
-                    placeholder="https://meet.google.com/xyz-abcd-efg"
-                    value={meetingForm.meetingLink}
-                    onChange={(e) => setMeetingForm({ ...meetingForm, meetingLink: e.target.value })}
-                  />
-                </div>
-              </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label">Associated Project</label>
@@ -1128,16 +1210,38 @@ export const CalendarMeetingsView = ({
                       </div>
                     )}
 
-                    {selectedMeeting.meetingLink && (
+                    {(selectedMeeting.mode === 'online' || selectedMeeting.roomCode) && (
                       <div className="detail-field">
-                        <span className="field-lbl">Meeting Link</span>
+                        <span className="field-lbl">Connect Video Room</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            onClick={() => {
+                              setIsDetailModalOpen(false);
+                              if (onJoinConnectMeeting) {
+                                onJoinConnectMeeting(selectedMeeting.roomCode || selectedMeeting._id);
+                              }
+                            }}
+                          >
+                            <VideoIcon size={14} />
+                            <span>Join In-Website Connect Meeting</span>
+                          </button>
+                          <span className="room-code-tag">Room: {selectedMeeting.roomCode}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedMeeting.googleMeetLink && (
+                      <div className="detail-field">
+                        <span className="field-lbl">Google Meet Space</span>
                         <a
-                          href={selectedMeeting.meetingLink}
+                          href={selectedMeeting.googleMeetLink}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="field-val link"
                         >
-                          <VideoIcon size={14} /> Open Meeting URL
+                          <VideoIcon size={14} /> {selectedMeeting.googleMeetLink}
                         </a>
                       </div>
                     )}

@@ -30,6 +30,7 @@ import {
   FileTextIcon,
   EditIcon,
   GitBranchIcon,
+  VideoIcon,
 } from './Icons';
 import { TaskModal } from './TaskModal';
 import { ProjectModal } from './ProjectModal';
@@ -43,6 +44,7 @@ import { EmployeeWorkView } from './EmployeeWorkView';
 import { OrganizationStructureBuilder } from './OrganizationStructureBuilder';
 import { AdminEmployeePanel } from './AdminEmployeePanel';
 import { CalendarMeetingsView } from './CalendarMeetingsView';
+import { ConnectView } from './ConnectView';
 import { OrgTreeManagement } from './OrgTreeManagement';
 import { UnifiedEmployeeDashboard } from './UnifiedEmployeeDashboard';
 import { EmployeeProfileView } from './EmployeeProfileView';
@@ -98,6 +100,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
   const [isInspectModalOpen, setIsInspectModalOpen] = useState(false);
   const [inspectingProject, setInspectingProject] = useState(null);
+  const [connectRoomCode, setConnectRoomCode] = useState('');
 
   const refreshAllData = async () => {
     try {
@@ -496,6 +499,15 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
               <button
                 type="button"
+                className={`sidebar-nav-item ${activeTab === 'connect' ? 'active' : ''}`}
+                onClick={() => setActiveTab('connect')}
+              >
+                <VideoIcon size={18} className="nav-icon" />
+                <span>Connect</span>
+              </button>
+
+              <button
+                type="button"
                 className={`sidebar-nav-item ${activeTab === 'team' ? 'active' : ''}`}
                 onClick={() => setActiveTab('team')}
               >
@@ -540,6 +552,15 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               >
                 <CalendarIcon size={18} className="nav-icon" />
                 <span>Calendar</span>
+              </button>
+
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'connect' ? 'active' : ''}`}
+                onClick={() => setActiveTab('connect')}
+              >
+                <VideoIcon size={18} className="nav-icon" />
+                <span>Connect</span>
               </button>
 
               <button
@@ -619,6 +640,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'tree' && 'Organizational Tree & Hierarchy'}
               {activeTab === 'tasks' && (!isAdmin ? 'Unified Employee Dashboard' : 'Taskflow Tasks')}
               {activeTab === 'calendar' && 'Calendar & Meetings'}
+              {activeTab === 'connect' && 'Connect · Video Meetings & Collaboration'}
               {activeTab === 'overview' && 'Executive Administration Overview'}
               {activeTab === 'projects' && 'Projects'}
               {activeTab === 'analytics' && 'Analytics'}
@@ -632,6 +654,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'tree' && 'Parent-child tree structure, active employee mapping, and dynamic reporting relationships'}
               {activeTab === 'tasks' && (!isAdmin ? 'Submission Panel (work delivery & milestone completion) and Assignment Panel (reporting delegation)' : "Manage and track organization team's work")}
               {activeTab === 'calendar' && 'Schedule meetings, monitor deadlines, and track action items'}
+              {activeTab === 'connect' && 'Native in-website video conferencing, screen sharing, chat, and Google Calendar sync'}
               {activeTab === 'overview' && 'Executive summary, progress health, and organization KPIs'}
               {activeTab === 'projects' && 'Project deliverables, milestone tracks, and inspection'}
               {activeTab === 'analytics' && 'Performance analytics, team velocity, and task completion'}
@@ -1384,6 +1407,20 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               projects={projects}
               employees={employees}
               onTasksUpdated={refreshAllData}
+              onJoinConnectMeeting={(roomCode) => {
+                setConnectRoomCode(roomCode);
+                setActiveTab('connect');
+              }}
+            />
+          )}
+
+          {/* TAB: CONNECT (Built-in Video Meetings, WebRTC & Google Workspace) */}
+          {activeTab === 'connect' && (
+            <ConnectView
+              user={user}
+              initialRoomCode={connectRoomCode}
+              onScheduleInCalendar={() => setActiveTab('calendar')}
+              onBackToCalendar={() => setActiveTab('calendar')}
             />
           )}
 

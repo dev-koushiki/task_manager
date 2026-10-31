@@ -2192,4 +2192,128 @@ export const api = {
       body: JSON.stringify({ title }),
     });
   },
+
+  // ----------------------------------------------------
+  // GOOGLE INTEGRATION & OAUTH
+  // ----------------------------------------------------
+  async getGoogleAuthUrl() {
+    return safeFetchJson(`${API_BASE_URL}/meetings/google/auth-url`, {
+      headers: getHeaders(),
+    });
+  },
+
+  async connectGoogleCallback(code, redirectUri, simulated = false) {
+    return safeFetchJson(`${API_BASE_URL}/meetings/google/callback`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ code, redirectUri, simulated }),
+    });
+  },
+
+  async getGoogleStatus() {
+    return safeFetchJson(`${API_BASE_URL}/meetings/google/status`, {
+      headers: getHeaders(),
+    });
+  },
+
+  async disconnectGoogle() {
+    return safeFetchJson(`${API_BASE_URL}/meetings/google/disconnect`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+  },
+
+  async syncMeetingWithGoogle(meetingId) {
+    return safeFetchJson(`${API_BASE_URL}/meetings/${meetingId}/sync-google`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+  },
+
+  // ----------------------------------------------------
+  // CONNECT BUILT-IN VIDEO MEETINGS & WEBRTC ROOMS
+  // ----------------------------------------------------
+  async createConnectRoom(title = 'Instant Connect Meeting', agenda = '') {
+    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/create`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ title, agenda }),
+    });
+  },
+
+  async getConnectRoom(roomCode) {
+    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}`, {
+      headers: getHeaders(),
+    });
+  },
+
+  async joinConnectRoom(roomCode) {
+    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/join`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+  },
+
+  async leaveConnectRoom(roomCode) {
+    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/leave`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+  },
+
+  async endConnectRoom(roomCode) {
+    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/end`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+  },
+
+  async sendConnectSignal(roomCode, targetUserId, signal, type) {
+    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/signal`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ targetUserId, signal, type }),
+    });
+  },
+
+  async getConnectSignals(roomCode) {
+    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/signals`, {
+      headers: getHeaders(),
+    });
+  },
+
+  async sendConnectChat(roomCode, text) {
+    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/chat`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ text }),
+    });
+  },
+
+  async getConnectChat(roomCode) {
+    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/chat`, {
+      headers: getHeaders(),
+    });
+  },
+
+  async sendConnectHostAction(roomCode, action, value) {
+    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/host-action`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ action, value }),
+    });
+  },
+
+  async getMeetingHistory() {
+    return safeFetchJson(`${API_BASE_URL}/meetings/history/records`, {
+      headers: getHeaders(),
+    });
+  },
+
+  async getLivekitToken(roomCode) {
+    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/livekit-token`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+  },
 };

@@ -258,6 +258,13 @@ const userSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    googleTokens: {
+      accessToken: { type: String, default: "" },
+      refreshToken: { type: String, default: "" },
+      expiryDate: { type: Number, default: 0 },
+      email: { type: String, default: "" },
+      connectedAt: { type: Date, default: null },
+    },
   },
   { timestamps: true }
 );
