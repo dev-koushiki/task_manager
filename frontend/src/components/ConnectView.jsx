@@ -64,14 +64,17 @@ export const ConnectView = ({
   const [googleLoading, setGoogleLoading] = useState(false);
 
   // WebRTC Media Stream References
+  const myId = String(user?.id || user?._id || '');
   const localVideoRef = useRef(null);
   const screenShareVideoRef = useRef(null);
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
   const peerConnectionsRef = useRef(new Map()); // userId -> RTCPeerConnection
   const remoteStreamsRef = useRef(new Map()); // userId -> MediaStream
+  const pendingCandidatesRef = useRef(new Map()); // userId -> Array of RTCIceCandidateInit
   const pollingIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
+  const [peersTick, setPeersTick] = useState(0);
 
   // Initialize or check if loaded with an initialRoomCode
   useEffect(() => {
@@ -286,77 +289,181 @@ export const ConnectView = ({
           api.getConnectChat(code).catch(() => []),
         ]);
 
-        if (signalData.activePeers) {
+        if (signalData.activePeers && Array.isArray(signalData.activePeers)) {
           setActivePeers(signalData.activePeers);
+
+          // Establish WebRTC mesh connections with all active peers in the room
+          signalData.activePeers.forEach(async (peer) => {
+            const peerId = String(peer.userId);
+            if (!peerId || peerId === myId) return;
+
+            let pc = peerConnectionsRef.current.get(peerId);
+            const isInitiator = myId > peerId;
+
+            if (!pc && isInitiator) {
+              try {
+                pc = createPeerConnection(peerId, code, true);
+                const offer = await pc.createOffer({
+                  offerToReceiveAudio: true,
+                  offerToReceiveVideo: true,
+                });
+                await pc.setLocalDescription(offer);
+                await api.sendConnectSignal(code, peerId, offer, 'offer');
+              } catch (err) {
+                console.warn('Failed to initiate WebRTC offer to peer:', peerId, err.message);
+              }
+            }
+          });
+
+          // Clean up remote streams for peers who have disconnected
+          const activePeerIdSet = new Set(signalData.activePeers.map((p) => String(p.userId)));
+          for (const [rId, pc] of peerConnectionsRef.current.entries()) {
+            if (!activePeerIdSet.has(rId)) {
+              try { pc.close(); } catch (_) {}
+              peerConnectionsRef.current.delete(rId);
+              remoteStreamsRef.current.delete(rId);
+              pendingCandidatesRef.current.delete(rId);
+              setPeersTick((t) => t + 1);
+            }
+          }
         }
+
+        if (signalData.hostControls) {
+          setHostControls(signalData.hostControls);
+          if (signalData.hostControls.muteAll && !isHost && isMicOn) {
+            if (localStreamRef.current) {
+              localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = false));
+            }
+            setIsMicOn(false);
+          }
+        }
+
         if (chatData && Array.isArray(chatData)) {
           setChatMessages(chatData);
         }
 
         // Process queued WebRTC signals
         if (signalData.signals && signalData.signals.length > 0) {
-          handleIncomingSignals(signalData.signals, code);
+          await handleIncomingSignals(signalData.signals, code);
         }
       } catch (e) {
         // Polling error silently suppressed during brief transitions
       }
-    }, 1500);
+    }, 1200);
   };
 
   const handleIncomingSignals = async (signals, code) => {
     for (const item of signals) {
       const { senderId, signal, type } = item;
+      const sId = String(senderId);
+      if (!sId || sId === myId) continue;
+
       try {
-        let pc = peerConnectionsRef.current.get(senderId);
+        let pc = peerConnectionsRef.current.get(sId);
+        const signalType = type || signal?.type;
 
-        if (!pc) {
-          pc = createPeerConnection(senderId, code);
-        }
+        if (signalType === 'offer') {
+          if (!pc || pc.signalingState !== 'stable') {
+            if (pc) {
+              try { pc.close(); } catch (_) {}
+            }
+            pc = createPeerConnection(sId, code, false);
+          }
 
-        if (type === 'offer' || signal.type === 'offer') {
-          await pc.setRemoteDescription(new RTCSessionDescription(signal));
+          const sdpData = signal.sdp ? signal : (signal.signal || signal);
+          await pc.setRemoteDescription(new RTCSessionDescription(sdpData));
+
+          // Drain queued ICE candidates
+          const pending = pendingCandidatesRef.current.get(sId) || [];
+          for (const cand of pending) {
+            await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+          }
+          pendingCandidatesRef.current.delete(sId);
+
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          await api.sendConnectSignal(code, senderId, answer, 'answer');
-        } else if (type === 'answer' || signal.type === 'answer') {
-          await pc.setRemoteDescription(new RTCSessionDescription(signal));
-        } else if (type === 'candidate' || signal.candidate) {
-          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate || signal));
+          await api.sendConnectSignal(code, sId, answer, 'answer');
+        } else if (signalType === 'answer') {
+          if (pc && pc.signalingState === 'have-local-offer') {
+            const sdpData = signal.sdp ? signal : (signal.signal || signal);
+            await pc.setRemoteDescription(new RTCSessionDescription(sdpData));
+
+            // Drain queued ICE candidates
+            const pending = pendingCandidatesRef.current.get(sId) || [];
+            for (const cand of pending) {
+              await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+            }
+            pendingCandidatesRef.current.delete(sId);
+          }
+        } else if (signalType === 'candidate' || signal?.candidate) {
+          const candidateData = signal.candidate || signal;
+          if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidateData)).catch(() => {});
+          } else {
+            if (!pendingCandidatesRef.current.has(sId)) {
+              pendingCandidatesRef.current.set(sId, []);
+            }
+            pendingCandidatesRef.current.get(sId).push(candidateData);
+          }
         }
       } catch (err) {
-        console.warn('Signaling processing error:', err.message);
+        console.warn('Signaling processing error with peer:', sId, err.message);
       }
     }
   };
 
-  const createPeerConnection = (remoteUserId, code) => {
+  const createPeerConnection = (remoteUserId, code, isOfferer) => {
+    let pc = peerConnectionsRef.current.get(remoteUserId);
+    if (pc && pc.connectionState !== 'closed' && pc.connectionState !== 'failed') {
+      return pc;
+    }
+
     const configuration = {
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' }],
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+      ],
     };
 
-    const pc = new RTCPeerConnection(configuration);
+    pc = new RTCPeerConnection(configuration);
     peerConnectionsRef.current.set(remoteUserId, pc);
 
-    // Add local tracks
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => {
-        pc.addTrack(track, localStreamRef.current);
+    // Add local tracks (Audio and Camera/Screen)
+    const streamToPublish = screenStreamRef.current || localStreamRef.current;
+    if (streamToPublish) {
+      streamToPublish.getTracks().forEach((track) => {
+        try {
+          pc.addTrack(track, streamToPublish);
+        } catch (_) {}
       });
     }
 
-    // Handle ICE candidates
+    // Handle ICE candidates found locally
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         api.sendConnectSignal(code, remoteUserId, { candidate: event.candidate }, 'candidate').catch(() => {});
       }
     };
 
-    // Handle incoming remote stream
+    // Handle incoming remote media tracks (Audio and Video)
     pc.ontrack = (event) => {
-      const remoteStream = event.streams[0] || new MediaStream([event.track]);
-      remoteStreamsRef.current.set(remoteUserId, remoteStream);
-      // Force state update to re-render video tiles
-      setActivePeers((prev) => [...prev]);
+      let stream = remoteStreamsRef.current.get(remoteUserId);
+      if (!stream) {
+        stream = event.streams[0] || new MediaStream();
+        remoteStreamsRef.current.set(remoteUserId, stream);
+      }
+      if (!stream.getTracks().some((t) => t.id === event.track.id)) {
+        stream.addTrack(event.track);
+      }
+      setPeersTick((t) => t + 1);
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed') {
+        try { pc.restartIce(); } catch (_) {}
+      }
+      setPeersTick((t) => t + 1);
     };
 
     return pc;
@@ -369,6 +476,7 @@ export const ConnectView = ({
         const nextState = !audioTracks[0].enabled;
         audioTracks[0].enabled = nextState;
         setIsMicOn(nextState);
+        api.sendConnectPeerState(currentRoomCode, { micOn: nextState }).catch(() => {});
       }
     }
   };
@@ -380,6 +488,7 @@ export const ConnectView = ({
         const nextState = !videoTracks[0].enabled;
         videoTracks[0].enabled = nextState;
         setIsCameraOn(nextState);
+        api.sendConnectPeerState(currentRoomCode, { cameraOn: nextState }).catch(() => {});
       }
     }
   };
@@ -389,12 +498,25 @@ export const ConnectView = ({
       // Stop screen sharing
       if (screenStreamRef.current) {
         screenStreamRef.current.getTracks().forEach((t) => t.stop());
+        screenStreamRef.current = null;
       }
       setIsScreenSharing(false);
-      // Revert video track in local view
+
+      // Revert video track in local video element
       if (localVideoRef.current && localStreamRef.current) {
         localVideoRef.current.srcObject = localStreamRef.current;
       }
+
+      // Revert video track across all active RTCPeerConnections
+      const camTrack = localStreamRef.current ? localStreamRef.current.getVideoTracks()[0] : null;
+      peerConnectionsRef.current.forEach((pc) => {
+        const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+        if (sender && camTrack) {
+          sender.replaceTrack(camTrack).catch(() => {});
+        }
+      });
+
+      api.sendConnectPeerState(currentRoomCode, { screenSharing: false }).catch(() => {});
     } else {
       try {
         const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
@@ -405,8 +527,37 @@ export const ConnectView = ({
           screenShareVideoRef.current.srcObject = displayStream;
         }
 
-        displayStream.getVideoTracks()[0].onended = () => {
+        const screenTrack = displayStream.getVideoTracks()[0];
+
+        // Replace video track across all active peer connections so remotes see the screen!
+        peerConnectionsRef.current.forEach((pc) => {
+          const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+          if (sender) {
+            sender.replaceTrack(screenTrack).catch(() => {});
+          } else {
+            try { pc.addTrack(screenTrack, displayStream); } catch (_) {}
+          }
+        });
+
+        api.sendConnectPeerState(currentRoomCode, { screenSharing: true }).catch(() => {});
+
+        screenTrack.onended = () => {
+          if (screenStreamRef.current) {
+            screenStreamRef.current.getTracks().forEach((t) => t.stop());
+            screenStreamRef.current = null;
+          }
           setIsScreenSharing(false);
+          const camTrack = localStreamRef.current ? localStreamRef.current.getVideoTracks()[0] : null;
+          if (localVideoRef.current && localStreamRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current;
+          }
+          peerConnectionsRef.current.forEach((pc) => {
+            const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+            if (sender && camTrack) {
+              sender.replaceTrack(camTrack).catch(() => {});
+            }
+          });
+          api.sendConnectPeerState(currentRoomCode, { screenSharing: false }).catch(() => {});
         };
       } catch (err) {
         console.warn('Screen share cancelled or not allowed:', err.message);
@@ -511,13 +662,21 @@ export const ConnectView = ({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const unlockAudio = () => {
+    document.querySelectorAll('audio, video').forEach((m) => {
+      if (m.paused && m.srcObject && !m.muted) {
+        m.play().catch(() => {});
+      }
+    });
+  };
+
   return (
     <div className="connect-module-container animate-fade-in">
       {/* ----------------------------------------------------
           VIEW 1: IN-CALL VIDEO MEETING ROOM (GOOGLE MEET-LIKE)
       ---------------------------------------------------- */}
       {activeTab === 'room' && (
-        <div className="in-call-experience-wrapper">
+        <div className="in-call-experience-wrapper" onClick={unlockAudio}>
           {/* Top Meeting Header Bar */}
           <div className="call-top-bar">
             <div className="call-top-left">
@@ -590,18 +749,37 @@ export const ConnectView = ({
 
               {/* Remote Participants Tiles */}
               {activePeers
-                .filter((p) => p.userId !== user?.id && p.userId !== user?._id)
+                .filter((p) => String(p.userId) !== myId)
                 .map((peer) => {
-                  const remoteStream = remoteStreamsRef.current.get(peer.userId);
+                  const pId = String(peer.userId);
+                  const remoteStream = remoteStreamsRef.current.get(pId);
+                  const hasVideoTrack = remoteStream && remoteStream.getVideoTracks().some((t) => t.readyState === 'live');
+                  const isCameraActive = peer.cameraOn !== false && hasVideoTrack;
+
                   return (
-                    <div key={peer.userId} className="video-tile remote-tile">
-                      {remoteStream ? (
+                    <div key={pId} className="video-tile remote-tile">
+                      {/* Audio element ensures remote voice plays regardless of camera state */}
+                      {remoteStream && (
+                        <audio
+                          autoPlay
+                          playsInline
+                          ref={(el) => {
+                            if (el && el.srcObject !== remoteStream) {
+                              el.srcObject = remoteStream;
+                              el.play().catch((err) => console.warn('Audio playback error:', err));
+                            }
+                          }}
+                        />
+                      )}
+
+                      {isCameraActive ? (
                         <video
                           autoPlay
                           playsInline
                           ref={(el) => {
-                            if (el && remoteStream && el.srcObject !== remoteStream) {
+                            if (el && el.srcObject !== remoteStream) {
                               el.srcObject = remoteStream;
+                              el.play().catch((err) => console.warn('Video playback error:', err));
                             }
                           }}
                           className="camera-video-element"
@@ -611,11 +789,17 @@ export const ConnectView = ({
                           <div className="avatar-circle-lg">
                             {peer.name?.[0] || 'P'}
                           </div>
+                          <span className="camera-off-pill">Camera Off</span>
                         </div>
                       )}
                       <div className="tile-user-tag">
                         <span>{peer.name || 'Participant'}</span>
                         {peer.isHost && <span className="host-tag-pill">Host</span>}
+                        {peer.screenSharing && (
+                          <span className="host-tag-pill" style={{ background: '#2563eb' }}>
+                            <ScreenShareIcon size={12} /> Presenting
+                          </span>
+                        )}
                         <span className={`mic-tag-icon ${peer.micOn !== false ? 'text-success' : 'text-danger'}`}>
                           {peer.micOn !== false ? <MicIcon size={12} /> : <MicOffIcon size={12} />}
                         </span>
@@ -625,7 +809,7 @@ export const ConnectView = ({
                 })}
 
               {/* Empty peer notice when alone */}
-              {activePeers.filter((p) => p.userId !== user?.id && p.userId !== user?._id).length === 0 && (
+              {activePeers.filter((p) => String(p.userId) !== myId).length === 0 && (
                 <div className="waiting-peers-tile animate-fade-in">
                   <UsersIcon size={32} className="text-muted" />
                   <h4>You are the only person in this meeting</h4>
@@ -687,7 +871,7 @@ export const ConnectView = ({
                       </div>
 
                       {activePeers
-                        .filter((p) => p.userId !== user?.id && p.userId !== user?._id)
+                        .filter((p) => String(p.userId) !== myId)
                         .map((p) => (
                           <div key={p.userId} className="drawer-peer-item">
                             <div className="peer-avatar">{p.name?.[0] || 'P'}</div>
@@ -697,6 +881,7 @@ export const ConnectView = ({
                             </div>
                             <div className="peer-status-icons">
                               {p.micOn !== false ? <MicIcon size={14} className="text-success" /> : <MicOffIcon size={14} className="text-danger" />}
+                              {p.cameraOn !== false ? <VideoIcon size={14} className="text-success" /> : <VideoOffIcon size={14} className="text-muted" />}
                             </div>
                           </div>
                         ))}

@@ -277,6 +277,32 @@ async function runPhase2Tests() {
     const lockData = await resHostLock.json();
     assert(resHostLock.status === 200 && lockData.hostControls.lockMeeting === true, "Host locked meeting room");
 
+    // 9b. Peer State Synchronization (Camera, Mic, Screen Share)
+    console.log("\n--- 9b. Peer State Synchronization ---");
+    const resPeerState = await fetch(`${BASE_URL}/meetings/rooms/${testRoomCode}/peer-state`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${guestToken}`,
+      },
+      body: JSON.stringify({
+        cameraOn: false,
+        micOn: true,
+        screenSharing: true,
+      }),
+    });
+    const peerStateData = await resPeerState.json();
+    assert(resPeerState.status === 200 && peerStateData.success, "Participant updated camera/mic/screen state");
+
+    const resSignalsAfterState = await fetch(`${BASE_URL}/meetings/rooms/${testRoomCode}/signals`, {
+      headers: { Authorization: `Bearer ${hostToken}` },
+    });
+    const signalsAfterState = await resSignalsAfterState.json();
+    const guestPeerRecord = signalsAfterState.activePeers.find((p) => String(p.userId) === String(guestId));
+    assert(guestPeerRecord && guestPeerRecord.screenSharing === true, "Host observed guest screen sharing state");
+    assert(guestPeerRecord && guestPeerRecord.cameraOn === false, "Host observed guest camera off state");
+    assert(signalsAfterState.hostControls && signalsAfterState.hostControls.lockMeeting === true, "Host controls synchronized in signals payload");
+
     // 10. Participant Leaves Room & Attendance Duration
     console.log("\n--- 10. Participant Leaves & Calculates Attendance Duration ---");
     const resGuestLeave = await fetch(`${BASE_URL}/meetings/rooms/${testRoomCode}/leave`, {

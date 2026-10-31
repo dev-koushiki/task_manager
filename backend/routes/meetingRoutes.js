@@ -690,11 +690,18 @@ router.get("/rooms/:roomCode/signals", authMiddleware, async (req, res) => {
       }
     }
 
-    // Update active ping
+    // Update active ping & prune stale peers
+    const now = Date.now();
     if (roomPeers.has(roomCode)) {
-      const peer = roomPeers.get(roomCode).get(userId);
+      const peersMap = roomPeers.get(roomCode);
+      const peer = peersMap.get(userId);
       if (peer) {
-        peer.lastPing = Date.now();
+        peer.lastPing = now;
+      }
+      for (const [pId, pData] of peersMap.entries()) {
+        if (now - (pData.lastPing || 0) > 15000) {
+          peersMap.delete(pId);
+        }
       }
     }
 
@@ -702,7 +709,41 @@ router.get("/rooms/:roomCode/signals", authMiddleware, async (req, res) => {
       ? Array.from(roomPeers.get(roomCode).values())
       : [];
 
-    res.json({ signals: queued, activePeers });
+    const meeting = await Meeting.findOne({
+      roomCode,
+      organizationId: req.user.organizationId,
+    }).select("hostControls");
+
+    res.json({
+      signals: queued,
+      activePeers,
+      hostControls: meeting?.hostControls || { muteAll: false, lockMeeting: false },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/meetings/rooms/:roomCode/peer-state - Update peer camera/mic/screen state
+router.post("/rooms/:roomCode/peer-state", authMiddleware, async (req, res) => {
+  try {
+    const { roomCode } = req.params;
+    const userId = req.user.id.toString();
+    const { cameraOn, micOn, screenSharing, handRaised } = req.body;
+
+    if (roomPeers.has(roomCode)) {
+      const peersMap = roomPeers.get(roomCode);
+      const peer = peersMap.get(userId);
+      if (peer) {
+        if (cameraOn !== undefined) peer.cameraOn = Boolean(cameraOn);
+        if (micOn !== undefined) peer.micOn = Boolean(micOn);
+        if (screenSharing !== undefined) peer.screenSharing = Boolean(screenSharing);
+        if (handRaised !== undefined) peer.handRaised = Boolean(handRaised);
+        peer.lastPing = Date.now();
+      }
+    }
+
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -2376,6 +2376,19 @@ export const api = {
     }
   },
 
+  async sendConnectPeerState(roomCode, state) {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/peer-state`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(state),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true };
+    }
+  },
+
   async sendConnectChat(roomCode, text) {
     try {
       return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/chat`, {
