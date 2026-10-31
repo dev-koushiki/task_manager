@@ -408,15 +408,18 @@ router.post("/:id/sync-google", authMiddleware, async (req, res) => {
 // POST /api/meetings/rooms/create - Create an instant built-in meeting room
 router.post("/rooms/create", authMiddleware, async (req, res) => {
   try {
-    const { title = "Instant Connect Meeting", agenda = "" } = req.body;
+    const rawTitle = typeof req.body.title === "string" ? req.body.title : (req.body?.title?.title || "Instant Connect Meeting");
+    const rawAgenda = typeof req.body.agenda === "string" ? req.body.agenda : (req.body?.title?.agenda || "");
+    const title = (rawTitle || "Instant Connect Meeting").trim();
+    const agenda = (rawAgenda || "").trim();
     const roomCode = generateRoomCode();
     const organizerName = `${req.user.firstName} ${req.user.lastName}`.trim();
     const today = new Date().toISOString().split("T")[0];
     const nowHour = new Date().toTimeString().substring(0, 5);
 
     const meeting = await Meeting.create({
-      title: title.trim(),
-      agenda: agenda.trim(),
+      title,
+      agenda,
       date: today,
       startTime: nowHour,
       endTime: "23:59",

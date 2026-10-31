@@ -691,6 +691,25 @@ router.get("/me", authMiddleware, async (req, res) => {
   }
 });
 
+// Helper to validate and normalize profile URLs
+const normalizeProfileUrl = (url, domainKeyword, platformName) => {
+  if (!url || typeof url !== "string") return "";
+  let trimmed = url.trim();
+  if (!trimmed) return "";
+  if (!/^https?:\/\//i.test(trimmed)) {
+    trimmed = "https://" + trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (domainKeyword && !parsed.hostname.toLowerCase().includes(domainKeyword)) {
+      throw new Error(`Please enter a valid ${platformName} URL (e.g. https://${domainKeyword}.com/your-profile)`);
+    }
+    return parsed.toString();
+  } catch (err) {
+    throw new Error(err.message || `Invalid ${platformName} URL`);
+  }
+};
+
 // PATCH /api/auth/profile - Update current user profile details & password
 router.patch("/profile", authMiddleware, async (req, res) => {
   try {
@@ -699,11 +718,130 @@ router.patch("/profile", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "User not found." });
     }
 
-    const { firstName, lastName, designation, currentPassword, newPassword } = req.body;
+    const {
+      firstName,
+      lastName,
+      designation,
+      profilePhoto,
+      dateOfBirth,
+      gender,
+      phone,
+      personalEmail,
+      address,
+      city,
+      state,
+      country,
+      bio,
+      skills,
+      expertise,
+      workExperience,
+      education,
+      githubUrl,
+      linkedinUrl,
+      currentPassword,
+      newPassword,
+    } = req.body;
 
-    if (firstName && firstName.trim()) user.firstName = firstName.trim();
-    if (lastName && lastName.trim()) user.lastName = lastName.trim();
-    if (designation && designation.trim()) user.designation = designation.trim();
+    // Personal Information
+    if (firstName !== undefined) {
+      if (!firstName.trim()) return res.status(400).json({ message: "First name is required." });
+      user.firstName = firstName.trim();
+    }
+    if (lastName !== undefined) {
+      if (!lastName.trim()) return res.status(400).json({ message: "Last name is required." });
+      user.lastName = lastName.trim();
+    }
+    if (profilePhoto !== undefined) {
+      user.profilePhoto = profilePhoto || "";
+    }
+    if (dateOfBirth !== undefined) {
+      user.dateOfBirth = dateOfBirth ? String(dateOfBirth).trim() : "";
+    }
+    if (gender !== undefined) {
+      user.gender = gender ? String(gender).trim() : "";
+    }
+    if (phone !== undefined) {
+      user.phone = phone ? String(phone).trim() : "";
+    }
+    if (personalEmail !== undefined) {
+      const emailTrim = personalEmail ? String(personalEmail).trim().toLowerCase() : "";
+      if (emailTrim && !/^\S+@\S+\.\S+$/.test(emailTrim)) {
+        return res.status(400).json({ message: "Please enter a valid personal email address." });
+      }
+      user.personalEmail = emailTrim;
+    }
+    if (address !== undefined) {
+      user.address = address ? String(address).trim() : "";
+    }
+    if (city !== undefined) {
+      user.city = city ? String(city).trim() : "";
+    }
+    if (state !== undefined) {
+      user.state = state ? String(state).trim() : "";
+    }
+    if (country !== undefined) {
+      user.country = country ? String(country).trim() : "";
+    }
+
+    // Professional Information
+    if (bio !== undefined) {
+      user.bio = bio ? String(bio).trim() : "";
+    }
+    if (skills !== undefined) {
+      if (Array.isArray(skills)) {
+        user.skills = skills.map((s) => String(s).trim()).filter(Boolean);
+      } else if (typeof skills === "string") {
+        user.skills = skills.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+    }
+    if (expertise !== undefined) {
+      if (Array.isArray(expertise)) {
+        user.expertise = expertise.map((e) => String(e).trim()).filter(Boolean);
+      } else if (typeof expertise === "string") {
+        user.expertise = expertise.split(",").map((e) => e.trim()).filter(Boolean);
+      }
+    }
+    if (workExperience !== undefined) {
+      if (Array.isArray(workExperience)) {
+        user.workExperience = workExperience.map((exp) => ({
+          title: String(exp.title || "").trim(),
+          company: String(exp.company || "").trim(),
+          duration: String(exp.duration || "").trim(),
+          description: String(exp.description || "").trim(),
+        }));
+      }
+    }
+    if (education !== undefined) {
+      if (Array.isArray(education)) {
+        user.education = education.map((edu) => ({
+          degree: String(edu.degree || "").trim(),
+          institution: String(edu.institution || "").trim(),
+          year: String(edu.year || "").trim(),
+        }));
+      }
+    }
+    if (githubUrl !== undefined) {
+      try {
+        user.githubUrl = normalizeProfileUrl(githubUrl, "github", "GitHub");
+      } catch (err) {
+        return res.status(400).json({ message: err.message });
+      }
+    }
+    if (linkedinUrl !== undefined) {
+      try {
+        user.linkedinUrl = normalizeProfileUrl(linkedinUrl, "linkedin", "LinkedIn");
+      } catch (err) {
+        return res.status(400).json({ message: err.message });
+      }
+    }
+
+    // Designation (admin-controlled or if user is admin)
+    const isAdmin = user.role === "admin" || user.hierarchyLevel === 1;
+    if (designation !== undefined) {
+      if (isAdmin && designation.trim()) {
+        user.designation = designation.trim();
+      }
+    }
 
     // Password change verification
     if (newPassword) {

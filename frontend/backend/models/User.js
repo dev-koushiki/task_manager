@@ -172,6 +172,99 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Enhanced Employee Profile (Personal Information)
+    profilePhoto: {
+      type: String,
+      default: "",
+    },
+    dateOfBirth: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    gender: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    phone: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    personalEmail: {
+      type: String,
+      default: "",
+      lowercase: true,
+      trim: true,
+    },
+    address: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    city: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    state: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    country: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    // Enhanced Employee Profile (Professional Information)
+    bio: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    skills: {
+      type: [String],
+      default: [],
+    },
+    expertise: {
+      type: [String],
+      default: [],
+    },
+    workExperience: [
+      {
+        title: { type: String, default: "" },
+        company: { type: String, default: "" },
+        duration: { type: String, default: "" },
+        description: { type: String, default: "" },
+      },
+    ],
+    education: [
+      {
+        degree: { type: String, default: "" },
+        institution: { type: String, default: "" },
+        year: { type: String, default: "" },
+      },
+    ],
+    githubUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    linkedinUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    googleTokens: {
+      accessToken: { type: String, default: "" },
+      refreshToken: { type: String, default: "" },
+      expiryDate: { type: Number, default: 0 },
+      email: { type: String, default: "" },
+      connectedAt: { type: Date, default: null },
+    },
   },
   { timestamps: true }
 );

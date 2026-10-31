@@ -1783,6 +1783,7 @@ export const api = {
       if (!isOfflineError(err)) throw err;
 
       const currentUser = this.getUser() || {};
+      const generatedCode = 'con-' + Math.random().toString(36).substring(2, 5) + '-' + Math.random().toString(36).substring(2, 6);
       const newMeeting = {
         _id: 'mtg_' + Date.now(),
         id: 'mtg_' + Date.now(),
@@ -1791,8 +1792,10 @@ export const api = {
         date: meetingData.date,
         startTime: meetingData.startTime,
         endTime: meetingData.endTime,
+        mode: meetingData.mode || 'online',
         location: meetingData.location || '',
-        meetingLink: meetingData.meetingLink || '',
+        roomCode: meetingData.mode === 'online' ? (meetingData.roomCode || generatedCode) : '',
+        meetingLink: meetingData.mode === 'online' ? `/connect?room=${meetingData.roomCode || generatedCode}` : (meetingData.meetingLink || ''),
         projectId: meetingData.projectId || null,
         projectName: meetingData.projectName || '',
         organizer: currentUser._id || currentUser.id || 'usr_organizer',
@@ -2197,30 +2200,50 @@ export const api = {
   // GOOGLE INTEGRATION & OAUTH
   // ----------------------------------------------------
   async getGoogleAuthUrl() {
-    return safeFetchJson(`${API_BASE_URL}/meetings/google/auth-url`, {
-      headers: getHeaders(),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/google/auth-url`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { configured: false, authUrl: '', message: 'Google OAuth not configured' };
+    }
   },
 
   async connectGoogleCallback(code, redirectUri, simulated = false) {
-    return safeFetchJson(`${API_BASE_URL}/meetings/google/callback`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ code, redirectUri, simulated }),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/google/callback`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ code, redirectUri, simulated }),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { message: 'Connected in simulated offline mode.' };
+    }
   },
 
   async getGoogleStatus() {
-    return safeFetchJson(`${API_BASE_URL}/meetings/google/status`, {
-      headers: getHeaders(),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/google/status`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { connected: false, email: '', hasClientId: false };
+    }
   },
 
   async disconnectGoogle() {
-    return safeFetchJson(`${API_BASE_URL}/meetings/google/disconnect`, {
-      method: 'POST',
-      headers: getHeaders(),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/google/disconnect`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { message: 'Disconnected.' };
+    }
   },
 
   async syncMeetingWithGoogle(meetingId) {
@@ -2234,86 +2257,191 @@ export const api = {
   // CONNECT BUILT-IN VIDEO MEETINGS & WEBRTC ROOMS
   // ----------------------------------------------------
   async createConnectRoom(title = 'Instant Connect Meeting', agenda = '') {
-    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/create`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ title, agenda }),
-    });
+    const titleVal = typeof title === 'object' && title ? (title.title || 'Instant Connect Meeting') : title;
+    const agendaVal = typeof title === 'object' && title ? (title.agenda || '') : agenda;
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/create`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ title: titleVal, agenda: agendaVal }),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      const roomCode = 'con-' + Math.random().toString(36).substring(2, 5) + '-' + Math.random().toString(36).substring(2, 6);
+      const currentUser = this.getUser() || {};
+      const newMeeting = {
+        _id: 'mtg_' + Date.now(),
+        id: 'mtg_' + Date.now(),
+        title: titleVal,
+        agenda: agendaVal,
+        mode: 'online',
+        roomCode,
+        meetingLink: `/connect?room=${roomCode}`,
+        organizer: currentUser._id || currentUser.id || 'usr_organizer',
+        organizerName: `${currentUser.firstName || 'Organizer'} ${currentUser.lastName || ''}`.trim(),
+        status: 'scheduled',
+        attendance: [],
+        chatMessages: [],
+        hostControls: { muteAll: false, lockMeeting: false },
+        createdAt: new Date().toISOString(),
+      };
+      const local = localStorage.getItem('tm_meetings');
+      const meetings = local ? JSON.parse(local) : [];
+      meetings.unshift(newMeeting);
+      localStorage.setItem('tm_meetings', JSON.stringify(meetings));
+      return { message: 'Instant Connect room initialized.', roomCode, meeting: newMeeting };
+    }
   },
 
   async getConnectRoom(roomCode) {
-    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}`, {
-      headers: getHeaders(),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      const local = localStorage.getItem('tm_meetings');
+      const meetings = local ? JSON.parse(local) : [];
+      const m = meetings.find((x) => x.roomCode === roomCode || x._id === roomCode || x.id === roomCode);
+      const currentUser = this.getUser() || {};
+      const isHost = m ? (m.organizer === (currentUser._id || currentUser.id) || currentUser.role === 'admin') : true;
+      return {
+        meeting: m || { title: 'Connect Meeting', roomCode, mode: 'online', status: 'scheduled' },
+        roomCode,
+        isHost,
+        hostControls: m?.hostControls || { muteAll: false, lockMeeting: false },
+        activePeers: [],
+        chatMessages: m?.chatMessages || [],
+      };
+    }
   },
 
   async joinConnectRoom(roomCode) {
-    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/join`, {
-      method: 'POST',
-      headers: getHeaders(),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/join`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { message: 'Joined meeting room.', roomCode, isHost: true, activePeers: [] };
+    }
   },
 
   async leaveConnectRoom(roomCode) {
-    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/leave`, {
-      method: 'POST',
-      headers: getHeaders(),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/leave`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { message: 'Left meeting room.' };
+    }
   },
 
   async endConnectRoom(roomCode) {
-    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/end`, {
-      method: 'POST',
-      headers: getHeaders(),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/end`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { message: 'Meeting ended successfully.' };
+    }
   },
 
   async sendConnectSignal(roomCode, targetUserId, signal, type) {
-    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/signal`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ targetUserId, signal, type }),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/signal`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ targetUserId, signal, type }),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { ok: true, success: true };
+    }
   },
 
   async getConnectSignals(roomCode) {
-    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/signals`, {
-      headers: getHeaders(),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/signals`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { signals: [], activePeers: [] };
+    }
   },
 
   async sendConnectChat(roomCode, text) {
-    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/chat`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ text }),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/chat`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ text }),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      const currentUser = this.getUser() || {};
+      const msg = {
+        id: 'msg_' + Date.now(),
+        senderId: currentUser._id || currentUser.id || 'usr',
+        senderName: `${currentUser.firstName || 'User'} ${currentUser.lastName || ''}`.trim(),
+        text,
+        timestamp: new Date().toISOString(),
+      };
+      return { message: 'Message sent.', chatMessage: msg };
+    }
   },
 
   async getConnectChat(roomCode) {
-    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/chat`, {
-      headers: getHeaders(),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/chat`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return [];
+    }
   },
 
   async sendConnectHostAction(roomCode, action, value) {
-    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/host-action`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ action, value }),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/host-action`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ action, value }),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { message: 'Host control updated.', hostControls: { [action]: value } };
+    }
   },
 
   async getMeetingHistory() {
-    return safeFetchJson(`${API_BASE_URL}/meetings/history/records`, {
-      headers: getHeaders(),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/history/records`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      const local = localStorage.getItem('tm_meetings');
+      return local ? JSON.parse(local) : [];
+    }
   },
 
   async getLivekitToken(roomCode) {
-    return safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/livekit-token`, {
-      method: 'POST',
-      headers: getHeaders(),
-    });
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/livekit-token`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { livekitEnabled: false, message: 'Fallback to built-in WebRTC mesh calling.' };
+    }
   },
 };

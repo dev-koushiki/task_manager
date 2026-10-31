@@ -12,6 +12,36 @@ const { getEffectiveSubordinateIds, canUserApproveTask } = require("../middlewar
 
 const router = express.Router();
 
+// Helper: Send notification based on the task, deduplicating to prevent multiple notifications for the same task
+async function sendTaskNotification({ userId, organizationId, type, title, message, link, taskId, metadata = {} }) {
+  if (!userId || !taskId) return null;
+  try {
+    // Check if an existing notification for this task, user, and type already exists
+    const existing = await Notification.findOne({
+      userId,
+      organizationId,
+      "metadata.taskId": taskId,
+      type,
+    });
+    if (existing) {
+      // Do not send multiple notifications for the same task
+      return existing;
+    }
+    return await Notification.create({
+      userId,
+      organizationId,
+      type,
+      title,
+      message,
+      link: link || `/tasks/${taskId}`,
+      metadata: { ...metadata, taskId },
+    });
+  } catch (err) {
+    console.warn("sendTaskNotification warning:", err.message);
+    return null;
+  }
+}
+
 // Helper to check if assigner is authorized to assign task to assignee
 async function isAuthorizedToAssign(assigner, assigneeUser, parentTaskId, orgId) {
   if (assigner.role === "admin") return true;
@@ -334,13 +364,14 @@ router.post("/", authMiddleware, async (req, res) => {
     });
 
     if (assignedToUser && assignedToUser._id.toString() !== user.id.toString()) {
-      await Notification.create({
+      await sendTaskNotification({
         userId: assignedToUser._id,
         organizationId: orgId,
         type: "task_assigned",
         title: "New Task Assigned",
         message: `${assignedByName} assigned you: "${task.title}".`,
         link: `/tasks/${task._id}`,
+        taskId: task._id,
         metadata: { taskId: task._id, assignedBy: user.id },
       });
     }
@@ -481,21 +512,34 @@ router.post("/:id/review", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "Decision must be 'approved' or 'changes_requested'." });
     }
 
-    const reviewerName = `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim();
+    const reviewerName = `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim() || "Supervisor";
+    const reviewerRole = req.user.role === "admin" ? "Administrator" : (req.user.designation || req.user.positionTitle || "Supervisor");
 
     if (decision === "approved") {
       task.status = "completed";
       task.progress = 100;
-      task.reviewFeedback = feedback ? feedback.trim() : "Approved by manager.";
+      task.reviewFeedback = feedback ? feedback.trim() : "Approved by supervisor.";
       task.reviewedBy = req.user.id;
       task.reviewedAt = new Date();
     } else {
       task.status = "in-progress";
       task.progress = Math.min(task.progress, 80);
-      task.reviewFeedback = feedback ? feedback.trim() : "Changes requested by manager.";
+      task.reviewFeedback = feedback ? feedback.trim() : "Changes requested by supervisor.";
       task.reviewedBy = req.user.id;
       task.reviewedAt = new Date();
     }
+
+    if (!Array.isArray(task.reviewComments)) {
+      task.reviewComments = [];
+    }
+    task.reviewComments.push({
+      authorId: req.user.id,
+      authorName: reviewerName,
+      authorRole: reviewerRole,
+      comment: task.reviewFeedback,
+      decision,
+      createdAt: new Date(),
+    });
 
     await task.save();
 
@@ -529,6 +573,127 @@ router.post("/:id/review", authMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Review task error:", error);
     res.status(400).json({ message: error.message });
+  }
+});
+
+// POST /api/tasks/:id/review-comment - Post review comment/instruction sent directly to employee dashboard
+router.post("/:id/review-comment", authMiddleware, async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const task = await Task.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!task) {
+      return res.status(404).json({ message: "Task not found in your company." });
+    }
+
+    const { comment } = req.body;
+    if (!comment || !comment.trim()) {
+      return res.status(400).json({ message: "Comment text cannot be empty." });
+    }
+
+    const isAssignee = task.assignedTo && task.assignedTo.toString() === req.user.id.toString();
+    const isAssigner = task.assignedBy && task.assignedBy.toString() === req.user.id.toString();
+    const isAdmin = req.user.role === "admin";
+    const canApprove = isAdmin || isAssigner || (await canUserApproveTask(req.user, task.assignedTo, orgId));
+
+    if (!isAssignee && !canApprove) {
+      return res.status(403).json({
+        message: "Access denied. You do not have permission to comment on this task review.",
+      });
+    }
+
+    const commenterName = `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim() || req.user.email;
+    const commenterRole = isAssignee
+      ? (req.user.designation || req.user.positionTitle || "Assignee")
+      : (isAdmin ? "Administrator" : (req.user.designation || req.user.positionTitle || "Supervisor"));
+
+    const decisionType = isAssignee ? "reply" : "comment";
+
+    const newComment = {
+      authorId: req.user.id,
+      authorName: commenterName,
+      authorRole: commenterRole,
+      comment: comment.trim(),
+      decision: decisionType,
+      createdAt: new Date(),
+    };
+
+    if (!Array.isArray(task.reviewComments)) {
+      task.reviewComments = [];
+    }
+    task.reviewComments.push(newComment);
+
+    // If supervisor commented, update primary reviewFeedback so it prominently displays on employee dashboard
+    if (!isAssignee) {
+      task.reviewFeedback = comment.trim();
+      task.reviewedBy = req.user.id;
+      task.reviewedAt = new Date();
+    }
+
+    await task.save();
+
+    await TaskReview.create({
+      taskId: task._id,
+      reviewerId: req.user.id,
+      reviewerName: commenterName,
+      decision: decisionType,
+      feedback: comment.trim(),
+    });
+
+    // Notify employee when supervisor sends review comment
+    if (!isAssignee && task.assignedTo && task.assignedTo.toString() !== req.user.id.toString()) {
+      await Notification.create({
+        userId: task.assignedTo,
+        organizationId: orgId,
+        type: "general",
+        title: "New Review Comment from Supervisor",
+        message: `${commenterName} commented on "${task.title}": "${comment.trim().slice(0, 60)}${comment.trim().length > 60 ? "..." : ""}"`,
+        link: `/tasks/${task._id}`,
+        metadata: { taskId: task._id, commentId: newComment._id, reviewerId: req.user.id },
+      });
+    } else if (isAssignee && task.assignedBy && task.assignedBy.toString() !== req.user.id.toString()) {
+      // Notify supervisor when employee replies
+      await Notification.create({
+        userId: task.assignedBy,
+        organizationId: orgId,
+        type: "general",
+        title: "Employee Reply on Task Review",
+        message: `${commenterName} replied on "${task.title}": "${comment.trim().slice(0, 60)}${comment.trim().length > 60 ? "..." : ""}"`,
+        link: `/tasks/${task._id}`,
+        metadata: { taskId: task._id, commentId: newComment._id, assigneeId: req.user.id },
+      });
+    }
+
+    res.json({
+      message: isAssignee ? "Reply sent successfully" : "Review comment sent to employee dashboard successfully",
+      task,
+      comment: newComment,
+    });
+  } catch (error) {
+    console.error("Task review comment error:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// GET /api/tasks/:id/reviews - Fetch full review history and comments for task
+router.get("/:id/reviews", authMiddleware, async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const task = await Task.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!task) {
+      return res.status(404).json({ message: "Task not found." });
+    }
+
+    const reviews = await TaskReview.find({ taskId: task._id })
+      .sort({ createdAt: 1 })
+      .lean();
+
+    res.json({
+      reviewComments: task.reviewComments || [],
+      reviews: reviews || [],
+      reviewFeedback: task.reviewFeedback || "",
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 });
 
@@ -576,7 +741,7 @@ const handleCompleteMilestone = async (req, res) => {
     task.markModified("milestones");
     await task.save();
 
-    // Create activity update
+    // Create activity update (milestones track progress within the task without firing separate notifications)
     await TaskUpdate.create({
       taskId: task._id,
       updatedBy: req.user.id,
@@ -586,28 +751,6 @@ const handleCompleteMilestone = async (req, res) => {
       progress: task.progress,
       comment: `Completed milestone: "${milestone.title}"`,
     });
-
-    // Notify reporting person
-    let supervisorId = task.assignedBy;
-    if (!supervisorId && req.user.reportsTo) {
-      supervisorId = req.user.reportsTo;
-    }
-    if (supervisorId && supervisorId.toString() !== req.user.id.toString()) {
-      await Notification.create({
-        userId: supervisorId,
-        organizationId: orgId,
-        type: "general",
-        title: "Milestone Completed",
-        message: `${employeeName} completed milestone "${milestone.title}" on task "${task.title}".`,
-        link: `/tasks/${task._id}`,
-        metadata: {
-          taskId: task._id,
-          milestoneId: milestone.id || milestone._id,
-          completedBy: req.user.id,
-          completedAt: now,
-        },
-      });
-    }
 
     res.json({
       message: `Milestone "${milestone.title}" marked as completed.`,
@@ -739,8 +882,23 @@ router.put("/:id", authMiddleware, async (req, res) => {
           });
         }
 
+        const prevAssigneeId = task.assignedTo ? task.assignedTo.toString() : null;
         task.assignedTo = u._id;
         task.assignedToName = `${u.firstName} ${u.lastName}`;
+
+        // Send task assignment notification only if assigned to a new user and not already notified
+        if (u._id.toString() !== user.id.toString() && prevAssigneeId !== u._id.toString()) {
+          await sendTaskNotification({
+            userId: u._id,
+            organizationId: orgId,
+            type: "task_assigned",
+            title: "New Task Assigned",
+            message: `${user.firstName || "Supervisor"} assigned you: "${task.title}".`,
+            link: `/tasks/${task._id}`,
+            taskId: task._id,
+            metadata: { taskId: task._id, assignedBy: user.id },
+          });
+        }
       } else {
         task.assignedTo = null;
         task.assignedToName = "Unassigned";

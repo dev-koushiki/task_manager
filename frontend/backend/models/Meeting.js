@@ -98,6 +98,37 @@ const minutesSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const attendanceSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    name: { type: String, required: true },
+    email: { type: String, default: "" },
+    joinedAt: { type: Date, default: Date.now },
+    leftAt: { type: Date, default: null },
+    durationSeconds: { type: Number, default: 0 },
+  },
+  { _id: true }
+);
+
+const chatMessageSchema = new mongoose.Schema(
+  {
+    id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+    senderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    senderName: { type: String, required: true },
+    text: { type: String, required: true, trim: true },
+    timestamp: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
 const meetingSchema = new mongoose.Schema(
   {
     title: {
@@ -134,6 +165,46 @@ const meetingSchema = new mongoose.Schema(
       type: String,
       default: "",
       trim: true,
+    },
+    mode: {
+      type: String,
+      enum: ["online", "offline"],
+      default: "online",
+    },
+    roomCode: {
+      type: String,
+      trim: true,
+      default: "",
+      index: true,
+    },
+    roomId: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    googleEventId: {
+      type: String,
+      default: "",
+    },
+    googleMeetLink: {
+      type: String,
+      default: "",
+    },
+    googleSynced: {
+      type: Boolean,
+      default: false,
+    },
+    attendance: {
+      type: [attendanceSchema],
+      default: [],
+    },
+    chatMessages: {
+      type: [chatMessageSchema],
+      default: [],
+    },
+    hostControls: {
+      muteAll: { type: Boolean, default: false },
+      lockMeeting: { type: Boolean, default: false },
     },
     organizationId: {
       type: mongoose.Schema.Types.ObjectId,
