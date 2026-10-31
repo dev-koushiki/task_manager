@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   UsersIcon,
   PlusIcon,
@@ -11,6 +11,11 @@ import {
   BuildingIcon,
   SparklesIcon,
   UserIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
+  MaximizeIcon,
+  RotateCcwIcon,
+  SidebarIcon,
 } from './Icons';
 import { api } from '../services/api';
 
@@ -22,6 +27,15 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
   const [profileFilter, setProfileFilter] = useState('all'); // 'all' | 'unassigned' | 'assigned'
   const [notice, setNotice] = useState('');
   const [errorNotice, setErrorNotice] = useState('');
+
+  // Tree interactive view state (Zoom, Pan, Profiles Drawer, Search, Collapse)
+  const canvasRef = useRef(null);
+  const [zoom, setZoom] = useState(1);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panPosition, setPanPosition] = useState({ startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
+  const [isProfilesOpen, setIsProfilesOpen] = useState(true);
+  const [treeSearchQuery, setTreeSearchQuery] = useState('');
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState(new Set());
 
   // Modals state
   const [isAddNodeModalOpen, setIsAddNodeModalOpen] = useState(false);
@@ -81,6 +95,22 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
     loadTreeData();
   }, []);
 
+  // Auto-center canvas on initial tree load
+  useEffect(() => {
+    if (!loading && treeNodes.length > 0 && canvasRef.current) {
+      const timer = setTimeout(() => {
+        if (canvasRef.current) {
+          const scrollWidth = canvasRef.current.scrollWidth;
+          const clientWidth = canvasRef.current.clientWidth;
+          if (scrollWidth > clientWidth) {
+            canvasRef.current.scrollLeft = (scrollWidth - clientWidth) / 2;
+          }
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, treeNodes.length]);
+
   const triggerNotice = (msg) => {
     setNotice(msg);
     setTimeout(() => setNotice(''), 4000);
@@ -89,6 +119,85 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
   const triggerError = (msg) => {
     setErrorNotice(msg);
     setTimeout(() => setErrorNotice(''), 5000);
+  };
+
+  // Canvas zoom & center controls
+  const handleZoomIn = () => setZoom((z) => Math.min(1.6, Math.round((z + 0.1) * 10) / 10));
+  const handleZoomOut = () => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10));
+  const handleZoomReset = () => setZoom(1);
+  const handleCenterTree = () => {
+    setZoom(1);
+    if (canvasRef.current) {
+      const scrollWidth = canvasRef.current.scrollWidth;
+      const clientWidth = canvasRef.current.clientWidth;
+      canvasRef.current.scrollLeft = (scrollWidth - clientWidth) / 2;
+      canvasRef.current.scrollTop = 0;
+    }
+  };
+
+  // Branch expand / collapse handlers
+  const toggleNodeCollapse = (nodeId) => {
+    setCollapsedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleAllCollapse = () => {
+    if (collapsedNodeIds.size > 0) {
+      setCollapsedNodeIds(new Set());
+    } else {
+      const ids = new Set();
+      treeNodes.forEach((n) => {
+        const hasKids = treeNodes.some((child) => child.parentId === n.id);
+        if (hasKids && n.parentId) {
+          ids.add(n.id);
+        }
+      });
+      setCollapsedNodeIds(ids);
+    }
+  };
+
+  // Canvas drag-to-pan handlers
+  const handleCanvasMouseDown = (e) => {
+    if (
+      e.target.closest('.org-tree-node-card') ||
+      e.target.closest('button') ||
+      e.target.closest('input') ||
+      e.target.closest('select') ||
+      e.target.closest('.canvas-toolbar')
+    ) {
+      return;
+    }
+    setIsPanning(true);
+    if (canvasRef.current) {
+      setPanPosition({
+        startX: e.pageX - canvasRef.current.offsetLeft,
+        startY: e.pageY - canvasRef.current.offsetTop,
+        scrollLeft: canvasRef.current.scrollLeft,
+        scrollTop: canvasRef.current.scrollTop,
+      });
+    }
+  };
+
+  const handleCanvasMouseMove = (e) => {
+    if (!isPanning || !canvasRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - canvasRef.current.offsetLeft;
+    const y = e.pageY - canvasRef.current.offsetTop;
+    const walkX = x - panPosition.startX;
+    const walkY = y - panPosition.startY;
+    canvasRef.current.scrollLeft = panPosition.scrollLeft - walkX;
+    canvasRef.current.scrollTop = panPosition.scrollTop - walkY;
+  };
+
+  const handleCanvasMouseUp = () => {
+    setIsPanning(false);
   };
 
   // Helper to calculate next sequential Employee ID
@@ -361,158 +470,234 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
 
   const treeHierarchy = buildTreeHierarchy(null);
 
-  // Render a node recursively
-  const renderTreeNode = (node, depth = 0) => {
+  // Render a node recursively with proper horizontal sibling alignment & connecting lines
+  const renderTreeNode = (node, depth = 0, childIndex = 0, siblingCount = 1) => {
     const hasEmployee = Boolean(node.employee);
     const emp = node.employee;
-    const isRoot = node.id === 'node_root' || (!node.parentId && depth === 0 && node.employeeCode === 'EMP-001');
+    const isRoot = node.id === 'node_root' || (!node.parentId && depth === 0 && (node.employeeCode === 'EMP-001' || siblingCount === 1));
     const isDropTarget = dragOverNodeId === node.id;
+    const hasChildren = node.children && node.children.length > 0;
+    const isCollapsed = collapsedNodeIds.has(node.id);
+
+    // Search query check for highlighting
+    const q = treeSearchQuery.trim().toLowerCase();
+    const isSearchMatch = Boolean(
+      q &&
+      (node.title?.toLowerCase().includes(q) ||
+       node.department?.toLowerCase().includes(q) ||
+       node.employeeCode?.toLowerCase().includes(q) ||
+       (emp && (
+         `${emp.firstName || ''} ${emp.lastName || ''}`.toLowerCase().includes(q) ||
+         emp.email?.toLowerCase().includes(q) ||
+         (emp.designation || emp.role || '').toLowerCase().includes(q)
+       )))
+    );
 
     return (
-      <div key={node.id} className="org-tree-branch">
-        <div
-          className={`org-tree-node-card ${isRoot ? 'node-root' : ''} ${hasEmployee ? 'node-occupied' : 'node-vacant'} ${isDropTarget ? 'node-drop-highlight' : ''}`}
-          draggable={!isRoot}
-          onDragStart={(e) => {
-            // Prevent dragging if mousedown originated on a button or interactive child
-            if (e.target.closest('button') || e.target.closest('.node-card-actions') || e.target.closest('.node-vacant-placeholder')) {
-              e.preventDefault();
-              return false;
-            }
-            handleDragStartNode(e, node.id);
-          }}
-          onDragOver={(e) => handleDragOverNode(e, node.id)}
-          onDragLeave={handleDragLeaveNode}
-          onDrop={(e) => handleDropOnNode(e, node.id)}
-        >
-          <div className="node-card-header">
-            <div className="node-title-wrap">
-              <span className="node-badge-level">{isRoot ? '👑 MAIN ADMIN' : `LEVEL ${depth + 1}`}</span>
-              <strong className="node-title">{node.title}</strong>
-            </div>
-            <span className="node-dept-pill">
-              <BuildingIcon size={11} /> {node.department || 'General'}
-            </span>
-          </div>
-
-          <div className="node-card-body">
-            {hasEmployee ? (
-              <div className="node-employee-info">
-                <div className="node-avatar-circle">
-                  {emp.firstName ? emp.firstName[0].toUpperCase() : 'U'}
-                </div>
-                <div className="node-employee-details">
-                  <div className="node-emp-name-row">
-                    <strong>{emp.firstName} {emp.lastName}</strong>
-                    {node.employeeCode && (
-                      <span className="node-empid-pill" title="Employee ID">{node.employeeCode}</span>
-                    )}
-                  </div>
-                  <small className="node-emp-email">{emp.email}</small>
-                  <span className="node-emp-role">{emp.designation || emp.role}</span>
-                </div>
-              </div>
-            ) : (
+      <div
+        key={node.id}
+        className={`org-tree-branch ${isRoot ? 'branch-root' : ''}`}
+      >
+        {/* 1. TOP CONNECTOR: Connects from horizontal crossbar down into this node (for subordinate levels) */}
+        {depth > 0 && (
+          <div className="org-tree-connector-top">
+            {/* Horizontal line segment across siblings */}
+            {siblingCount > 1 && (
               <div
-                className="node-vacant-placeholder"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenAssignModal(node.id);
-                }}
-                title="Click to assign or drag an active employee here"
-              >
-                <UserIcon size={18} className="vacant-icon" />
-                <div className="vacant-text">
-                  <span>Vacant Position</span>
-                  <small>Drop profile or click to assign</small>
-                </div>
-              </div>
+                className={`org-tree-h-line ${
+                  childIndex === 0
+                    ? 'h-line-first'
+                    : childIndex === siblingCount - 1
+                    ? 'h-line-last'
+                    : 'h-line-mid'
+                }`}
+              />
             )}
+            {/* Vertical drop line directly into this node's card */}
+            <div className="org-tree-v-line-in" />
           </div>
+        )}
 
+        {/* 2. NODE CARD WRAPPER */}
+        <div className="org-tree-node-wrapper">
           <div
-            className="node-card-actions"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
+            className={`org-tree-node-card ${isRoot ? 'node-root' : ''} ${hasEmployee ? 'node-occupied' : 'node-vacant'} ${isDropTarget ? 'node-drop-highlight' : ''} ${isSearchMatch ? 'node-search-highlight' : ''}`}
+            draggable={!isRoot}
+            onDragStart={(e) => {
+              // Prevent dragging if mousedown originated on a button or interactive child
+              if (
+                e.target.closest('button') ||
+                e.target.closest('.node-card-actions') ||
+                e.target.closest('.node-vacant-placeholder') ||
+                e.target.closest('.node-expand-pill')
+              ) {
+                e.preventDefault();
+                return false;
+              }
+              handleDragStartNode(e, node.id);
+            }}
+            onDragOver={(e) => handleDragOverNode(e, node.id)}
+            onDragLeave={handleDragLeaveNode}
+            onDrop={(e) => handleDropOnNode(e, node.id)}
           >
-            <button
-              type="button"
-              className="node-action-btn btn-add-child"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenAddNode(node.id);
-              }}
-              title="Add subordinate role under this position"
-            >
-              <PlusIcon size={12} /> Add Child
-            </button>
+            {/* Card Header: Level Badge & Dept */}
+            <div className="node-card-header">
+              <div className="node-title-wrap">
+                <span className="node-badge-level">
+                  {isRoot ? '👑 MAIN ADMIN' : `LEVEL ${depth + 1}`}
+                </span>
+                <strong className="node-title" title={node.title}>{node.title}</strong>
+              </div>
+              <span className="node-dept-pill" title={node.department || 'General'}>
+                <BuildingIcon size={11} /> {node.department || 'General'}
+              </span>
+            </div>
 
-            {hasEmployee ? (
-              !isRoot && (
-                <button
-                  type="button"
-                  className="node-action-btn btn-unassign"
+            {/* Card Body: Occupied Employee Info or Vacant Slot */}
+            <div className="node-card-body">
+              {hasEmployee ? (
+                <div className="node-employee-info">
+                  <div className="node-avatar-circle">
+                    {emp.firstName ? emp.firstName[0].toUpperCase() : 'U'}
+                  </div>
+                  <div className="node-employee-details">
+                    <div className="node-emp-name-row">
+                      <strong title={`${emp.firstName} ${emp.lastName}`}>{emp.firstName} {emp.lastName}</strong>
+                      {node.employeeCode && (
+                        <span className="node-empid-pill" title="Employee ID">{node.employeeCode}</span>
+                      )}
+                    </div>
+                    <small className="node-emp-email" title={emp.email}>{emp.email}</small>
+                    <span className="node-emp-role">{emp.designation || emp.role}</span>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="node-vacant-placeholder"
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setNodeToUnassign({ nodeId: node.id, name: `${emp.firstName} ${emp.lastName}` });
+                    handleOpenAssignModal(node.id);
                   }}
-                  title="Unassign employee from this position"
+                  title="Click to assign or drag an active employee here"
                 >
-                  Unassign
-                </button>
-              )
-            ) : (
-              <button
-                type="button"
-                className="node-action-btn btn-assign"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenAssignModal(node.id);
-                }}
-                title="Map an activated employee to this position"
-              >
-                Assign
-              </button>
-            )}
+                  <UserIcon size={18} className="vacant-icon" />
+                  <div className="vacant-text">
+                    <span>Vacant Position</span>
+                    <small>Drop profile or click to assign</small>
+                  </div>
+                </div>
+              )}
+            </div>
 
-            <button
-              type="button"
-              className="node-action-btn"
+            {/* Card Actions */}
+            <div
+              className="node-card-actions"
               onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenEditNode(node);
-              }}
-              title="Edit position title or department"
+              onClick={(e) => e.stopPropagation()}
             >
-              <EditIcon size={12} />
-            </button>
-
-            {!isRoot && (
               <button
                 type="button"
-                className="node-action-btn btn-delete"
+                className="node-action-btn btn-add-child"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setNodeToDelete(node);
+                  handleOpenAddNode(node.id);
                 }}
-                title="Delete position"
+                title="Add subordinate role under this position"
               >
-                <TrashIcon size={12} />
+                <PlusIcon size={12} /> Add Child
+              </button>
+
+              {hasEmployee ? (
+                !isRoot && (
+                  <button
+                    type="button"
+                    className="node-action-btn btn-unassign"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setNodeToUnassign({ nodeId: node.id, name: `${emp.firstName} ${emp.lastName}` });
+                    }}
+                    title="Unassign employee from this position"
+                  >
+                    Unassign
+                  </button>
+                )
+              ) : (
+                <button
+                  type="button"
+                  className="node-action-btn btn-assign"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenAssignModal(node.id);
+                  }}
+                  title="Map an activated employee to this position"
+                >
+                  Assign
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="node-action-btn"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenEditNode(node);
+                }}
+                title="Edit position title or department"
+              >
+                <EditIcon size={12} />
+              </button>
+
+              {!isRoot && (
+                <button
+                  type="button"
+                  className="node-action-btn btn-delete"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setNodeToDelete(node);
+                  }}
+                  title="Delete position"
+                >
+                  <TrashIcon size={12} />
+                </button>
+              )}
+            </div>
+
+            {/* Subordinates count / Collapse-Expand toggle pill */}
+            {hasChildren && (
+              <button
+                type="button"
+                className={`node-expand-pill ${isCollapsed ? 'is-collapsed' : 'is-expanded'}`}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleNodeCollapse(node.id);
+                }}
+                title={isCollapsed ? `Expand ${node.children.length} direct subordinate(s)` : `Collapse direct subordinates`}
+              >
+                <span className="expand-indicator">{isCollapsed ? '+' : '−'}</span>
+                <span>{node.children.length} {node.children.length === 1 ? 'Subordinate' : 'Subordinates'}</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Children Branches */}
-        {node.children && node.children.length > 0 && (
-          <div className="org-tree-children">
-            {node.children.map((child) => renderTreeNode(child, depth + 1))}
+        {/* 3. STEM OUT FROM PARENT: Line from bottom of card to children container */}
+        {hasChildren && !isCollapsed && (
+          <div className="org-tree-v-line-out" />
+        )}
+
+        {/* 4. HORIZONTAL SIBLINGS (CHILDREN) ROW */}
+        {hasChildren && !isCollapsed && (
+          <div className="org-tree-children-container">
+            {node.children.map((child, idx) =>
+              renderTreeNode(child, depth + 1, idx, node.children.length)
+            )}
           </div>
         )}
       </div>
@@ -567,15 +752,111 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
       </div>
 
       {/* Main Split Layout: Visual Tree (Left) + Active Profiles (Right) */}
-      <div className="org-tree-layout-split">
+      <div className={`org-tree-layout-split ${!isProfilesOpen ? 'sidebar-collapsed' : ''}`}>
         {/* Left Side: Tree Visualizer */}
-        <div className="org-tree-canvas-panel">
+        <div
+          className={`org-tree-canvas-panel ${isPanning ? 'is-panning' : ''}`}
+          ref={canvasRef}
+          onMouseDown={handleCanvasMouseDown}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseUp={handleCanvasMouseUp}
+          onMouseLeave={handleCanvasMouseUp}
+        >
           <div className="canvas-header-bar">
-            <h4>
-              Visual Organization Hierarchy{' '}
-              <span className="count-pill">{treeNodes.length} Nodes</span>
-            </h4>
-            <span className="canvas-hint">Drag nodes to reorganize · Drop employees to assign · Click buttons to manage</span>
+            <div className="canvas-header-left">
+              <h4>
+                Visual Organization Hierarchy{' '}
+                <span className="count-pill">{treeNodes.length} Positions</span>
+              </h4>
+              <span className="canvas-hint">
+                Hierarchical view · Main Admin centered at top · Direct subordinates arranged horizontally beneath
+              </span>
+            </div>
+
+            <div className="canvas-toolbar">
+              {/* Tree Quick Search / Highlight */}
+              <div className="tree-search-mini" title="Search and highlight positions or people in the tree">
+                <SearchIcon size={13} className="search-icon-muted" />
+                <input
+                  type="text"
+                  placeholder="Find position or name..."
+                  value={treeSearchQuery}
+                  onChange={(e) => setTreeSearchQuery(e.target.value)}
+                />
+                {treeSearchQuery && (
+                  <button
+                    type="button"
+                    className="search-clear-btn"
+                    onClick={() => setTreeSearchQuery('')}
+                    title="Clear search"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+
+              {/* Collapse / Expand All */}
+              <button
+                type="button"
+                className="toolbar-btn"
+                onClick={handleToggleAllCollapse}
+                title={collapsedNodeIds.size > 0 ? "Expand all branches" : "Collapse subordinate branches"}
+              >
+                {collapsedNodeIds.size > 0 ? "Expand All" : "Collapse All"}
+              </button>
+
+              <div className="toolbar-divider" />
+
+              {/* Zoom Controls */}
+              <button
+                type="button"
+                className="toolbar-btn icon-only"
+                onClick={handleZoomOut}
+                disabled={zoom <= 0.5}
+                title="Zoom Out"
+              >
+                <ZoomOutIcon size={14} />
+              </button>
+              <span className="zoom-level-badge">{Math.round(zoom * 100)}%</span>
+              <button
+                type="button"
+                className="toolbar-btn icon-only"
+                onClick={handleZoomIn}
+                disabled={zoom >= 1.6}
+                title="Zoom In"
+              >
+                <ZoomInIcon size={14} />
+              </button>
+              <button
+                type="button"
+                className="toolbar-btn icon-only"
+                onClick={handleZoomReset}
+                title="Reset Zoom (100%)"
+              >
+                <RotateCcwIcon size={13} />
+              </button>
+              <button
+                type="button"
+                className="toolbar-btn icon-only"
+                onClick={handleCenterTree}
+                title="Center Hierarchy View"
+              >
+                <MaximizeIcon size={13} />
+              </button>
+
+              <div className="toolbar-divider" />
+
+              {/* Toggle Profiles Drawer */}
+              <button
+                type="button"
+                className={`toolbar-btn ${!isProfilesOpen ? 'active' : ''}`}
+                onClick={() => setIsProfilesOpen(!isProfilesOpen)}
+                title={isProfilesOpen ? "Hide profiles sidebar to expand tree view" : "Show active profiles sidebar"}
+              >
+                <SidebarIcon size={14} />
+                <span>{isProfilesOpen ? 'Hide Profiles' : 'Show Profiles'}</span>
+              </button>
+            </div>
           </div>
 
           {loading ? (
@@ -597,8 +878,17 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
               </button>
             </div>
           ) : (
-            <div className="org-tree-render-root">
-              {treeHierarchy.map((rootNode) => renderTreeNode(rootNode, 0))}
+            <div
+              className="org-tree-viewport"
+              style={{
+                transform: `scale(${zoom})`,
+              }}
+            >
+              <div className="org-tree-render-root">
+                {treeHierarchy.map((rootNode, rootIdx) =>
+                  renderTreeNode(rootNode, 0, rootIdx, treeHierarchy.length)
+                )}
+              </div>
             </div>
           )}
         </div>
