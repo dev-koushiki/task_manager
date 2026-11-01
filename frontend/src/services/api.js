@@ -2737,4 +2737,98 @@ export const api = {
       };
     }
   },
+
+  // ==========================================
+  // PHASE 5: EMPLOYEE DASHBOARD: MY PROGRESS & RATINGS
+  // ==========================================
+  async getMyProgress() {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/performance/my-progress`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return {
+        success: true,
+        employee: api.getUser() || {},
+        aggregate: {
+          hasRatings: false,
+          aggregateScore: 0,
+          percentage: 0,
+          performanceBand: 'Not Rated Yet',
+          categoryAverages: { qualityOfWork: 0, timeliness: 0, initiative: 0, collaboration: 0 },
+          tierBreakdown: { L1: null, L2: null, L3: null },
+          totalReviewsCount: 0,
+          strengths: [],
+          areasForImprovement: [],
+        },
+        ratings: [],
+        selfEvaluations: [],
+        assignedProjects: [],
+        approvedProjects: [],
+        milestoneStats: { total: 0, completed: 0, inProgress: 0, overdue: 0, onTimeRate: 100 },
+        trends: [],
+        canRateOthers: false,
+        directReportsCount: 0,
+      };
+    }
+  },
+
+  async getEmployeeProgress(employeeId) {
+    return await safeFetchJson(`${API_BASE_URL}/performance/employee/${encodeURIComponent(employeeId)}`, {
+      headers: getHeaders(),
+    });
+  },
+
+  async getDirectReports() {
+    try {
+      const res = await safeFetchJson(`${API_BASE_URL}/performance/direct-reports`, {
+        headers: getHeaders(),
+      });
+      return res.directReports || [];
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return [];
+    }
+  },
+
+  async submitPerformanceRating(payload) {
+    return await safeFetchJson(`${API_BASE_URL}/performance/rate`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async submitSelfEvaluation(payload) {
+    return await safeFetchJson(`${API_BASE_URL}/performance/self-eval`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async disputeRating(payload) {
+    return await safeFetchJson(`${API_BASE_URL}/performance/dispute`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async resolveRatingDispute(payload) {
+    return await safeFetchJson(`${API_BASE_URL}/performance/resolve-dispute`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async addMilestoneProgressNote(payload) {
+    return await safeFetchJson(`${API_BASE_URL}/performance/milestone-note`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
 };

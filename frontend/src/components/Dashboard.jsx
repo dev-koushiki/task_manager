@@ -35,6 +35,7 @@ import {
 } from './Icons';
 import { GroupingChatView } from './GroupingChatView';
 import { ProjectSectionView } from './ProjectSectionView';
+import { MyProgressView } from './MyProgressView';
 import { TaskModal } from './TaskModal';
 import { ProjectModal } from './ProjectModal';
 import { TaskReviewModal } from './TaskReviewModal';
@@ -521,6 +522,15 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
               <button
                 type="button"
+                className={`sidebar-nav-item ${activeTab === 'my_progress' ? 'active' : ''}`}
+                onClick={() => setActiveTab('my_progress')}
+              >
+                <TrendingUpIcon size={18} className="nav-icon" />
+                <span>My Progress</span>
+              </button>
+
+              <button
+                type="button"
                 className={`sidebar-nav-item ${activeTab === 'invites' || activeTab === 'team' ? 'active' : ''}`}
                 onClick={() => setActiveTab('invites')}
               >
@@ -583,6 +593,15 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               >
                 <UsersIcon size={18} className="nav-icon" />
                 <span>Group</span>
+              </button>
+
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'my_progress' ? 'active' : ''}`}
+                onClick={() => setActiveTab('my_progress')}
+              >
+                <TrendingUpIcon size={18} className="nav-icon" />
+                <span>My Progress</span>
               </button>
 
               <button
@@ -1521,6 +1540,11 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           {/* TAB: GROUPING (WhatsApp-style Grouping & Communication) */}
           {activeTab === 'grouping' && (
             <GroupingChatView user={user} />
+          )}
+
+          {/* TAB: MY PROGRESS (Employee Dashboard: Assigned & Approved Projects, Ratings & Analytics) */}
+          {activeTab === 'my_progress' && (
+            <MyProgressView user={user} />
           )}
 
           {/* TAB: INVITES (Admin Employee Panel with Invitations & Account Activation) */}

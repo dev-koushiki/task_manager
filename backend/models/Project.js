@@ -17,6 +17,37 @@ const assignedEmployeeSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const progressNoteSchema = new mongoose.Schema(
+  {
+    id: {
+      type: String,
+      default: () => new mongoose.Types.ObjectId().toString(),
+    },
+    authorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    authorName: {
+      type: String,
+      default: "",
+    },
+    authorRole: {
+      type: String,
+      default: "",
+    },
+    note: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
 const projectMilestoneSchema = new mongoose.Schema(
   {
     id: {
@@ -76,6 +107,10 @@ const projectMilestoneSchema = new mongoose.Schema(
     submissionNotes: {
       type: String,
       default: "",
+    },
+    progressNotes: {
+      type: [progressNoteSchema],
+      default: () => [],
     },
     phase: {
       type: String,
