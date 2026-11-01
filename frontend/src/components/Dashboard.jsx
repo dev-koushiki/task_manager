@@ -34,6 +34,7 @@ import {
   MailIcon,
 } from './Icons';
 import { GroupingChatView } from './GroupingChatView';
+import { ProjectSectionView } from './ProjectSectionView';
 import { TaskModal } from './TaskModal';
 import { ProjectModal } from './ProjectModal';
 import { TaskReviewModal } from './TaskReviewModal';
@@ -80,6 +81,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewMode, setViewMode] = useState('kanban'); // 'kanban' | 'list'
+  const [tasksTabMode, setTasksTabMode] = useState('projects'); // 'projects' (default) | 'kanban'
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const [isNotifDropdownOpen, setIsNotifDropdownOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -855,7 +857,49 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
           {/* MAIN ADMIN: TASKS TAB */}
           {isAdmin && activeTab === 'tasks' && (
-            <div className="ref-dashboard-view animate-fade-in">
+            <div className="tasks-container-view animate-fade-in">
+              {/* Primary View Switcher: Projects & Milestones vs Kanban & Metrics */}
+              <div className="tasks-view-mode-switcher">
+                <button
+                  type="button"
+                  className={`tasks-mode-btn ${tasksTabMode === 'projects' ? 'active' : ''}`}
+                  onClick={() => setTasksTabMode('projects')}
+                >
+                  <SparklesIcon size={15} />
+                  <span>Projects & Milestones Structure</span>
+                </button>
+                <button
+                  type="button"
+                  className={`tasks-mode-btn ${tasksTabMode === 'kanban' ? 'active' : ''}`}
+                  onClick={() => setTasksTabMode('kanban')}
+                >
+                  <CalendarIcon size={15} />
+                  <span>Metrics & Kanban Overview</span>
+                </button>
+              </div>
+
+              {tasksTabMode === 'projects' ? (
+                <ProjectSectionView
+                  user={user}
+                  projects={projects}
+                  onOpenNewProject={() => {
+                    setEditingProject(null);
+                    setIsProjectModalOpen(true);
+                  }}
+                  onEditProject={(proj) => {
+                    setEditingProject(proj);
+                    setIsProjectModalOpen(true);
+                  }}
+                  onDeleteProject={async (projId) => {
+                    if (window.confirm('Are you sure you want to delete this project?')) {
+                      await api.deleteProject(projId);
+                      refreshAllData();
+                    }
+                  }}
+                  onProjectsUpdated={refreshAllData}
+                />
+              ) : (
+                <div className="ref-dashboard-view animate-fade-in">
               {/* Row 1: 4 Metric Cards */}
               <div className="ref-metrics-row">
                 {/* Metric 1: Total Task */}
@@ -1416,6 +1460,8 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                   </div>
                 </div>
               </div>
+            </div>
+              )}
             </div>
           )}
 

@@ -178,7 +178,7 @@ const TaskModalDialog = ({
             </div>
 
             <div className="form-group">
-              <label htmlFor="taskAssignedTo">Assign Reporting Employee *</label>
+              <label htmlFor="taskAssignedTo">Assign to Employee *</label>
               <select
                 id="taskAssignedTo"
                 value={formData.assignedTo}

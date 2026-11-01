@@ -2,76 +2,154 @@ const express = require("express");
 const Project = require("../models/Project");
 const Task = require("../models/Task");
 const User = require("../models/User");
+const Notification = require("../models/Notification");
 const authMiddleware = require("../middleware/auth");
-const { getEffectiveSubordinateIds, requirePermission } = require("../middleware/rbac");
+const { getEffectiveSubordinateIds } = require("../middleware/rbac");
+const aiService = require("../services/aiService");
 
 const router = express.Router();
 
-// Helper to calculate progress for a project based on its tasks
-async function calculateProjectMetrics(projectId, orgId) {
-  const tasks = await Task.find({ projectId, organizationId: orgId });
-  const totalTasks = tasks.length;
+/**
+ * Helper to calculate metrics for a project
+ * Factors in both project.milestones (underneath the project) and legacy Task records
+ */
+async function calculateProjectMetrics(project, orgId) {
+  const pMilestones = Array.isArray(project.milestones) ? project.milestones : [];
+  const tasks = await Task.find({ projectId: project._id, organizationId: orgId });
 
-  if (totalTasks === 0) {
-    return {
-      totalTasks: 0,
-      completedTasks: 0,
-      overdueTasks: 0,
-      progressPercentage: 0,
-      calculatedStatus: "not-started",
-    };
-  }
-
-  let totalWeight = 0;
-  let weightedProgressSum = 0;
-  let completedCount = 0;
-  let overdueCount = 0;
+  const totalMilestones = pMilestones.length;
+  let completedMilestones = 0;
+  let overdueMilestones = 0;
+  let inProgressMilestones = 0;
   const today = new Date().toISOString().split("T")[0];
 
-  for (const t of tasks) {
-    const weight = t.weight || 1;
-    totalWeight += weight;
-
-    const taskProgress = t.status === "completed" ? 100 : t.progress || 0;
-    weightedProgressSum += weight * taskProgress;
-
-    if (t.status === "completed") {
-      completedCount++;
+  for (const m of pMilestones) {
+    if (m.completed || m.status === "completed") {
+      completedMilestones++;
+    } else if (m.status === "in-progress" || m.status === "submitted") {
+      inProgressMilestones++;
     }
 
-    if (t.deadline && t.deadline < today && t.status !== "completed") {
-      overdueCount++;
+    if (m.deadline && m.deadline < today && !m.completed && m.status !== "completed") {
+      overdueMilestones++;
     }
   }
 
-  const progressPercentage = totalWeight > 0 ? Math.round(weightedProgressSum / totalWeight) : 0;
+  // Also count tasks if any
+  let totalTasks = tasks.length;
+  let completedTasks = 0;
+  for (const t of tasks) {
+    if (t.status === "completed") completedTasks++;
+  }
 
-  let calculatedStatus = "on-track";
-  if (completedCount === totalTasks) {
-    calculatedStatus = "completed";
-  } else if (overdueCount > 0) {
-    calculatedStatus = "delayed";
-  } else if (progressPercentage === 0) {
-    calculatedStatus = "not-started";
+  const combinedTotal = totalMilestones + totalTasks;
+  const combinedCompleted = completedMilestones + completedTasks;
+
+  const progressPercentage =
+    combinedTotal > 0 ? Math.round((combinedCompleted / combinedTotal) * 100) : 0;
+
+  let calculatedStatus = project.status || "not-started";
+  if (combinedTotal > 0) {
+    if (combinedCompleted === combinedTotal) {
+      calculatedStatus = "completed";
+    } else if (overdueMilestones > 0) {
+      calculatedStatus = "delayed";
+    } else if (inProgressMilestones > 0 || progressPercentage > 0) {
+      calculatedStatus = "in-progress";
+    } else {
+      calculatedStatus = "not-started";
+    }
   }
 
   return {
+    totalMilestones,
+    completedMilestones,
+    overdueMilestones,
     totalTasks,
-    completedTasks: completedCount,
-    overdueTasks: overdueCount,
+    combinedTotal,
+    combinedCompleted,
     progressPercentage,
     calculatedStatus,
   };
 }
 
-// GET /api/projects - Scope-based project listing with aggregated metrics (multi-company isolated)
+// -------------------------------------------------------------
+// POST /api/projects/analyze-concept-note - Upload & analyze concept note with AI
+// -------------------------------------------------------------
+router.post("/analyze-concept-note", authMiddleware, async (req, res) => {
+  try {
+    const { fileData, filename, mimeType, rawText } = req.body;
+
+    let textToAnalyze = rawText || "";
+
+    if (!textToAnalyze && fileData) {
+      // Decode base64 buffer
+      const base64Data = fileData.replace(/^data:[^;]+;base64,/, "");
+      const buffer = Buffer.from(base64Data, "base64");
+      textToAnalyze = await aiService.extractDocumentText(buffer, mimeType, filename);
+    }
+
+    if (!textToAnalyze || textToAnalyze.trim().length === 0) {
+      return res.status(400).json({
+        message: "Unable to extract text from the uploaded document. Please check the file format or provide text directly.",
+      });
+    }
+
+    const analysis = await aiService.analyzeConceptNote(textToAnalyze, filename);
+
+    res.json({
+      success: true,
+      analysis,
+      rawTextSnippet: textToAnalyze.slice(0, 1000),
+    });
+  } catch (error) {
+    console.error("Concept note analysis error:", error);
+    res.status(500).json({ message: error.message || "Failed to analyze concept note." });
+  }
+});
+
+// -------------------------------------------------------------
+// POST /api/projects/transcribe - Transcribe voice note audio with AI
+// -------------------------------------------------------------
+router.post("/transcribe", authMiddleware, async (req, res) => {
+  try {
+    const { audioBase64, mimeType, language } = req.body;
+    const result = await aiService.transcribeAudio({ audioBase64, mimeType, language });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error("Audio transcription error:", error);
+    res.status(500).json({ message: error.message || "Failed to transcribe audio." });
+  }
+});
+
+// -------------------------------------------------------------
+// POST /api/projects/extract-from-transcript - Extract milestones from voice transcript
+// -------------------------------------------------------------
+router.post("/extract-from-transcript", authMiddleware, async (req, res) => {
+  try {
+    const { transcript } = req.body;
+    if (!transcript || transcript.trim().length === 0) {
+      return res.status(400).json({ message: "Transcript text is required." });
+    }
+    const extracted = await aiService.extractFromTranscript(transcript);
+    res.json({ success: true, extracted });
+  } catch (error) {
+    console.error("Transcript extraction error:", error);
+    res.status(500).json({ message: error.message || "Failed to extract project details from transcript." });
+  }
+});
+
+// -------------------------------------------------------------
+// GET /api/projects - Scope-based project listing with milestones & metrics
+// -------------------------------------------------------------
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const currentUser = req.user;
     const orgId = currentUser.organizationId;
     let query = { organizationId: orgId };
 
-    const projectScope = currentUser.accessScopes?.projectScope || (currentUser.role === "admin" ? "company" : "project");
+    const projectScope =
+      currentUser.accessScopes?.projectScope || (currentUser.role === "admin" ? "company" : "project");
 
     if (currentUser.role !== "admin" && projectScope !== "company") {
       if (projectScope === "department" && currentUser.department) {
@@ -79,16 +157,12 @@ router.get("/", authMiddleware, async (req, res) => {
       } else if (projectScope === "team" && currentUser.team) {
         query.team = currentUser.team;
       } else {
-        // Project or Own scope: projects user directs, created, or has tasks assigned to user/subordinates
         const subordinateIds = await getEffectiveSubordinateIds(currentUser.id, orgId);
         const relevantUserIds = [currentUser.id, ...subordinateIds];
 
         const userTasks = await Task.find({
           organizationId: orgId,
-          $or: [
-            { assignedTo: { $in: relevantUserIds } },
-            { assignedBy: currentUser.id },
-          ],
+          $or: [{ assignedTo: { $in: relevantUserIds } }, { assignedBy: currentUser.id }],
         }).select("projectId");
 
         const taskProjectIds = userTasks.map((t) => t.projectId).filter(Boolean);
@@ -96,6 +170,8 @@ router.get("/", authMiddleware, async (req, res) => {
         query.$or = [
           { directorId: currentUser.id },
           { createdBy: currentUser.id },
+          { "assignedEmployees.userId": { $in: relevantUserIds } },
+          { "milestones.assignedTo.userId": { $in: relevantUserIds } },
           { _id: { $in: taskProjectIds } },
         ];
       }
@@ -107,7 +183,7 @@ router.get("/", authMiddleware, async (req, res) => {
 
     const enrichedProjects = await Promise.all(
       projects.map(async (p) => {
-        const metrics = await calculateProjectMetrics(p._id, orgId);
+        const metrics = await calculateProjectMetrics(p, orgId);
         const pObj = p.toObject();
         return {
           ...pObj,
@@ -126,55 +202,144 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/projects - Create a new high-level project container
+// -------------------------------------------------------------
+// POST /api/projects - Create project with milestones, domain/dept, dates & employee assignment
+// -------------------------------------------------------------
 router.post("/", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
-    // Check permission
+    const orgId = user.organizationId;
+
     if (user.role !== "admin" && !user.permissions?.canCreateProjects) {
       return res.status(403).json({ message: "Access denied. You do not have permission to create projects." });
     }
 
-    const { name, description, targetOutcome, directorId, deadline, priority, department, team } = req.body;
+    const {
+      name,
+      description,
+      targetOutcome,
+      objectives,
+      expectedDeliverables,
+      directorId,
+      startDate,
+      targetCompletionDate,
+      deadline,
+      priority,
+      department,
+      team,
+      assignedEmployeeIds,
+      milestones,
+      phases,
+      conceptNote,
+    } = req.body;
 
-    if (!name || !deadline) {
-      return res.status(400).json({ message: "Project name and deadline are required." });
+    if (!name || (!deadline && !targetCompletionDate)) {
+      return res.status(400).json({
+        message: "Project name and target completion date / deadline are required.",
+      });
     }
 
-    const orgId = user.organizationId;
+    // Determine Project Director
     let assignedDirectorId = directorId || user.id;
     let directorUser = null;
 
     if (assignedDirectorId) {
       directorUser = await User.findOne({ _id: assignedDirectorId, organizationId: orgId });
-      if (!directorUser) {
-        return res.status(400).json({ message: "Selected project director not found in this company." });
-      }
+    }
+
+    // Resolve assigned employees
+    let assignedEmployeesList = [];
+    if (Array.isArray(assignedEmployeeIds) && assignedEmployeeIds.length > 0) {
+      const emps = await User.find({
+        _id: { $in: assignedEmployeeIds },
+        organizationId: orgId,
+      }).select("firstName lastName email role designation team");
+
+      assignedEmployeesList = emps.map((emp) => ({
+        userId: emp._id,
+        name: `${emp.firstName} ${emp.lastName}`.trim(),
+        email: emp.email,
+        role: emp.role || "employee",
+        designation: emp.designation || "",
+        team: emp.team || "",
+        assignedAt: new Date(),
+      }));
+    }
+
+    // Process initial milestones if provided (e.g. from Concept Note AI)
+    let processedMilestones = [];
+    if (Array.isArray(milestones)) {
+      processedMilestones = milestones.map((m, idx) => ({
+        title: m.title ? m.title.trim() : `Milestone ${idx + 1}`,
+        description: m.description ? m.description.trim() : "",
+        deadline: m.deadline || m.suggestedDeadline || targetCompletionDate || deadline || "",
+        dueDate: m.dueDate || m.deadline || m.suggestedDeadline || "",
+        status: m.status || "not-started",
+        progress: m.progress || 0,
+        completed: Boolean(m.completed),
+        phase: m.phase || "",
+        order: idx,
+      }));
     }
 
     const project = await Project.create({
       name: name.trim(),
       description: description ? description.trim() : "",
       targetOutcome: targetOutcome ? targetOutcome.trim() : "",
+      objectives: Array.isArray(objectives) ? objectives : objectives ? [objectives] : [],
+      expectedDeliverables: Array.isArray(expectedDeliverables)
+        ? expectedDeliverables
+        : expectedDeliverables
+        ? [expectedDeliverables]
+        : [],
       organizationId: orgId,
-      department: department ? department.trim() : (directorUser?.department || user.department || "General"),
-      team: team ? team.trim() : (user.team || ""),
+      department: department ? department.trim() : directorUser?.department || user.department || "General",
+      team: team ? team.trim() : user.team || "",
       directorId: directorUser ? directorUser._id : user.id,
-      directorName: directorUser ? `${directorUser.firstName} ${directorUser.lastName}` : "Unassigned",
+      directorName: directorUser ? `${directorUser.firstName} ${directorUser.lastName}`.trim() : "Unassigned",
       createdBy: user.id,
-      deadline,
+      startDate: startDate || "",
+      targetCompletionDate: targetCompletionDate || deadline || "",
+      deadline: targetCompletionDate || deadline || "",
       priority: priority || "medium",
       status: "not-started",
+      assignedEmployees: assignedEmployeesList,
+      milestones: processedMilestones,
+      phases: Array.isArray(phases) ? phases : [],
+      conceptNote: conceptNote || null,
     });
+
+    // Notify assigned employees
+    if (assignedEmployeesList.length > 0) {
+      for (const emp of assignedEmployeesList) {
+        if (emp.userId.toString() !== user.id.toString()) {
+          await Notification.create({
+            userId: emp.userId,
+            organizationId: orgId,
+            type: "project_assigned",
+            title: `Assigned to Project: ${project.name}`,
+            message: `${user.firstName || "Admin"} assigned you to project "${project.name}". Target completion: ${
+              project.targetCompletionDate || project.deadline || "TBD"
+            }.`,
+            link: `/tasks?projectId=${project._id}`,
+          });
+        }
+      }
+    }
 
     const populatedProject = await Project.findById(project._id).populate(
       "directorId",
       "firstName lastName email designation department"
     );
 
+    const metrics = await calculateProjectMetrics(populatedProject, orgId);
+
     res.status(201).json({
-      message: "Project container created successfully",
-      project: populatedProject,
+      message: "Project created successfully with milestones",
+      project: {
+        ...populatedProject.toObject(),
+        metrics,
+      },
     });
   } catch (error) {
     console.error("Create project error:", error);
@@ -182,13 +347,16 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/projects/:id - Inspect detailed project overview and subordinate task tree
+// -------------------------------------------------------------
+// GET /api/projects/:id - Inspect detailed project overview and milestones
+// -------------------------------------------------------------
 router.get("/:id", authMiddleware, async (req, res) => {
   try {
     const orgId = req.user.organizationId;
     const project = await Project.findOne({ _id: req.params.id, organizationId: orgId })
       .populate("directorId", "firstName lastName email designation department")
-      .populate("createdBy", "firstName lastName email");
+      .populate("createdBy", "firstName lastName email")
+      .populate("assignedEmployees.userId", "firstName lastName email designation role team");
 
     if (!project) {
       return res.status(404).json({ message: "Project not found in your organization." });
@@ -197,10 +365,9 @@ router.get("/:id", authMiddleware, async (req, res) => {
     const tasks = await Task.find({ projectId: project._id, organizationId: orgId })
       .populate("assignedTo", "firstName lastName email role designation")
       .populate("assignedBy", "firstName lastName role")
-      .populate("parentTaskId", "title")
       .sort({ createdAt: 1 });
 
-    const metrics = await calculateProjectMetrics(project._id, orgId);
+    const metrics = await calculateProjectMetrics(project, orgId);
 
     res.json({
       project,
@@ -212,7 +379,9 @@ router.get("/:id", authMiddleware, async (req, res) => {
   }
 });
 
-// PUT /api/projects/:id - Update project parameters
+// -------------------------------------------------------------
+// PUT /api/projects/:id - Update project parameters (dates, department, details)
+// -------------------------------------------------------------
 router.put("/:id", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
@@ -223,7 +392,6 @@ router.put("/:id", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "Project not found in your organization." });
     }
 
-    // Authorization check: Admin, Project Creator, Project Director, or has canEditProjects
     const isDirector = project.directorId && project.directorId.toString() === user.id.toString();
     const isCreator = project.createdBy && project.createdBy.toString() === user.id.toString();
     const hasPerm = user.role === "admin" || user.permissions?.canEditProjects || isDirector || isCreator;
@@ -232,12 +400,36 @@ router.put("/:id", authMiddleware, async (req, res) => {
       return res.status(403).json({ message: "Access denied. You do not have permission to edit this project." });
     }
 
-    const { name, description, targetOutcome, directorId, deadline, priority, status, department, team } = req.body;
+    const {
+      name,
+      description,
+      targetOutcome,
+      objectives,
+      expectedDeliverables,
+      directorId,
+      startDate,
+      targetCompletionDate,
+      deadline,
+      priority,
+      status,
+      department,
+      team,
+    } = req.body;
 
     if (name) project.name = name.trim();
     if (description !== undefined) project.description = description.trim();
     if (targetOutcome !== undefined) project.targetOutcome = targetOutcome.trim();
-    if (deadline) project.deadline = deadline;
+    if (objectives !== undefined) project.objectives = Array.isArray(objectives) ? objectives : [objectives];
+    if (expectedDeliverables !== undefined)
+      project.expectedDeliverables = Array.isArray(expectedDeliverables) ? expectedDeliverables : [expectedDeliverables];
+    if (startDate !== undefined) project.startDate = startDate;
+    if (targetCompletionDate !== undefined) {
+      project.targetCompletionDate = targetCompletionDate;
+      project.deadline = targetCompletionDate;
+    } else if (deadline) {
+      project.deadline = deadline;
+      if (!project.targetCompletionDate) project.targetCompletionDate = deadline;
+    }
     if (priority) project.priority = priority;
     if (status) project.status = status;
     if (department) project.department = department.trim();
@@ -247,7 +439,7 @@ router.put("/:id", authMiddleware, async (req, res) => {
       const directorUser = await User.findOne({ _id: directorId, organizationId: orgId });
       if (directorUser) {
         project.directorId = directorUser._id;
-        project.directorName = `${directorUser.firstName} ${directorUser.lastName}`;
+        project.directorName = `${directorUser.firstName} ${directorUser.lastName}`.trim();
       }
     }
 
@@ -258,13 +450,379 @@ router.put("/:id", authMiddleware, async (req, res) => {
       "firstName lastName email designation department"
     );
 
-    res.json({ message: "Project updated successfully", project: populated });
+    const metrics = await calculateProjectMetrics(populated, orgId);
+
+    res.json({
+      message: "Project updated successfully",
+      project: {
+        ...populated.toObject(),
+        metrics,
+      },
+    });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 });
 
+// -------------------------------------------------------------
+// POST /api/projects/:id/assign - Searchable multi-employee assignment with notifications
+// -------------------------------------------------------------
+router.post("/:id/assign", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    const orgId = user.organizationId;
+    const { employeeIds } = req.body;
+
+    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!project) {
+      return res.status(404).json({ message: "Project not found." });
+    }
+
+    if (!Array.isArray(employeeIds)) {
+      return res.status(400).json({ message: "employeeIds array is required." });
+    }
+
+    const employees = await User.find({
+      _id: { $in: employeeIds },
+      organizationId: orgId,
+    }).select("firstName lastName email role designation team");
+
+    project.assignedEmployees = employees.map((emp) => ({
+      userId: emp._id,
+      name: `${emp.firstName} ${emp.lastName}`.trim(),
+      email: emp.email,
+      role: emp.role || "employee",
+      designation: emp.designation || "",
+      team: emp.team || "",
+      assignedAt: new Date(),
+    }));
+
+    await project.save();
+
+    // Send notifications to all assigned employees
+    for (const emp of employees) {
+      if (emp._id.toString() !== user.id.toString()) {
+        await Notification.create({
+          userId: emp._id,
+          organizationId: orgId,
+          type: "project_assigned",
+          title: `Project Assignment: ${project.name}`,
+          message: `${user.firstName || "Admin"} assigned you to project "${project.name}". Target completion: ${
+            project.targetCompletionDate || project.deadline || "TBD"
+          }.`,
+          link: `/tasks?projectId=${project._id}`,
+        });
+      }
+    }
+
+    res.json({
+      message: `Assigned ${employees.length} employee(s) to project successfully.`,
+      assignedEmployees: project.assignedEmployees,
+    });
+  } catch (error) {
+    console.error("Assign project employees error:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// -------------------------------------------------------------
+// POST /api/projects/:id/milestones - Add milestone underneath project
+// -------------------------------------------------------------
+router.post("/:id/milestones", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    const orgId = user.organizationId;
+    const { title, description, deadline, dueDate, status, assignedEmployeeIds, phase } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ message: "Milestone title is required." });
+    }
+
+    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!project) {
+      return res.status(404).json({ message: "Project not found." });
+    }
+
+    let assignedToList = [];
+    if (Array.isArray(assignedEmployeeIds) && assignedEmployeeIds.length > 0) {
+      const emps = await User.find({
+        _id: { $in: assignedEmployeeIds },
+        organizationId: orgId,
+      }).select("firstName lastName email role designation team");
+
+      assignedToList = emps.map((emp) => ({
+        userId: emp._id,
+        name: `${emp.firstName} ${emp.lastName}`.trim(),
+        email: emp.email,
+        role: emp.role || "employee",
+        designation: emp.designation || "",
+        team: emp.team || "",
+      }));
+    }
+
+    const newMilestone = {
+      title: title.trim(),
+      description: description ? description.trim() : "",
+      deadline: deadline || dueDate || project.targetCompletionDate || project.deadline || "",
+      dueDate: dueDate || deadline || "",
+      status: status || "not-started",
+      progress: 0,
+      assignedTo: assignedToList,
+      phase: phase || "",
+      order: project.milestones.length,
+      createdAt: new Date(),
+    };
+
+    project.milestones.push(newMilestone);
+    await project.save();
+
+    // Notify assigned employees
+    for (const emp of assignedToList) {
+      if (emp.userId.toString() !== user.id.toString()) {
+        await Notification.create({
+          userId: emp.userId,
+          organizationId: orgId,
+          type: "milestone_assigned",
+          title: `Milestone Assignment: ${title}`,
+          message: `${user.firstName || "Supervisor"} assigned you milestone "${title}" under project "${project.name}".`,
+          link: `/tasks?projectId=${project._id}`,
+        });
+      }
+    }
+
+    const metrics = await calculateProjectMetrics(project, orgId);
+
+    res.status(201).json({
+      message: "Milestone added underneath project successfully",
+      milestone: project.milestones[project.milestones.length - 1],
+      metrics,
+    });
+  } catch (error) {
+    console.error("Add milestone error:", error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// -------------------------------------------------------------
+// PUT /api/projects/:id/milestones/:milestoneId - Update milestone & completion tracking
+// -------------------------------------------------------------
+router.put("/:id/milestones/:milestoneId", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    const orgId = user.organizationId;
+    const { title, description, deadline, dueDate, status, progress, completed, submissionNotes, phase } = req.body;
+
+    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!project) {
+      return res.status(404).json({ message: "Project not found." });
+    }
+
+    const milestone = project.milestones.id(req.params.milestoneId);
+    if (!milestone) {
+      return res.status(404).json({ message: "Milestone not found." });
+    }
+
+    if (title) milestone.title = title.trim();
+    if (description !== undefined) milestone.description = description.trim();
+    if (deadline !== undefined) milestone.deadline = deadline;
+    if (dueDate !== undefined) milestone.dueDate = dueDate;
+    if (submissionNotes !== undefined) milestone.submissionNotes = submissionNotes.trim();
+    if (phase !== undefined) milestone.phase = phase;
+
+    if (progress !== undefined) {
+      milestone.progress = Math.max(0, Math.min(100, Number(progress)));
+    }
+
+    if (status !== undefined) {
+      milestone.status = status;
+      if (status === "completed") {
+        milestone.completed = true;
+        milestone.progress = 100;
+        if (!milestone.completedAt) milestone.completedAt = new Date();
+        milestone.completedBy = user.id;
+        milestone.completedByName = `${user.firstName} ${user.lastName}`.trim();
+      }
+    }
+
+    if (completed !== undefined) {
+      milestone.completed = Boolean(completed);
+      if (milestone.completed) {
+        milestone.status = "completed";
+        milestone.progress = 100;
+        milestone.completedAt = new Date();
+        milestone.completedBy = user.id;
+        milestone.completedByName = `${user.firstName} ${user.lastName}`.trim();
+      } else {
+        if (milestone.status === "completed") {
+          milestone.status = "in-progress";
+        }
+        milestone.completedAt = null;
+        milestone.completedBy = null;
+        milestone.completedByName = "";
+      }
+    }
+
+    await project.save();
+
+    const metrics = await calculateProjectMetrics(project, orgId);
+
+    res.json({
+      message: "Milestone updated successfully",
+      milestone,
+      metrics,
+    });
+  } catch (error) {
+    console.error("Update milestone error:", error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// -------------------------------------------------------------
+// DELETE /api/projects/:id/milestones/:milestoneId - Remove milestone
+// -------------------------------------------------------------
+router.delete("/:id/milestones/:milestoneId", authMiddleware, async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!project) {
+      return res.status(404).json({ message: "Project not found." });
+    }
+
+    project.milestones.pull({ _id: req.params.milestoneId });
+    await project.save();
+
+    const metrics = await calculateProjectMetrics(project, orgId);
+
+    res.json({ message: "Milestone deleted successfully", metrics });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// -------------------------------------------------------------
+// POST /api/projects/:id/milestones/:milestoneId/assign - Assign employees to specific milestone
+// -------------------------------------------------------------
+router.post("/:id/milestones/:milestoneId/assign", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    const orgId = user.organizationId;
+    const { employeeIds } = req.body;
+
+    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!project) {
+      return res.status(404).json({ message: "Project not found." });
+    }
+
+    const milestone = project.milestones.id(req.params.milestoneId);
+    if (!milestone) {
+      return res.status(404).json({ message: "Milestone not found." });
+    }
+
+    const employees = await User.find({
+      _id: { $in: employeeIds || [] },
+      organizationId: orgId,
+    }).select("firstName lastName email role designation team");
+
+    milestone.assignedTo = employees.map((emp) => ({
+      userId: emp._id,
+      name: `${emp.firstName} ${emp.lastName}`.trim(),
+      email: emp.email,
+      role: emp.role || "employee",
+      designation: emp.designation || "",
+      team: emp.team || "",
+    }));
+
+    await project.save();
+
+    for (const emp of employees) {
+      if (emp._id.toString() !== user.id.toString()) {
+        await Notification.create({
+          userId: emp._id,
+          organizationId: orgId,
+          type: "milestone_assigned",
+          title: `Milestone Assignment: ${milestone.title}`,
+          message: `${user.firstName || "Supervisor"} assigned you milestone "${milestone.title}" under project "${project.name}".`,
+          link: `/tasks?projectId=${project._id}`,
+        });
+      }
+    }
+
+    res.json({
+      message: `Assigned ${employees.length} employee(s) to milestone.`,
+      milestone,
+    });
+  } catch (error) {
+    console.error("Assign milestone employees error:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// -------------------------------------------------------------
+// POST /api/projects/:id/recordings - Save voice recording to project or milestone
+// -------------------------------------------------------------
+router.post("/:id/recordings", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    const orgId = user.organizationId;
+    const { audioUrl, durationSeconds, title, associatedMilestoneId, transcript, language } = req.body;
+
+    if (!audioUrl) {
+      return res.status(400).json({ message: "audioUrl is required." });
+    }
+
+    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!project) {
+      return res.status(404).json({ message: "Project not found." });
+    }
+
+    const recording = {
+      title: title || "Voice Note",
+      audioUrl,
+      durationSeconds: Number(durationSeconds) || 0,
+      recordedBy: user.id,
+      recordedByName: `${user.firstName} ${user.lastName}`.trim(),
+      associatedMilestoneId: associatedMilestoneId || null,
+      transcript: transcript || "",
+      language: language || "en",
+      createdAt: new Date(),
+    };
+
+    project.recordings.push(recording);
+    await project.save();
+
+    res.status(201).json({
+      message: "Voice recording attached successfully",
+      recording: project.recordings[project.recordings.length - 1],
+    });
+  } catch (error) {
+    console.error("Save recording error:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// -------------------------------------------------------------
+// DELETE /api/projects/:id/recordings/:recordingId - Delete recording
+// -------------------------------------------------------------
+router.delete("/:id/recordings/:recordingId", authMiddleware, async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    if (!project) {
+      return res.status(404).json({ message: "Project not found." });
+    }
+
+    project.recordings.pull({ _id: req.params.recordingId });
+    await project.save();
+
+    res.json({ message: "Recording deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// -------------------------------------------------------------
 // DELETE /api/projects/:id - Delete project and related tasks
+// -------------------------------------------------------------
 router.delete("/:id", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
