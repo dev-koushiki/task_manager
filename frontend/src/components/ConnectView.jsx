@@ -74,7 +74,38 @@ export const ConnectView = ({
   const pendingCandidatesRef = useRef(new Map()); // userId -> Array of RTCIceCandidateInit
   const pollingIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
+  const lastMuteAllTimestampRef = useRef(0);
   const [peersTick, setPeersTick] = useState(0);
+
+  // Ensure local video element is wired when room view is active
+  useEffect(() => {
+    if (activeTab === 'room') {
+      if (localVideoRef.current && localStreamRef.current && localVideoRef.current.srcObject !== localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+        localVideoRef.current.play?.().catch(() => {});
+      }
+    }
+  }, [activeTab, isCameraOn]);
+
+  // Global user interaction listener to bypass browser audio autoplay restrictions
+  useEffect(() => {
+    if (activeTab !== 'room') return;
+    const unlockAllMedia = () => {
+      document.querySelectorAll('audio, video').forEach((el) => {
+        if (el.paused && el.srcObject && !el.muted) {
+          el.play().catch(() => {});
+        }
+      });
+    };
+    window.addEventListener('click', unlockAllMedia, { passive: true });
+    window.addEventListener('touchstart', unlockAllMedia, { passive: true });
+    window.addEventListener('keydown', unlockAllMedia, { passive: true });
+    return () => {
+      window.removeEventListener('click', unlockAllMedia);
+      window.removeEventListener('touchstart', unlockAllMedia);
+      window.removeEventListener('keydown', unlockAllMedia);
+    };
+  }, [activeTab]);
 
   // Initialize or check if loaded with an initialRoomCode
   useEffect(() => {
@@ -198,9 +229,23 @@ export const ConnectView = ({
       localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
+        localVideoRef.current.play?.().catch(() => {});
       }
       setIsCameraOn(true);
       setIsMicOn(true);
+
+      // Attach tracks to any established peer connections
+      peerConnectionsRef.current.forEach((pc) => {
+        stream.getTracks().forEach((track) => {
+          const sender = pc.getSenders().find((s) => s.track && s.track.kind === track.kind);
+          if (sender) {
+            sender.replaceTrack(track).catch(() => {});
+          } else {
+            try { pc.addTrack(track, stream); } catch (_) {}
+          }
+        });
+      });
+
       return stream;
     } catch (err) {
       console.warn('Camera/Microphone permission denied or unavailable:', err.message);
@@ -210,6 +255,16 @@ export const ConnectView = ({
         localStreamRef.current = audioStream;
         setIsCameraOn(false);
         setIsMicOn(true);
+        peerConnectionsRef.current.forEach((pc) => {
+          audioStream.getAudioTracks().forEach((track) => {
+            const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'audio');
+            if (sender) {
+              sender.replaceTrack(track).catch(() => {});
+            } else {
+              try { pc.addTrack(track, audioStream); } catch (_) {}
+            }
+          });
+        });
         return audioStream;
       } catch (e) {
         setIsCameraOn(false);
@@ -289,6 +344,13 @@ export const ConnectView = ({
           api.getConnectChat(code).catch(() => []),
         ]);
 
+        if (signalData.meetingStatus === 'completed') {
+          if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+          alert('This meeting has been ended by the host.');
+          cleanupCallSession();
+          return;
+        }
+
         if (signalData.activePeers && Array.isArray(signalData.activePeers)) {
           setActivePeers(signalData.activePeers);
 
@@ -299,8 +361,9 @@ export const ConnectView = ({
 
             let pc = peerConnectionsRef.current.get(peerId);
             const isInitiator = myId > peerId;
+            const needsConnection = !pc || pc.connectionState === 'failed' || pc.connectionState === 'closed';
 
-            if (!pc && isInitiator) {
+            if (needsConnection && isInitiator) {
               try {
                 pc = createPeerConnection(peerId, code, true);
                 const offer = await pc.createOffer({
@@ -330,7 +393,14 @@ export const ConnectView = ({
 
         if (signalData.hostControls) {
           setHostControls(signalData.hostControls);
-          if (signalData.hostControls.muteAll && !isHost && isMicOn) {
+          const muteTs = signalData.hostControls.muteAllTimestamp || 0;
+          if (
+            signalData.hostControls.muteAll &&
+            muteTs &&
+            muteTs !== lastMuteAllTimestampRef.current &&
+            !isHost
+          ) {
+            lastMuteAllTimestampRef.current = muteTs;
             if (localStreamRef.current) {
               localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = false));
             }
@@ -397,13 +467,15 @@ export const ConnectView = ({
           }
         } else if (signalType === 'candidate' || signal?.candidate) {
           const candidateData = signal.candidate || signal;
-          if (pc && pc.remoteDescription && pc.remoteDescription.type) {
-            await pc.addIceCandidate(new RTCIceCandidate(candidateData)).catch(() => {});
-          } else {
-            if (!pendingCandidatesRef.current.has(sId)) {
-              pendingCandidatesRef.current.set(sId, []);
+          if (candidateData && candidateData.candidate) {
+            if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+              await pc.addIceCandidate(new RTCIceCandidate(candidateData)).catch(() => {});
+            } else {
+              if (!pendingCandidatesRef.current.has(sId)) {
+                pendingCandidatesRef.current.set(sId, []);
+              }
+              pendingCandidatesRef.current.get(sId).push(candidateData);
             }
-            pendingCandidatesRef.current.get(sId).push(candidateData);
           }
         }
       } catch (err) {
@@ -416,6 +488,9 @@ export const ConnectView = ({
     let pc = peerConnectionsRef.current.get(remoteUserId);
     if (pc && pc.connectionState !== 'closed' && pc.connectionState !== 'failed') {
       return pc;
+    }
+    if (pc) {
+      try { pc.close(); } catch (_) {}
     }
 
     const configuration = {
@@ -441,7 +516,7 @@ export const ConnectView = ({
 
     // Handle ICE candidates found locally
     pc.onicecandidate = (event) => {
-      if (event.candidate) {
+      if (event.candidate && event.candidate.candidate) {
         api.sendConnectSignal(code, remoteUserId, { candidate: event.candidate }, 'candidate').catch(() => {});
       }
     };
@@ -450,10 +525,17 @@ export const ConnectView = ({
     pc.ontrack = (event) => {
       let stream = remoteStreamsRef.current.get(remoteUserId);
       if (!stream) {
-        stream = event.streams[0] || new MediaStream();
+        stream = event.streams?.[0] || new MediaStream();
         remoteStreamsRef.current.set(remoteUserId, stream);
       }
-      if (!stream.getTracks().some((t) => t.id === event.track.id)) {
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach((track) => {
+          if (!stream.getTracks().some((t) => t.id === track.id)) {
+            stream.addTrack(track);
+          }
+        });
+      }
+      if (event.track && !stream.getTracks().some((t) => t.id === event.track.id)) {
         stream.addTrack(event.track);
       }
       setPeersTick((t) => t + 1);
@@ -493,30 +575,34 @@ export const ConnectView = ({
     }
   };
 
+  const stopScreenSharing = () => {
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((t) => t.stop());
+      screenStreamRef.current = null;
+    }
+    setIsScreenSharing(false);
+
+    // Revert video track in local video element
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+      localVideoRef.current.play?.().catch(() => {});
+    }
+
+    // Revert video track across all active RTCPeerConnections
+    const camTrack = localStreamRef.current ? localStreamRef.current.getVideoTracks()[0] : null;
+    peerConnectionsRef.current.forEach((pc) => {
+      const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+      if (sender && camTrack) {
+        sender.replaceTrack(camTrack).catch(() => {});
+      }
+    });
+
+    api.sendConnectPeerState(currentRoomCode, { screenSharing: false }).catch(() => {});
+  };
+
   const toggleScreenShare = async () => {
     if (isScreenSharing) {
-      // Stop screen sharing
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach((t) => t.stop());
-        screenStreamRef.current = null;
-      }
-      setIsScreenSharing(false);
-
-      // Revert video track in local video element
-      if (localVideoRef.current && localStreamRef.current) {
-        localVideoRef.current.srcObject = localStreamRef.current;
-      }
-
-      // Revert video track across all active RTCPeerConnections
-      const camTrack = localStreamRef.current ? localStreamRef.current.getVideoTracks()[0] : null;
-      peerConnectionsRef.current.forEach((pc) => {
-        const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-        if (sender && camTrack) {
-          sender.replaceTrack(camTrack).catch(() => {});
-        }
-      });
-
-      api.sendConnectPeerState(currentRoomCode, { screenSharing: false }).catch(() => {});
+      stopScreenSharing();
     } else {
       try {
         const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
@@ -525,6 +611,7 @@ export const ConnectView = ({
 
         if (screenShareVideoRef.current) {
           screenShareVideoRef.current.srcObject = displayStream;
+          screenShareVideoRef.current.play?.().catch(() => {});
         }
 
         const screenTrack = displayStream.getVideoTracks()[0];
@@ -542,22 +629,7 @@ export const ConnectView = ({
         api.sendConnectPeerState(currentRoomCode, { screenSharing: true }).catch(() => {});
 
         screenTrack.onended = () => {
-          if (screenStreamRef.current) {
-            screenStreamRef.current.getTracks().forEach((t) => t.stop());
-            screenStreamRef.current = null;
-          }
-          setIsScreenSharing(false);
-          const camTrack = localStreamRef.current ? localStreamRef.current.getVideoTracks()[0] : null;
-          if (localVideoRef.current && localStreamRef.current) {
-            localVideoRef.current.srcObject = localStreamRef.current;
-          }
-          peerConnectionsRef.current.forEach((pc) => {
-            const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-            if (sender && camTrack) {
-              sender.replaceTrack(camTrack).catch(() => {});
-            }
-          });
-          api.sendConnectPeerState(currentRoomCode, { screenSharing: false }).catch(() => {});
+          stopScreenSharing();
         };
       } catch (err) {
         console.warn('Screen share cancelled or not allowed:', err.message);
@@ -670,6 +742,11 @@ export const ConnectView = ({
     });
   };
 
+  const remotePresenter = activePeers.find(
+    (p) => String(p.userId) !== myId && p.screenSharing
+  );
+  const isAnyonePresenting = isScreenSharing || Boolean(remotePresenter);
+
   return (
     <div className="connect-module-container animate-fade-in">
       {/* ----------------------------------------------------
@@ -709,13 +786,43 @@ export const ConnectView = ({
 
           {/* Main Stage & Video Tiles */}
           <div className="call-stage-area">
-            <div className={`video-gallery-grid ${isScreenSharing ? 'presentation-mode' : ''}`}>
-              {/* Screen Sharing Presentation Tile if Active */}
-              {isScreenSharing && (
+            <div className={`video-gallery-grid ${isAnyonePresenting ? 'presentation-mode' : ''}`}>
+              {/* Screen Sharing Presentation Tile if Active (Local OR Remote) */}
+              {isAnyonePresenting && (
                 <div className="presentation-screen-tile animate-scale-up">
-                  <video ref={screenShareVideoRef} autoPlay playsInline muted className="screen-share-video" />
+                  {isScreenSharing ? (
+                    <video
+                      ref={(el) => {
+                        screenShareVideoRef.current = el;
+                        if (el && screenStreamRef.current && el.srcObject !== screenStreamRef.current) {
+                          el.srcObject = screenStreamRef.current;
+                          el.play?.().catch(() => {});
+                        }
+                      }}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="screen-share-video"
+                    />
+                  ) : (
+                    <video
+                      ref={(el) => {
+                        const rStream = remoteStreamsRef.current.get(String(remotePresenter?.userId));
+                        if (el && rStream && el.srcObject !== rStream) {
+                          el.srcObject = rStream;
+                          el.play?.().catch(() => {});
+                        }
+                      }}
+                      autoPlay
+                      playsInline
+                      className="screen-share-video"
+                    />
+                  )}
                   <div className="tile-user-tag">
-                    <ScreenShareIcon size={14} /> You are presenting your screen
+                    <ScreenShareIcon size={14} />{' '}
+                    {isScreenSharing
+                      ? 'You are presenting your screen'
+                      : `${remotePresenter?.name || 'Participant'} is presenting`}
                   </div>
                 </div>
               )}
@@ -723,7 +830,13 @@ export const ConnectView = ({
               {/* Local Participant Tile */}
               <div className={`video-tile ${isMicOn ? 'mic-active' : ''} ${isHandRaised ? 'hand-raised-glow' : ''}`}>
                 <video
-                  ref={localVideoRef}
+                  ref={(el) => {
+                    localVideoRef.current = el;
+                    if (el && localStreamRef.current && el.srcObject !== localStreamRef.current) {
+                      el.srcObject = localStreamRef.current;
+                      el.play?.().catch(() => {});
+                    }
+                  }}
                   autoPlay
                   playsInline
                   muted

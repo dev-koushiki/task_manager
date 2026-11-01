@@ -2,6 +2,7 @@ const express = require("express");
 const crypto = require("crypto");
 const router = express.Router();
 const Meeting = require("../models/Meeting");
+const MeetingSignal = require("../models/MeetingSignal");
 const Task = require("../models/Task");
 const Project = require("../models/Project");
 const Notification = require("../models/Notification");
@@ -477,17 +478,17 @@ router.get("/rooms/:roomCode", authMiddleware, async (req, res) => {
     // Host or lock check
     const isHost = meeting.organizer.toString() === req.user.id.toString() || req.user.role === "admin";
     if (meeting.hostControls?.lockMeeting && !isHost) {
-      const isRegisteredParticipant = meeting.participants.some(
-        (p) => p.userId && p.userId.toString() === req.user.id.toString()
-      );
+      const isRegisteredParticipant =
+        meeting.participants.some((p) => p.userId && p.userId.toString() === req.user.id.toString()) ||
+        meeting.attendance.some((a) => a.userId && a.userId.toString() === req.user.id.toString());
       if (!isRegisteredParticipant) {
         return res.status(403).json({ message: "This meeting is locked by the host." });
       }
     }
 
-    // Get active peers in room
-    const peersMap = roomPeers.get(roomCode) || new Map();
-    const activePeers = Array.from(peersMap.values());
+    // Get active peers in room from DB / memory
+    const fifteenSecsAgo = new Date(Date.now() - 15000);
+    const activePeers = (meeting.activePeers || []).filter((p) => p.lastPing && new Date(p.lastPing) >= fifteenSecsAgo);
 
     res.json({
       meeting,
@@ -516,7 +517,17 @@ router.post("/rooms/:roomCode/join", authMiddleware, async (req, res) => {
     }
 
     const userName = `${req.user.firstName} ${req.user.lastName}`.trim();
-    const userId = req.user.id;
+    const userId = req.user.id.toString();
+    const isHost = meeting.organizer.toString() === userId || req.user.role === "admin";
+
+    if (meeting.hostControls?.lockMeeting && !isHost) {
+      const isRegisteredParticipant =
+        meeting.participants.some((p) => p.userId && p.userId.toString() === userId) ||
+        meeting.attendance.some((a) => a.userId && a.userId.toString() === userId);
+      if (!isRegisteredParticipant) {
+        return res.status(403).json({ message: "This meeting is locked by the host." });
+      }
+    }
 
     // Record or update attendance in meeting document
     meeting.attendance.push({
@@ -527,33 +538,43 @@ router.post("/rooms/:roomCode/join", authMiddleware, async (req, res) => {
       leftAt: null,
       durationSeconds: 0,
     });
-    await meeting.save();
 
-    // Register active peer in memory
-    if (!roomPeers.has(roomCode)) {
-      roomPeers.set(roomCode, new Map());
-    }
-    const peersMap = roomPeers.get(roomCode);
-    peersMap.set(userId, {
+    // Update active peers in MongoDB
+    meeting.activePeers = meeting.activePeers || [];
+    const existingIndex = meeting.activePeers.findIndex((p) => p.userId === userId);
+    const now = new Date();
+    const peerData = {
       userId,
       name: userName,
       email: req.user.email,
       cameraOn: true,
       micOn: true,
       screenSharing: false,
-      joinedAt: new Date(),
-      lastPing: Date.now(),
-      isHost: meeting.organizer.toString() === userId || req.user.role === "admin",
-    });
+      handRaised: false,
+      joinedAt: now,
+      lastPing: now,
+      isHost,
+    };
+    if (existingIndex >= 0) {
+      meeting.activePeers[existingIndex] = peerData;
+    } else {
+      meeting.activePeers.push(peerData);
+    }
+    await meeting.save();
 
-    const activePeers = Array.from(peersMap.values());
+    // Register active peer in memory cache
+    if (!roomPeers.has(roomCode)) {
+      roomPeers.set(roomCode, new Map());
+    }
+    const peersMap = roomPeers.get(roomCode);
+    peersMap.set(userId, { ...peerData, lastPing: Date.now() });
 
     res.json({
       message: "Joined meeting room successfully.",
       meeting,
       roomCode,
-      activePeers,
-      isHost: meeting.organizer.toString() === userId || req.user.role === "admin",
+      activePeers: meeting.activePeers,
+      isHost,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -564,7 +585,7 @@ router.post("/rooms/:roomCode/join", authMiddleware, async (req, res) => {
 router.post("/rooms/:roomCode/leave", authMiddleware, async (req, res) => {
   try {
     const { roomCode } = req.params;
-    const userId = req.user.id;
+    const userId = req.user.id.toString();
 
     const meeting = await Meeting.findOne({
       roomCode,
@@ -575,13 +596,14 @@ router.post("/rooms/:roomCode/leave", authMiddleware, async (req, res) => {
       // Find latest unclosed attendance record for this user
       for (let i = meeting.attendance.length - 1; i >= 0; i--) {
         const att = meeting.attendance[i];
-        if (att.userId && att.userId.toString() === userId.toString() && !att.leftAt) {
+        if (att.userId && att.userId.toString() === userId && !att.leftAt) {
           att.leftAt = new Date();
           const duration = Math.max(0, Math.round((att.leftAt.getTime() - att.joinedAt.getTime()) / 1000));
           att.durationSeconds = duration;
           break;
         }
       }
+      meeting.activePeers = (meeting.activePeers || []).filter((p) => p.userId !== userId);
       await meeting.save();
     }
 
@@ -620,6 +642,7 @@ router.post("/rooms/:roomCode/end", authMiddleware, async (req, res) => {
 
     const now = new Date();
     meeting.status = "completed";
+    meeting.activePeers = [];
     meeting.attendance.forEach((att) => {
       if (!att.leftAt) {
         att.leftAt = now;
@@ -628,7 +651,8 @@ router.post("/rooms/:roomCode/end", authMiddleware, async (req, res) => {
     });
     await meeting.save();
 
-    // Clear active peers
+    // Clear active peers & persistent signals
+    await MeetingSignal.deleteMany({ roomCode }).catch(() => {});
     roomPeers.delete(roomCode);
     roomSignals.delete(roomCode);
 
@@ -644,27 +668,38 @@ router.post("/rooms/:roomCode/signal", authMiddleware, async (req, res) => {
     const { roomCode } = req.params;
     const { targetUserId, type } = req.body;
     const signal = req.body.signal || (req.body.sdp || req.body.candidate ? req.body : null);
-    const senderId = req.user.id;
+    const senderId = req.user.id.toString();
     const senderName = `${req.user.firstName} ${req.user.lastName}`.trim();
 
     if (!targetUserId || !signal) {
       return res.status(400).json({ message: "targetUserId and signal payload are required." });
     }
 
+    const signalType = type || signal.type || (signal.candidate ? "candidate" : "signal");
+
+    // Persist signal to MongoDB for cross-serverless / multi-instance delivery
+    await MeetingSignal.create({
+      roomCode,
+      targetUserId: targetUserId.toString(),
+      senderId,
+      senderName,
+      type: signalType,
+      signal,
+    }).catch((err) => console.warn("MeetingSignal DB insert error:", err.message));
+
+    // Also store in memory
     if (!roomSignals.has(roomCode)) {
       roomSignals.set(roomCode, new Map());
     }
-
     const targetMap = roomSignals.get(roomCode);
     const key = targetUserId.toString();
     if (!targetMap.has(key)) {
       targetMap.set(key, []);
     }
-
     targetMap.get(key).push({
       senderId,
       senderName,
-      type: type || signal.type,
+      type: signalType,
       signal,
       timestamp: Date.now(),
     });
@@ -682,42 +717,96 @@ router.get("/rooms/:roomCode/signals", authMiddleware, async (req, res) => {
     const userId = req.user.id.toString();
 
     let queued = [];
+
+    // 1. Fetch DB signals
+    try {
+      const dbSignals = await MeetingSignal.find({
+        roomCode,
+        targetUserId: userId,
+      }).sort({ createdAt: 1 });
+
+      if (dbSignals && dbSignals.length > 0) {
+        queued = dbSignals.map((s) => ({
+          senderId: s.senderId,
+          senderName: s.senderName,
+          type: s.type,
+          signal: s.signal,
+          timestamp: s.createdAt ? new Date(s.createdAt).getTime() : Date.now(),
+        }));
+        const ids = dbSignals.map((s) => s._id);
+        await MeetingSignal.deleteMany({ _id: { $in: ids } });
+      }
+    } catch (e) {
+      console.warn("DB signal retrieval error:", e.message);
+    }
+
+    // 2. Fetch in-memory signals and merge
     if (roomSignals.has(roomCode)) {
       const targetMap = roomSignals.get(roomCode);
       if (targetMap.has(userId)) {
-        queued = targetMap.get(userId);
-        targetMap.set(userId, []); // Clear retrieved signals
+        const memSignals = targetMap.get(userId) || [];
+        memSignals.forEach((ms) => {
+          if (!queued.some((qs) => qs.senderId === ms.senderId && qs.type === ms.type && JSON.stringify(qs.signal) === JSON.stringify(ms.signal))) {
+            queued.push(ms);
+          }
+        });
+        targetMap.set(userId, []);
       }
     }
 
-    // Update active ping & prune stale peers
-    const now = Date.now();
-    if (roomPeers.has(roomCode)) {
-      const peersMap = roomPeers.get(roomCode);
-      const peer = peersMap.get(userId);
-      if (peer) {
-        peer.lastPing = now;
-      }
-      for (const [pId, pData] of peersMap.entries()) {
-        if (now - (pData.lastPing || 0) > 15000) {
-          peersMap.delete(pId);
-        }
-      }
-    }
-
-    const activePeers = roomPeers.has(roomCode)
-      ? Array.from(roomPeers.get(roomCode).values())
-      : [];
+    // 3. Update active ping & prune stale peers
+    const now = new Date();
+    const fifteenSecsAgo = new Date(now.getTime() - 15000);
 
     const meeting = await Meeting.findOne({
       roomCode,
       organizationId: req.user.organizationId,
-    }).select("hostControls");
+    }).select("activePeers hostControls status organizer");
+
+    if (!meeting) {
+      return res.status(404).json({ message: "Meeting room not found." });
+    }
+
+    let hasChanges = false;
+    meeting.activePeers = meeting.activePeers || [];
+    let myPeer = meeting.activePeers.find((p) => p.userId === userId);
+    if (myPeer) {
+      myPeer.lastPing = now;
+      hasChanges = true;
+    } else {
+      const isHost = meeting.organizer.toString() === userId || req.user.role === "admin";
+      meeting.activePeers.push({
+        userId,
+        name: `${req.user.firstName} ${req.user.lastName}`.trim(),
+        email: req.user.email,
+        cameraOn: true,
+        micOn: true,
+        screenSharing: false,
+        handRaised: false,
+        joinedAt: now,
+        lastPing: now,
+        isHost,
+      });
+      hasChanges = true;
+    }
+
+    const beforeCount = meeting.activePeers.length;
+    meeting.activePeers = meeting.activePeers.filter(
+      (p) => p.userId === userId || (p.lastPing && new Date(p.lastPing) >= fifteenSecsAgo)
+    );
+    if (meeting.activePeers.length !== beforeCount) {
+      hasChanges = true;
+    }
+
+    if (hasChanges) {
+      await meeting.save().catch(() => {});
+    }
 
     res.json({
       signals: queued,
-      activePeers,
-      hostControls: meeting?.hostControls || { muteAll: false, lockMeeting: false },
+      activePeers: meeting.activePeers,
+      hostControls: meeting.hostControls || { muteAll: false, lockMeeting: false },
+      meetingStatus: meeting.status || "scheduled",
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -730,6 +819,23 @@ router.post("/rooms/:roomCode/peer-state", authMiddleware, async (req, res) => {
     const { roomCode } = req.params;
     const userId = req.user.id.toString();
     const { cameraOn, micOn, screenSharing, handRaised } = req.body;
+
+    const meeting = await Meeting.findOne({
+      roomCode,
+      organizationId: req.user.organizationId,
+    });
+
+    if (meeting && meeting.activePeers) {
+      const peer = meeting.activePeers.find((p) => p.userId === userId);
+      if (peer) {
+        if (cameraOn !== undefined) peer.cameraOn = Boolean(cameraOn);
+        if (micOn !== undefined) peer.micOn = Boolean(micOn);
+        if (screenSharing !== undefined) peer.screenSharing = Boolean(screenSharing);
+        if (handRaised !== undefined) peer.handRaised = Boolean(handRaised);
+        peer.lastPing = new Date();
+        await meeting.save();
+      }
+    }
 
     if (roomPeers.has(roomCode)) {
       const peersMap = roomPeers.get(roomCode);
@@ -826,6 +932,7 @@ router.post("/rooms/:roomCode/host-action", authMiddleware, async (req, res) => 
     meeting.hostControls = meeting.hostControls || {};
     if (action === "muteAll" || action === "mute_all") {
       meeting.hostControls.muteAll = value !== undefined ? Boolean(value) : true;
+      meeting.hostControls.muteAllTimestamp = Date.now();
     } else if (action === "lockMeeting" || action === "lock" || action === "lock_meeting") {
       meeting.hostControls.lockMeeting = value !== undefined ? Boolean(value) : true;
     }

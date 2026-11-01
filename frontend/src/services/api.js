@@ -2372,7 +2372,7 @@ export const api = {
       });
     } catch (err) {
       if (!isOfflineError(err)) throw err;
-      return { signals: [], activePeers: [] };
+      return { signals: [], activePeers: [], meetingStatus: 'scheduled' };
     }
   },
 

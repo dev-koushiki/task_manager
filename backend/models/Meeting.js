@@ -114,6 +114,22 @@ const attendanceSchema = new mongoose.Schema(
   { _id: true }
 );
 
+const activePeerSchema = new mongoose.Schema(
+  {
+    userId: { type: String, required: true },
+    name: { type: String, required: true },
+    email: { type: String, default: "" },
+    isHost: { type: Boolean, default: false },
+    cameraOn: { type: Boolean, default: true },
+    micOn: { type: Boolean, default: true },
+    screenSharing: { type: Boolean, default: false },
+    handRaised: { type: Boolean, default: false },
+    joinedAt: { type: Date, default: Date.now },
+    lastPing: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
 const chatMessageSchema = new mongoose.Schema(
   {
     id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
@@ -202,8 +218,13 @@ const meetingSchema = new mongoose.Schema(
       type: [chatMessageSchema],
       default: [],
     },
+    activePeers: {
+      type: [activePeerSchema],
+      default: [],
+    },
     hostControls: {
       muteAll: { type: Boolean, default: false },
+      muteAllTimestamp: { type: Number, default: 0 },
       lockMeeting: { type: Boolean, default: false },
     },
     organizationId: {
