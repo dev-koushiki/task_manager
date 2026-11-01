@@ -52,6 +52,7 @@ import { ConnectView } from './ConnectView';
 import { OrgTreeManagement } from './OrgTreeManagement';
 import { UnifiedEmployeeDashboard } from './UnifiedEmployeeDashboard';
 import { EmployeeProfileView } from './EmployeeProfileView';
+import { GlobalSearchBar } from './GlobalSearchBar';
 import { ThemeToggle } from './ThemeToggle';
 import { api } from '../services/api';
 
@@ -376,6 +377,76 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
     }
 
     // Default fallback: tasks tab
+    setActiveTab('tasks');
+  };
+
+  // Global Search Result Selection Handler
+  const handleSearchResultClick = (item) => {
+    if (!item) return;
+
+    if (item.type === 'project') {
+      setTargetProjectId(item.id);
+      setActiveTab('tasks');
+      setTasksTabMode('projects');
+      return;
+    }
+
+    if (item.type === 'milestone') {
+      setTargetProjectId(item.projectId);
+      setTargetMilestoneId(item.id);
+      setActiveTab('tasks');
+      setTasksTabMode('projects');
+      return;
+    }
+
+    if (item.type === 'task') {
+      setActiveTab('tasks');
+      if (item.projectId) {
+        setTargetProjectId(item.projectId);
+      }
+      return;
+    }
+
+    if (item.type === 'employee') {
+      if (isAdmin) {
+        setActiveTab('invites');
+      } else {
+        setActiveTab('profile');
+      }
+      return;
+    }
+
+    if (item.type === 'group') {
+      setActiveTab('grouping');
+      return;
+    }
+
+    if (item.type === 'message') {
+      if (item.link && item.link.includes('groupId=')) {
+        setActiveTab('grouping');
+      } else {
+        setActiveTab('messages');
+      }
+      return;
+    }
+
+    if (item.type === 'meeting') {
+      setActiveTab('calendar');
+      return;
+    }
+
+    if (item.type === 'document') {
+      if (item.link && item.link.includes('projectId=')) {
+        setTargetProjectId(item.projectId);
+        setActiveTab('tasks');
+        setTasksTabMode('projects');
+      } else {
+        setActiveTab('documents');
+      }
+      return;
+    }
+
+    // Default fallback
     setActiveTab('tasks');
   };
 
@@ -819,6 +890,11 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'settings' && 'Organization hierarchy, access scopes, and permissions'}
               {activeTab === 'profile' && 'Manage your account credentials and personal information'}
             </p>
+          </div>
+
+          {/* Global Search Bar (Phase 7) */}
+          <div className="top-bar-center">
+            <GlobalSearchBar onSelectResult={handleSearchResultClick} />
           </div>
 
           <div className="top-bar-right">

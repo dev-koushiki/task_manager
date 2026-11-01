@@ -2882,4 +2882,41 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
+
+  // ----------------------------------------------------
+  // GLOBAL SEARCH (Phase 7)
+  // ----------------------------------------------------
+  async globalSearch(query, category = 'all') {
+    if (!query || !query.trim()) {
+      return {
+        query: '',
+        category,
+        counts: {
+          employees: 0,
+          projects: 0,
+          milestones: 0,
+          tasks: 0,
+          groups: 0,
+          messages: 0,
+          meetings: 0,
+          documents: 0,
+        },
+        total: 0,
+        results: {
+          employees: [],
+          projects: [],
+          milestones: [],
+          tasks: [],
+          groups: [],
+          messages: [],
+          meetings: [],
+          documents: [],
+        },
+      };
+    }
+    const params = new URLSearchParams({ q: query.trim(), category });
+    return await safeFetchJson(`${API_BASE_URL}/search?${params.toString()}`, {
+      headers: getHeaders(),
+    });
+  },
 };
