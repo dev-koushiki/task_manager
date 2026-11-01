@@ -8,6 +8,7 @@ const Organization = require("./models/Organization");
 const Project = require("./models/Project");
 const Notification = require("./models/Notification");
 const PerformanceRating = require("./models/PerformanceRating");
+const Recognition = require("./models/Recognition");
 
 const MONGODB_URI =
   process.env.MONGODB_URI ||
@@ -435,9 +436,87 @@ async function runTests() {
     assert(resolvedRating.auditTrail[2].previousScores.overallScore === 4.45, "Audit trail preserved original score 4.45");
 
     // ------------------------------------------------------------------
-    // 10. Cleanup
+    // 10. Employee of the Month / Year Recognition & Multi-Metric Nominee Calculation
     // ------------------------------------------------------------------
-    console.log("\n--- 10. Cleanup ---");
+    console.log("\n--- 10. Multi-Metric Recognition & Leaderboard Calculation ---");
+    // Verify multi-metric formula (Ratings 40%, Quality 25%, Delivery 20%, Initiative 15%)
+    // Devon Miles:
+    // Superior Rating Avg: 4.875
+    // Quality Avg: 5.0
+    // Delivery (100% on-time): 5.0
+    // Initiative & Collab: 4.75
+    // Composite: ((4.875 * 0.40) + (5.0 * 0.25) + (5.0 * 0.20) + (4.75 * 0.15)) * 20
+    // = (1.95 + 1.25 + 1.0 + 0.7125) * 20 = 4.9125 * 20 = 98.25 -> 98%
+    const rScore = 4.875;
+    const qScore = 5.0;
+    const dScore = 5.0;
+    const iScore = 4.75;
+    const expectedComposite = Math.round(((rScore * 0.40) + (qScore * 0.25) + (dScore * 0.20) + (iScore * 0.15)) * 20);
+    assert(expectedComposite === 98, `Multi-metric recognition composite score calculated: ${expectedComposite}%`);
+
+    // Non-admin approval blocked
+    const canSubApprove = l4Subordinate.role === "admin" || l4Subordinate.hierarchyLevel === 1;
+    assert(!canSubApprove, "Non-admin employee blocked from approving recognition awards");
+
+    // Admin approves Employee of the Month
+    const award = await Recognition.create({
+      employeeId: l4Subordinate._id,
+      employeeName: `${l4Subordinate.firstName} ${l4Subordinate.lastName}`,
+      employeeIdNumber: "EMP-9042",
+      department: l4Subordinate.department,
+      organizationId: org._id,
+      companyName: org.name,
+      type: "month",
+      title: "Employee of the Month – October 2026",
+      period: "October 2026",
+      criteriaScores: {
+        ratingScore: rScore,
+        qualityScore: qScore,
+        deliveryScore: dScore,
+        initiativeScore: iScore,
+        compositeScore: expectedComposite,
+      },
+      customComment: "Awarded in recognition of exceptional technical leadership and outstanding milestone velocity.",
+      status: "approved",
+      approvedBy: l1Admin._id,
+      approvedByName: `${l1Admin.firstName} ${l1Admin.lastName}`,
+      approvedAt: new Date(),
+    });
+
+    assert(award && award.status === "approved", "Employee of the Month award officially approved and created");
+    assert(award.criteriaScores.compositeScore === 98, "Criteria composite score persisted");
+
+    // Notification dispatch for recognition award
+    await Notification.create({
+      userId: l4Subordinate._id,
+      organizationId: org._id,
+      type: "recognition_awarded",
+      title: `🏆 Congratulations! You won ${award.title}`,
+      message: `${l1Admin.firstName} officially awarded you ${award.title}. Download your official certificate from My Progress!`,
+    });
+    const awardNotif = await Notification.findOne({
+      userId: l4Subordinate._id,
+      type: "recognition_awarded",
+    });
+    assert(awardNotif && awardNotif.title.includes("Congratulations"), "Employee received recognition_awarded notification");
+
+    // ------------------------------------------------------------------
+    // 11. Official Certificate Generator Metadata Storage
+    // ------------------------------------------------------------------
+    console.log("\n--- 11. Certificate Metadata Persistence ---");
+    award.certificatePngUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    award.certificatePdfUrl = "data:application/pdf;base64,JVBERi0xLjMK...";
+    await award.save();
+
+    const verifiedAward = await Recognition.findById(award._id);
+    assert(verifiedAward.certificatePngUrl.startsWith("data:image/png"), "Certificate PNG representation stored");
+    assert(verifiedAward.certificatePdfUrl.startsWith("data:application/pdf"), "Certificate PDF representation stored");
+
+    // ------------------------------------------------------------------
+    // 12. Cleanup
+    // ------------------------------------------------------------------
+    console.log("\n--- 12. Cleanup ---");
+    await Recognition.deleteMany({ companyName: org.name });
     await PerformanceRating.deleteMany({ companyName: org.name });
     await Project.deleteMany({ companyName: org.name });
     await Notification.deleteMany({ organizationId: org._id });

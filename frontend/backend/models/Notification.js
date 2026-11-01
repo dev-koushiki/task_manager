@@ -35,6 +35,7 @@ const notificationSchema = new mongoose.Schema(
         "rating_disputed",
         "dispute_resolved",
         "progress_note_added",
+        "recognition_awarded",
         "general",
       ],
       default: "general",

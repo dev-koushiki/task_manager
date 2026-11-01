@@ -2831,4 +2831,38 @@ export const api = {
       body: JSON.stringify(payload),
     });
   },
+
+  async getRecognitionNominees(period = '', type = 'month') {
+    return await safeFetchJson(
+      `${API_BASE_URL}/performance/recognition/nominees?period=${encodeURIComponent(period)}&type=${encodeURIComponent(type)}`,
+      { headers: getHeaders() }
+    );
+  },
+
+  async getRecognitionAwards() {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/performance/recognition/awards`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, awards: [], myAwards: [] };
+    }
+  },
+
+  async approveRecognitionAward(payload) {
+    return await safeFetchJson(`${API_BASE_URL}/performance/recognition/approve`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async saveRecognitionCertificate(payload) {
+    return await safeFetchJson(`${API_BASE_URL}/performance/recognition/certificate`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
 };

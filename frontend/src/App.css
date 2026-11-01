@@ -16279,3 +16279,89 @@
   border-radius: 4px;
   margin-top: 4px;
 }
+
+
+/* Certificate Generator & Recognition Board Styles */
+.cert-modal-box {
+  max-width: 1040px !important;
+  width: 95vw !important;
+}
+
+.cert-modal-body {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 20px;
+  padding: 18px 24px;
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+@media (max-width: 900px) {
+  .cert-modal-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cert-form-column {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cert-preview-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cert-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main, #0f172a);
+}
+
+.badge-gold {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.cert-preview-stage {
+  width: 100%;
+  aspect-ratio: 24 / 17;
+  background: #1e293b;
+  border-radius: 12px;
+  border: 2px solid #cbd5e1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.cert-preview-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.cert-download-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.flex-1 {
+  flex: 1;
+}

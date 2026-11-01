@@ -18,6 +18,7 @@ import {
   UsersIcon,
 } from './Icons';
 import { api } from '../services/api';
+import { CertificateModal } from './CertificateModal';
 
 export const MyProgressView = ({ user }) => {
   const [loading, setLoading] = useState(true);
@@ -39,6 +40,14 @@ export const MyProgressView = ({ user }) => {
   const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
   const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isCertModalOpen, setIsCertModalOpen] = useState(false);
+  const [certModalData, setCertModalData] = useState({});
+
+  // Recognition & Awards state
+  const [awards, setAwards] = useState([]);
+  const [nomineesData, setNomineesData] = useState(null);
+  const [reportSubMode, setReportSubMode] = useState('subordinates'); // 'subordinates' | 'recognition_board'
+  const [nomineePeriodType, setNomineePeriodType] = useState('month'); // 'month' | 'year'
 
   // Active items for modals
   const [activeRatingForAction, setActiveRatingForAction] = useState(null);
@@ -87,6 +96,25 @@ export const MyProgressView = ({ user }) => {
     note: '',
   });
 
+  // Load recognition awards and nominees
+  const loadAwards = async () => {
+    try {
+      const res = await api.getRecognitionAwards();
+      setAwards(res.awards || []);
+    } catch (err) {
+      console.warn('Failed to load recognition awards:', err);
+    }
+  };
+
+  const loadNominees = async (type = nomineePeriodType) => {
+    try {
+      const res = await api.getRecognitionNominees('', type);
+      setNomineesData(res);
+    } catch (err) {
+      console.warn('Failed to load nominees:', err);
+    }
+  };
+
   // Load user personal progress
   const loadProgressData = async () => {
     try {
@@ -95,9 +123,12 @@ export const MyProgressView = ({ user }) => {
       const data = await api.getMyProgress();
       setProgressData(data);
 
+      await loadAwards();
+
       if (data.canRateOthers) {
         const reports = await api.getDirectReports();
         setDirectReports(reports);
+        await loadNominees(nomineePeriodType);
       }
     } catch (err) {
       console.error('Failed to load progress data:', err);
@@ -360,23 +391,53 @@ export const MyProgressView = ({ user }) => {
         <div className="progress-reports-section animate-fade-in">
           <div className="progress-reports-header">
             <div>
-              <h3 className="progress-section-heading">Supervisory Direct Reports & Evaluations</h3>
+              <div className="progress-submode-pills" style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${reportSubMode === 'subordinates' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setReportSubMode('subordinates')}
+                >
+                  <UsersIcon size={14} />
+                  <span>Direct Reports ({directReports.length})</span>
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${reportSubMode === 'recognition_board' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => {
+                    setReportSubMode('recognition_board');
+                    loadNominees(nomineePeriodType);
+                  }}
+                >
+                  <AwardIcon size={14} />
+                  <span>🏆 Employee of the Month / Year Board</span>
+                </button>
+              </div>
+              <h3 className="progress-section-heading">
+                {reportSubMode === 'recognition_board'
+                  ? 'Employee Recognition & Honors Board'
+                  : 'Supervisory Direct Reports & Evaluations'}
+              </h3>
               <p className="progress-section-sub">
-                Evaluate direct subordinates, inspect performance analytics, and resolve employee review disputes.
+                {reportSubMode === 'recognition_board'
+                  ? 'Calculate Employee of the Month / Year using multi-metric performance criteria (Ratings 40%, Quality 25%, Delivery 20%, Initiative 15%) and issue official certificates.'
+                  : 'Evaluate direct subordinates, inspect performance analytics, and resolve employee review disputes.'}
               </p>
             </div>
-            <div className="progress-search-box">
-              <SearchIcon size={16} />
-              <input
-                type="text"
-                placeholder="Search direct reports..."
-                value={reportSearchQuery}
-                onChange={(e) => setReportSearchQuery(e.target.value)}
-              />
-            </div>
+            {reportSubMode === 'subordinates' && (
+              <div className="progress-search-box">
+                <SearchIcon size={16} />
+                <input
+                  type="text"
+                  placeholder="Search direct reports..."
+                  value={reportSearchQuery}
+                  onChange={(e) => setReportSearchQuery(e.target.value)}
+                />
+              </div>
+            )}
           </div>
 
-          <div className="progress-reports-table-card">
+          {reportSubMode === 'subordinates' ? (
+            <div className="progress-reports-table-card">
             <table className="progress-reports-table">
               <thead>
                 <tr>
@@ -463,6 +524,196 @@ export const MyProgressView = ({ user }) => {
               </tbody>
             </table>
           </div>
+          ) : (
+            <div className="progress-recognition-board animate-fade-in">
+              <div className="recognition-period-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${nomineePeriodType === 'month' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => {
+                      setNomineePeriodType('month');
+                      loadNominees('month');
+                    }}
+                  >
+                    Employee of the Month
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${nomineePeriodType === 'year' ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => {
+                      setNomineePeriodType('year');
+                      loadNominees('year');
+                    }}
+                  >
+                    Employee of the Year
+                  </button>
+                </div>
+                <span className="badge" style={{ background: '#ede9fe', color: '#5b21b6', padding: '6px 12px', borderRadius: '6px', fontWeight: 600 }}>
+                  Active Period: {nomineesData?.period || 'Current Cycle'}
+                </span>
+              </div>
+
+              {/* Existing Approved Award Banner */}
+              {nomineesData?.existingAward && (
+                <div className="existing-award-card mb-3" style={{ background: 'linear-gradient(135deg, #fef3c7, #fffbeb)', border: '1px solid #fde68a', borderRadius: '12px', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ fontSize: '32px' }}>🏆</div>
+                    <div>
+                      <span style={{ fontSize: '11px', fontWeight: 800, background: '#d97706', color: '#ffffff', padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase' }}>
+                        Officially Conferred
+                      </span>
+                      <h4 style={{ margin: '4px 0 2px 0', fontSize: '18px', color: '#92400e', fontWeight: 800 }}>
+                        {nomineesData.existingAward.title}
+                      </h4>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#78350f' }}>
+                        Conferred to <strong>{nomineesData.existingAward.employeeName}</strong> ({nomineesData.existingAward.employeeDesignation})
+                      </p>
+                      <small style={{ fontStyle: 'italic', color: '#b45309' }}>
+                        “{nomineesData.existingAward.customComment}”
+                      </small>
+                    </div>
+                  </div>
+                  <div>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        setCertModalData({
+                          employeeName: nomineesData.existingAward.employeeName,
+                          employeeId: nomineesData.existingAward.employeeIdNumber,
+                          employeePhoto: nomineesData.existingAward.employeePhoto,
+                          title: nomineesData.existingAward.title,
+                          period: nomineesData.existingAward.period,
+                          customComment: nomineesData.existingAward.customComment,
+                          companyName: nomineesData.existingAward.companyName,
+                        });
+                        setIsCertModalOpen(true);
+                      }}
+                    >
+                      <AwardIcon size={14} />
+                      <span>Download Official Certificate</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Nominees Ranked Leaderboard */}
+              <div className="progress-reports-table-card">
+                <div style={{ padding: '14px 18px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <div>
+                    <strong style={{ color: '#0f172a' }}>Multi-Metric Recognition Leaderboard</strong>
+                    <span style={{ fontSize: '12px', color: '#64748b', marginLeft: '8px' }}>
+                      (Weighted by Ratings 40%, Quality 25%, Delivery 20%, Initiative 15%)
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 600 }}>
+                    Independent of raw task volume
+                  </span>
+                </div>
+                <table className="progress-reports-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '60px' }}>Rank</th>
+                      <th>Candidate</th>
+                      <th>Dept & Level</th>
+                      <th>Composite Score</th>
+                      <th>Criteria Breakdown</th>
+                      <th style={{ textAlign: 'right' }}>Official Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!nomineesData?.nominees || nomineesData.nominees.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: '#64748b' }}>
+                          No candidates found. Evaluating telemetry...
+                        </td>
+                      </tr>
+                    ) : (
+                      nomineesData.nominees.map((nom, idx) => (
+                        <tr key={nom.id} style={idx === 0 ? { background: '#fcfbf7' } : {}}>
+                          <td>
+                            <div style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '50%',
+                              fontWeight: 800,
+                              fontSize: '12px',
+                              background: idx === 0 ? '#fef3c7' : idx === 1 ? '#e2e8f0' : idx === 2 ? '#ffedd5' : '#f1f5f9',
+                              color: idx === 0 ? '#b45309' : idx === 1 ? '#475569' : idx === 2 ? '#c2410c' : '#64748b',
+                              border: idx === 0 ? '1px solid #fde68a' : 'none'
+                            }}>
+                              #{idx + 1}
+                            </div>
+                          </td>
+                          <td>
+                            <div className="progress-emp-cell">
+                              <div className="progress-emp-avatar">{nom.name.charAt(0)}</div>
+                              <div>
+                                <div className="progress-emp-name">
+                                  {nom.name}
+                                  {idx === 0 && (
+                                    <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 800, background: '#d97706', color: '#ffffff', padding: '1px 6px', borderRadius: '10px' }}>
+                                      ★ #1 Ranked
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="progress-emp-email">{nom.employeeIdNumber}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="progress-dept-badge">{nom.department}</div>
+                            <small style={{ color: '#64748b', display: 'block' }}>Level {nom.hierarchyLevel}</small>
+                          </td>
+                          <td>
+                            <div style={{ display: 'inline-flex', alignItems: 'baseline', gap: '4px', background: '#ecfdf5', padding: '4px 10px', borderRadius: '6px', border: '1px solid #a7f3d0' }}>
+                              <strong style={{ color: '#047857', fontSize: '14px' }}>{nom.metrics.compositeScore}%</strong>
+                              <small style={{ color: '#065f46', fontSize: '10px' }}>Match</small>
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', fontSize: '11px' }}>
+                              <span style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>Rating: {nom.metrics.ratingScore}/5</span>
+                              <span style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>Quality: {nom.metrics.qualityScore}/5</span>
+                              <span style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>Delivery: {nom.metrics.onTimeRate}%</span>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              onClick={() => {
+                                setCertModalData({
+                                  employeeId: nom.id,
+                                  employeeName: nom.name,
+                                  employeeIdNumber: nom.employeeIdNumber,
+                                  title: nomineePeriodType === 'year'
+                                    ? `Employee of the Year – ${nomineesData?.period}`
+                                    : `Employee of the Month – ${nomineesData?.period}`,
+                                  type: nomineePeriodType,
+                                  period: nomineesData?.period,
+                                  customComment: `Awarded for distinguished technical leadership, achieving a ${nom.metrics.compositeScore}% composite score with ${nom.metrics.onTimeRate}% on-time delivery across core deliverables.`,
+                                  companyName: user.companyName,
+                                });
+                                setIsCertModalOpen(true);
+                              }}
+                            >
+                              <AwardIcon size={14} />
+                              <span>Review & Issue Certificate</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -621,6 +872,14 @@ export const MyProgressView = ({ user }) => {
             >
               <SparklesIcon size={16} />
               <span>Self-Evaluation ({selfEvaluations.length})</span>
+            </button>
+            <button
+              type="button"
+              className={`progress-subtab-btn ${activeSubTab === 'recognition' ? 'active' : ''}`}
+              onClick={() => setActiveSubTab('recognition')}
+            >
+              <AwardIcon size={16} />
+              <span>Honors & Certificates ({awards.filter(a => String(a.employeeId) === String(emp.id || emp._id)).length})</span>
             </button>
           </div>
 
@@ -1173,6 +1432,110 @@ export const MyProgressView = ({ user }) => {
               )}
             </div>
           )}
+
+          {/* SUB-TAB 5: HONORS & OFFICIAL CERTIFICATES */}
+          {activeSubTab === 'recognition' && (
+            <div className="progress-tab-pane animate-fade-in">
+              <div className="self-eval-header-card">
+                <div>
+                  <h3 className="section-title">Official Recognition & Certificates</h3>
+                  <p className="section-subtitle">
+                    Download official high-resolution certificates in PDF and PNG/JPEG format with executive seals and verification codes.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setCertModalData({
+                      employeeName: emp.name,
+                      employeeId: emp.employeeIdNumber || emp.employeeId || 'EMP-100',
+                      employeePhoto: '',
+                      title: 'Certificate of Excellence',
+                      period: new Date().getFullYear().toString(),
+                      customComment: 'Awarded for outstanding technical contribution, dedication to quality, and excellence in deliverable execution.',
+                      companyName: user.companyName,
+                    });
+                    setIsCertModalOpen(true);
+                  }}
+                >
+                  <AwardIcon size={16} />
+                  <span>Generate Certificate</span>
+                </button>
+              </div>
+
+              {awards.filter((a) => String(a.employeeId) === String(emp.id || emp._id)).length === 0 ? (
+                <div className="ratings-empty-card">
+                  <AwardIcon size={36} />
+                  <h4>No Official Honors Conferred Yet</h4>
+                  <p>When leadership officially confers an &quot;Employee of the Month&quot; or &quot;Employee of the Year&quot; award to you, your official certificate will appear here ready to download in PDF and PNG format.</p>
+                </div>
+              ) : (
+                <div className="ratings-cards-list">
+                  {awards
+                    .filter((a) => String(a.employeeId) === String(emp.id || emp._id))
+                    .map((award) => (
+                      <div key={award._id} className="rating-card" style={{ background: 'linear-gradient(135deg, #fffdfa, #fefbf3)', borderColor: '#fde68a' }}>
+                        <div className="rating-card-top">
+                          <div className="rating-evaluator-meta">
+                            <div className="eval-avatar" style={{ background: '#d97706', fontSize: '20px' }}>🏆</div>
+                            <div>
+                              <div className="eval-name" style={{ color: '#92400e' }}>
+                                {award.title}
+                                <span style={{ background: '#fef3c7', color: '#b45309', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 800 }}>
+                                  {award.type === 'year' ? 'Annual Award' : 'Monthly Award'}
+                                </span>
+                              </div>
+                              <div className="eval-role" style={{ color: '#b45309' }}>
+                                Conferred for {award.period} by {award.approvedByName}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ecfdf5', padding: '6px 14px', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
+                            <CheckCircleIcon size={16} className="text-emerald" />
+                            <strong style={{ color: '#047857' }}>Official Award</strong>
+                          </div>
+                        </div>
+
+                        {award.customComment && (
+                          <div className="rating-comments-box" style={{ background: '#fef3c7', borderLeftColor: '#d97706' }}>
+                            <strong style={{ color: '#92400e' }}>Official Citation:</strong>
+                            <p style={{ fontStyle: 'italic', color: '#78350f' }}>“{award.customComment}”</p>
+                          </div>
+                        )}
+
+                        <div className="rating-card-footer" style={{ borderTopColor: '#fde68a' }}>
+                          <div className="rating-date">
+                            Conferred on {new Date(award.approvedAt || award.createdAt).toLocaleDateString()}
+                          </div>
+                          <div className="rating-footer-actions">
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              onClick={() => {
+                                setCertModalData({
+                                  employeeName: award.employeeName,
+                                  employeeId: award.employeeIdNumber,
+                                  employeePhoto: award.employeePhoto,
+                                  title: award.title,
+                                  period: award.period,
+                                  customComment: award.customComment,
+                                  companyName: award.companyName,
+                                });
+                                setIsCertModalOpen(true);
+                              }}
+                            >
+                              <AwardIcon size={13} />
+                              <span>View & Download Certificate (PDF / PNG)</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -1712,6 +2075,21 @@ export const MyProgressView = ({ user }) => {
           </div>
         </div>
       )}
+
+      {/* ======================================================== */}
+      {/* MODAL 7: OFFICIAL CERTIFICATE GENERATOR */}
+      {/* ======================================================== */}
+      <CertificateModal
+        isOpen={isCertModalOpen}
+        onClose={() => setIsCertModalOpen(false)}
+        initialData={certModalData}
+        isAdmin={user.role === 'admin' || user.hierarchyLevel === 1}
+        onAwardApproved={async () => {
+          await loadAwards();
+          await loadNominees(nomineePeriodType);
+          await loadProgressData();
+        }}
+      />
     </div>
   );
 };

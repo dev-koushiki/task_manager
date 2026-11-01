@@ -6,6 +6,7 @@ const PerformanceRating = require("../models/PerformanceRating");
 const Project = require("../models/Project");
 const User = require("../models/User");
 const Notification = require("../models/Notification");
+const Recognition = require("../models/Recognition");
 
 // Helper: Check if evaluator has supervisory authority over target employee
 async function canEvaluate(evaluator, targetEmployee) {
@@ -851,6 +852,278 @@ router.post("/milestone-note", authMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Failed to add milestone note:", error);
     res.status(500).json({ message: "Failed to add milestone note", error: error.message });
+  }
+});
+
+// ==========================================
+// 9. GET /api/performance/recognition/nominees
+// Calculate Employee of the Month / Year nominees using multi-metric formula
+// (Ratings 40%, Quality 25%, Delivery 20%, Initiative/Collab 15%)
+// ==========================================
+router.get("/recognition/nominees", authMiddleware, async (req, res) => {
+  try {
+    const { period, type = "month" } = req.query;
+    const companyName = req.user.companyName;
+
+    const defaultPeriod = type === "year"
+      ? `${new Date().getFullYear()}`
+      : new Date().toLocaleString("en-US", { month: "long", year: "numeric" });
+
+    const activePeriod = period && period.trim() ? period.trim() : defaultPeriod;
+
+    // Check if award already approved for this period
+    const existingAward = await Recognition.findOne({
+      companyName,
+      type,
+      period: activePeriod,
+    });
+
+    // Fetch all non-admin employees in company
+    const candidates = await User.find({
+      companyName,
+      role: { $ne: "admin" },
+      hierarchyLevel: { $gt: 1 },
+      status: "active",
+    }).select("firstName lastName email designation department team hierarchyLevel employeeId");
+
+    const allProjects = await Project.find({ companyName });
+    const nominees = [];
+
+    for (const emp of candidates) {
+      const empRatings = await PerformanceRating.find({
+        employeeId: emp._id,
+        companyName,
+        evaluationType: "superior",
+        status: { $ne: "draft" },
+      });
+
+      // Metric 1: Superior Rating Average (0-5)
+      const ratingScore = empRatings.length > 0
+        ? empRatings.reduce((sum, r) => sum + r.scores.overallScore, 0) / empRatings.length
+        : 3.0; // default baseline
+
+      // Metric 2: Quality of Work (0-5)
+      const qualityScore = empRatings.length > 0
+        ? empRatings.reduce((sum, r) => sum + (r.scores.qualityOfWork || 3), 0) / empRatings.length
+        : 3.0;
+
+      // Metric 3: Project Delivery & On-Time Rate (0-5)
+      const stats = calculateMilestoneStats(allProjects, emp._id);
+      const deliveryScore = Number(((stats.onTimeRate / 100) * 5).toFixed(2));
+
+      // Metric 4: Initiative & Collaboration (0-5)
+      const initiativeScore = empRatings.length > 0
+        ? empRatings.reduce((sum, r) => sum + (((r.scores.initiative || 3) + (r.scores.collaboration || 3)) / 2), 0) / empRatings.length
+        : 3.0;
+
+      // Multi-metric Composite Score (0-100)
+      // Never based solely on raw number of completed tasks!
+      const compositeRaw = (ratingScore * 0.40) + (qualityScore * 0.25) + (deliveryScore * 0.20) + (initiativeScore * 0.15);
+      const compositeScore = Math.round(compositeRaw * 20); // Scale to 100%
+
+      nominees.push({
+        id: emp._id,
+        name: `${emp.firstName} ${emp.lastName}`,
+        email: emp.email,
+        employeeIdNumber: emp.employeeId || `EMP-${emp._id.toString().slice(-4).toUpperCase()}`,
+        designation: emp.designation || "Specialist",
+        department: emp.department || "General",
+        hierarchyLevel: emp.hierarchyLevel || 4,
+        metrics: {
+          ratingScore: Number(ratingScore.toFixed(2)),
+          qualityScore: Number(qualityScore.toFixed(2)),
+          deliveryScore: Number(deliveryScore.toFixed(2)),
+          initiativeScore: Number(initiativeScore.toFixed(2)),
+          onTimeRate: stats.onTimeRate,
+          completedMilestones: stats.completed,
+          compositeScore,
+        },
+      });
+    }
+
+    // Rank highest composite score first
+    nominees.sort((a, b) => b.metrics.compositeScore - a.metrics.compositeScore);
+
+    res.json({
+      success: true,
+      type,
+      period: activePeriod,
+      nominees,
+      existingAward,
+    });
+  } catch (error) {
+    console.error("Failed to calculate nominees:", error);
+    res.status(500).json({ message: "Failed to calculate recognition nominees", error: error.message });
+  }
+});
+
+// ==========================================
+// 10. GET /api/performance/recognition/awards
+// List all approved recognition awards
+// ==========================================
+router.get("/recognition/awards", authMiddleware, async (req, res) => {
+  try {
+    const companyName = req.user.companyName;
+
+    const awards = await Recognition.find({
+      companyName,
+      status: { $in: ["approved", "published"] },
+    }).sort({ createdAt: -1 });
+
+    const myAwards = awards.filter((a) => String(a.employeeId) === String(req.user._id));
+
+    res.json({
+      success: true,
+      awards,
+      myAwards,
+    });
+  } catch (error) {
+    console.error("Failed to load recognition awards:", error);
+    res.status(500).json({ message: "Failed to load recognition awards", error: error.message });
+  }
+});
+
+// ==========================================
+// 11. POST /api/performance/recognition/approve
+// Admin reviews, approves, and issues recognition award
+// ==========================================
+router.post("/recognition/approve", authMiddleware, async (req, res) => {
+  try {
+    const {
+      employeeId,
+      type,
+      period,
+      title,
+      customComment,
+      employeePhoto,
+      employeeIdNumber,
+    } = req.body;
+
+    // Security: Only Admin or Level 1 Executive can approve official recognition
+    if (req.user.role !== "admin" && req.user.hierarchyLevel !== 1) {
+      return res.status(403).json({
+        message: "Access Denied: Only authorized administrators can review and approve recognition awards.",
+      });
+    }
+
+    if (!employeeId || !type || !period) {
+      return res.status(400).json({ message: "employeeId, type, and period are required" });
+    }
+
+    const employee = await User.findById(employeeId);
+    if (!employee) {
+      return res.status(404).json({ message: "Target employee not found" });
+    }
+
+    const awardTitle = title && title.trim()
+      ? title.trim()
+      : type === "year"
+      ? `Employee of the Year – ${period}`
+      : `Employee of the Month – ${period}`;
+
+    // Calculate official criteria scores
+    const empRatings = await PerformanceRating.find({
+      employeeId: employee._id,
+      companyName: req.user.companyName,
+      evaluationType: "superior",
+    });
+    const allProjects = await Project.find({ companyName: req.user.companyName });
+    const stats = calculateMilestoneStats(allProjects, employee._id);
+
+    const ratingScore = empRatings.length > 0
+      ? empRatings.reduce((sum, r) => sum + r.scores.overallScore, 0) / empRatings.length
+      : 4.5;
+    const qualityScore = empRatings.length > 0
+      ? empRatings.reduce((sum, r) => sum + (r.scores.qualityOfWork || 4), 0) / empRatings.length
+      : 4.5;
+    const deliveryScore = Number(((stats.onTimeRate / 100) * 5).toFixed(2));
+    const initiativeScore = empRatings.length > 0
+      ? empRatings.reduce((sum, r) => sum + (((r.scores.initiative || 4) + (r.scores.collaboration || 4)) / 2), 0) / empRatings.length
+      : 4.5;
+    const compositeScore = Math.round(((ratingScore * 0.40) + (qualityScore * 0.25) + (deliveryScore * 0.20) + (initiativeScore * 0.15)) * 20);
+
+    const newAward = new Recognition({
+      employeeId: employee._id,
+      employeeName: `${employee.firstName} ${employee.lastName}`,
+      employeeIdNumber: employeeIdNumber || employee.employeeId || `EMP-${employee._id.toString().slice(-4).toUpperCase()}`,
+      employeePhoto: employeePhoto || "",
+      employeeDesignation: employee.designation || employee.role,
+      department: employee.department || "General",
+      organizationId: req.user.organizationId || employee.organizationId || null,
+      companyName: req.user.companyName,
+      type,
+      title: awardTitle,
+      period,
+      criteriaScores: {
+        ratingScore: Number(ratingScore.toFixed(2)),
+        qualityScore: Number(qualityScore.toFixed(2)),
+        deliveryScore: Number(deliveryScore.toFixed(2)),
+        initiativeScore: Number(initiativeScore.toFixed(2)),
+        compositeScore,
+      },
+      customComment: customComment || "Awarded in recognition of distinguished performance, strategic initiative, and outstanding delivery.",
+      status: "approved",
+      approvedBy: req.user._id,
+      approvedByName: `${req.user.firstName} ${req.user.lastName}`,
+      approvedAt: new Date(),
+    });
+
+    await newAward.save();
+
+    // Dispatch congratulatory notification
+    try {
+      await Notification.create({
+        userId: employee._id,
+        organizationId: req.user.organizationId || employee.organizationId || new mongoose.Types.ObjectId(),
+        type: "recognition_awarded",
+        title: `🏆 Congratulations! You won ${awardTitle}`,
+        message: `${req.user.firstName} ${req.user.lastName} officially awarded you ${awardTitle}. Download your official certificate from My Progress!`,
+        link: "/dashboard?tab=my_progress",
+      });
+    } catch (notifErr) {
+      console.warn("Recognition notification error:", notifErr.message);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `Recognition award '${awardTitle}' approved and issued successfully.`,
+      award: newAward,
+    });
+  } catch (error) {
+    console.error("Failed to approve recognition:", error);
+    res.status(500).json({ message: "Failed to approve recognition", error: error.message });
+  }
+});
+
+// ==========================================
+// 12. POST /api/performance/recognition/certificate
+// Save generated certificate URLs (PDF / PNG)
+// ==========================================
+router.post("/recognition/certificate", authMiddleware, async (req, res) => {
+  try {
+    const { awardId, certificatePdfUrl, certificatePngUrl } = req.body;
+
+    if (!awardId) {
+      return res.status(400).json({ message: "awardId is required" });
+    }
+
+    const award = await Recognition.findById(awardId);
+    if (!award) {
+      return res.status(404).json({ message: "Award record not found" });
+    }
+
+    if (certificatePdfUrl) award.certificatePdfUrl = certificatePdfUrl;
+    if (certificatePngUrl) award.certificatePngUrl = certificatePngUrl;
+    await award.save();
+
+    res.json({
+      success: true,
+      message: "Certificate stored successfully",
+      award,
+    });
+  } catch (error) {
+    console.error("Failed to save certificate:", error);
+    res.status(500).json({ message: "Failed to save certificate", error: error.message });
   }
 });
 
