@@ -31,7 +31,9 @@ import {
   EditIcon,
   GitBranchIcon,
   VideoIcon,
+  MailIcon,
 } from './Icons';
+import { GroupingChatView } from './GroupingChatView';
 import { TaskModal } from './TaskModal';
 import { ProjectModal } from './ProjectModal';
 import { TaskReviewModal } from './TaskReviewModal';
@@ -508,11 +510,29 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
               <button
                 type="button"
-                className={`sidebar-nav-item ${activeTab === 'team' ? 'active' : ''}`}
-                onClick={() => setActiveTab('team')}
+                className={`sidebar-nav-item ${activeTab === 'grouping' ? 'active' : ''}`}
+                onClick={() => setActiveTab('grouping')}
               >
                 <UsersIcon size={18} className="nav-icon" />
-                <span>Team & Invites</span>
+                <span>Grouping</span>
+              </button>
+
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'grouping' ? 'active' : ''}`}
+                onClick={() => setActiveTab('grouping')}
+              >
+                <UsersIcon size={18} className="nav-icon" />
+                <span>Grouping</span>
+              </button>
+
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'invites' || activeTab === 'team' ? 'active' : ''}`}
+                onClick={() => setActiveTab('invites')}
+              >
+                <MailIcon size={18} className="nav-icon" />
+                <span>Invites</span>
               </button>
 
               <button
@@ -561,6 +581,15 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               >
                 <VideoIcon size={18} className="nav-icon" />
                 <span>Connect</span>
+              </button>
+
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'grouping' ? 'active' : ''}`}
+                onClick={() => setActiveTab('grouping')}
+              >
+                <UsersIcon size={18} className="nav-icon" />
+                <span>Grouping</span>
               </button>
 
               <button
@@ -1452,8 +1481,13 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             />
           )}
 
-          {/* TAB: TEAM (Admin Employee Panel with Invitations & Profiles) */}
-          {isAdmin && activeTab === 'team' && (
+          {/* TAB: GROUPING (WhatsApp-style Grouping & Communication) */}
+          {activeTab === 'grouping' && (
+            <GroupingChatView user={user} />
+          )}
+
+          {/* TAB: INVITES (Admin Employee Panel with Invitations & Account Activation) */}
+          {isAdmin && (activeTab === 'invites' || activeTab === 'team') && (
             <AdminEmployeePanel
               companyName={user?.companyName}
               onTestAcceptInvite={onTestAcceptInvite}

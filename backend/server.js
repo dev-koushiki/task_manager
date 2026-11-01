@@ -15,6 +15,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const organizationRoutes = require("./routes/organizationRoutes");
 const meetingRoutes = require("./routes/meetingRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const groupRoutes = require("./routes/groupRoutes");
 
 const app = express();
 
@@ -80,6 +81,7 @@ const routePairs = [
   ["/organization", organizationRoutes],
   ["/meetings", meetingRoutes],
   ["/notifications", notificationRoutes],
+  ["/groups", groupRoutes],
 ];
 
 routePairs.forEach(([prefix, handler]) => {

@@ -2457,4 +2457,122 @@ export const api = {
       return { livekitEnabled: false, message: 'Fallback to built-in WebRTC mesh calling.' };
     }
   },
+
+  // Grouping & WhatsApp-style Communication
+  async getGroups() {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/groups`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return [];
+    }
+  },
+
+  async createGroup(data) {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/groups`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { message: 'Group created.', group: { id: 'grp_' + Date.now(), ...data, members: [] } };
+    }
+  },
+
+  async getDirectChat(userId) {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/groups/direct/${encodeURIComponent(userId)}`, {
+        method: 'POST',
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { group: { id: 'direct_' + userId, name: 'Direct Chat', members: [] } };
+    }
+  },
+
+  async getGroup(id) {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/groups/${encodeURIComponent(id)}`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return null;
+    }
+  },
+
+  async updateGroup(id, data) {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/groups/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { message: 'Group updated.' };
+    }
+  },
+
+  async addGroupMembers(id, memberIds) {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/groups/${encodeURIComponent(id)}/members`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ memberIds }),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { message: 'Members added.' };
+    }
+  },
+
+  async removeGroupMember(id, targetUserId) {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/groups/${encodeURIComponent(id)}/members/${encodeURIComponent(targetUserId)}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { message: 'Member removed.' };
+    }
+  },
+
+  async getGroupMessages(id) {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/groups/${encodeURIComponent(id)}/messages`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return [];
+    }
+  },
+
+  async sendGroupMessage(id, text, replyTo = null) {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/groups/${encodeURIComponent(id)}/messages`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ text, replyTo }),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return {
+        message: 'Message sent.',
+        chatMessage: {
+          id: 'msg_' + Date.now(),
+          text,
+          replyTo,
+          timestamp: new Date().toISOString(),
+        },
+      };
+    }
+  },
 };
