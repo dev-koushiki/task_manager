@@ -86,6 +86,8 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const [isNotifDropdownOpen, setIsNotifDropdownOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [targetProjectId, setTargetProjectId] = useState(null);
+  const [targetMilestoneId, setTargetMilestoneId] = useState(null);
 
   // Modal states
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
@@ -157,6 +159,24 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
     return () => {
       active = false;
     };
+  }, [user]);
+
+  // Background polling for notifications every 15 seconds
+  useEffect(() => {
+    if (!user) return;
+    const pollInterval = setInterval(() => {
+      api
+        .getNotifications()
+        .then((notifsData) => {
+          if (notifsData?.notifications) {
+            setNotifications(notifsData.notifications);
+            setUnreadNotifCount(notifsData.unreadCount || 0);
+          }
+        })
+        .catch(() => {});
+    }, 15000);
+
+    return () => clearInterval(pollInterval);
   }, [user]);
 
   // Project Actions
@@ -263,6 +283,100 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const handleMarkSingleRead = async (id, e) => {
+    if (e) e.stopPropagation();
+    try {
+      await api.markNotificationRead(id);
+      setNotifications((prev) =>
+        prev.map((n) => ((n._id || n.id) === id ? { ...n, read: true } : n))
+      );
+      setUnreadNotifCount((prev) => Math.max(0, prev - 1));
+    } catch (err) {
+      console.error('Failed to mark notification read:', err);
+    }
+  };
+
+  const handleDeleteNotification = async (id, e) => {
+    if (e) e.stopPropagation();
+    try {
+      await api.deleteNotification(id);
+      setNotifications((prev) => {
+        const next = prev.filter((n) => (n._id || n.id) !== id);
+        setUnreadNotifCount(next.filter((item) => !item.read).length);
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to delete notification:', err);
+    }
+  };
+
+  const handleNotificationClick = async (notif) => {
+    if (!notif) return;
+    const notifId = notif._id || notif.id;
+
+    // Mark as read immediately on server & update UI state
+    if (!notif.read && notifId) {
+      try {
+        await api.markNotificationRead(notifId);
+        setNotifications((prev) =>
+          prev.map((n) => ((n._id || n.id) === notifId ? { ...n, read: true } : n))
+        );
+        setUnreadNotifCount((prev) => Math.max(0, prev - 1));
+      } catch (e) {
+        console.warn('Failed to mark notification as read:', e);
+      }
+    }
+
+    setIsNotifDropdownOpen(false);
+
+    // Parse notification link or metadata
+    const link = notif.link || '';
+    const projectId =
+      notif.metadata?.projectId ||
+      (link.includes('projectId=') ? new URLSearchParams(link.split('?')[1] || '').get('projectId') : null);
+    const milestoneId =
+      notif.metadata?.milestoneId ||
+      (link.includes('milestoneId=') ? new URLSearchParams(link.split('?')[1] || '').get('milestoneId') : null);
+
+    if (projectId) {
+      setTargetProjectId(projectId);
+      if (milestoneId) {
+        setTargetMilestoneId(milestoneId);
+      }
+      setActiveTab('tasks');
+      setTasksTabMode('projects');
+      return;
+    }
+
+    if (link.includes('my-progress') || link.includes('my_progress')) {
+      setActiveTab('my_progress');
+      return;
+    }
+    if (link.includes('calendar')) {
+      setActiveTab('calendar');
+      return;
+    }
+    if (link.includes('grouping') || link.includes('group')) {
+      setActiveTab('grouping');
+      return;
+    }
+    if (link.includes('connect')) {
+      setActiveTab('connect');
+      return;
+    }
+    if (link.includes('profile')) {
+      setActiveTab('profile');
+      return;
+    }
+    if (link.includes('settings')) {
+      setActiveTab(isAdmin ? 'settings' : 'profile');
+      return;
+    }
+
+    // Default fallback: tasks tab
+    setActiveTab('tasks');
   };
 
   // Derived Task Category Helper
@@ -793,16 +907,25 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                       <div className="empty-notifs">No notifications yet</div>
                     ) : (
                       notifications.slice(0, 6).map((n, i) => (
-                        <div key={i} className={`notif-single-item ${!n.read ? 'unread' : ''}`}>
+                        <div
+                          key={n._id || n.id || i}
+                          className={`notif-single-item ${!n.read ? 'unread' : ''}`}
+                          onClick={() => handleNotificationClick(n)}
+                          style={{ cursor: 'pointer' }}
+                          title="Click to view linked project or record"
+                        >
                           <div className="notif-icon-circle">
                             <SparklesIcon size={13} className="text-primary" />
                           </div>
-                          <div className="notif-content">
+                          <div className="notif-content" style={{ flex: 1 }}>
                             <strong>{n.title}</strong>
                             <p>{n.message}</p>
-                            <span className="notif-time">
-                              {new Date(n.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                              <span className="notif-time">
+                                {new Date(n.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              <span style={{ fontSize: '11px', color: 'var(--primary-color)', fontWeight: 600 }}>Open →</span>
+                            </div>
                           </div>
                         </div>
                       ))
@@ -826,8 +949,8 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             <button
               type="button"
               className="top-round-icon-btn"
-              onClick={() => setActiveTab('settings')}
-              title="Settings"
+              onClick={() => setActiveTab(isAdmin ? 'settings' : 'profile')}
+              title={isAdmin ? 'Settings' : 'Profile & Settings'}
             >
               <SettingsIcon size={18} />
             </button>
@@ -901,6 +1024,8 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <ProjectSectionView
                   user={user}
                   projects={projects}
+                  initialProjectId={targetProjectId}
+                  initialMilestoneId={targetMilestoneId}
                   onOpenNewProject={() => {
                     setEditingProject(null);
                     setIsProjectModalOpen(true);
@@ -1555,19 +1680,35 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             />
           )}
 
-          {/* TAB: SETTINGS (Organization Structure & Permissions Builder) */}
-          {isAdmin && activeTab === 'settings' && (
-            <OrganizationStructureBuilder
-              employees={employees}
-              onHierarchyUpdated={refreshAllData}
-            />
+          {/* TAB: SETTINGS (Organization Structure & Permissions Builder or User Profile) */}
+          {activeTab === 'settings' && (
+            isAdmin ? (
+              <OrganizationStructureBuilder
+                employees={employees}
+                onHierarchyUpdated={refreshAllData}
+              />
+            ) : (
+              <EmployeeProfileView
+                user={user}
+                isAdmin={isAdmin}
+                onProfileUpdated={(updatedUser) => {
+                  if (onUpdateUser) onUpdateUser(updatedUser);
+                  refreshAllData();
+                }}
+              />
+            )
           )}
 
           {/* TAB: MESSAGES (Notifications & Meeting Updates) */}
           {activeTab === 'messages' && (
             <div className="messages-center-card animate-fade-in" style={{ padding: '24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3>Taskflow Notifications & Messages</h3>
+                <div>
+                  <h3 style={{ margin: 0 }}>Taskflow Notifications & Messages</h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
+                    Track assignments, project updates, milestone events, and system alerts
+                  </p>
+                </div>
                 {unreadNotifCount > 0 && (
                   <button type="button" className="btn btn-secondary btn-sm" onClick={handleMarkAllRead}>
                     Mark All as Read
@@ -1576,17 +1717,78 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               </div>
               <div className="messages-list">
                 {notifications.length === 0 ? (
-                  <p style={{ color: 'var(--text-muted)' }}>No messages or meeting notifications yet.</p>
+                  <p style={{ color: 'var(--text-muted)', padding: '24px 0', textAlign: 'center' }}>No messages or meeting notifications yet.</p>
                 ) : (
                   notifications.map((n, i) => (
-                    <div key={i} className={`message-item-card ${!n.read ? 'unread-item' : ''}`} style={{ padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '10px', background: 'var(--bg-card)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <strong>{n.title}</strong>
+                    <div
+                      key={n._id || n.id || i}
+                      className={`message-item-card ${!n.read ? 'unread-item' : ''}`}
+                      style={{
+                        padding: '16px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)',
+                        marginBottom: '12px',
+                        background: 'var(--bg-card)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div
+                            style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              background: !n.read ? 'var(--primary-color)' : 'transparent',
+                            }}
+                          />
+                          <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{n.title}</strong>
+                        </div>
                         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {new Date(n.createdAt || Date.now()).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          {new Date(n.createdAt || Date.now()).toLocaleDateString([], {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
                         </span>
                       </div>
-                      <p style={{ margin: 0, color: 'var(--text-main)', fontSize: '13px' }}>{n.message}</p>
+                      <p style={{ margin: '0 0 12px 16px', color: 'var(--text-main)', fontSize: '13px', lineHeight: '1.5' }}>
+                        {n.message}
+                      </p>
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-xs"
+                          onClick={() => handleNotificationClick(n)}
+                        >
+                          Open Record →
+                        </button>
+                        {!n.read && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-xs"
+                            onClick={(e) => handleMarkSingleRead(n._id || n.id, e)}
+                          >
+                            Mark as Read
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn btn-outline-danger btn-xs"
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '11px',
+                            color: '#ef4444',
+                            borderColor: 'rgba(239, 68, 68, 0.3)',
+                            background: 'transparent',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                          }}
+                          onClick={(e) => handleDeleteNotification(n._id || n.id, e)}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}

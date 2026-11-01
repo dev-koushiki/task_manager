@@ -8,14 +8,12 @@ router.get("/", authMiddleware, async (req, res) => {
   try {
     const notifications = await Notification.find({
       userId: req.user._id,
-      organizationId: req.user.organizationId,
     })
       .sort({ createdAt: -1 })
       .limit(50);
 
     const unreadCount = await Notification.countDocuments({
       userId: req.user._id,
-      organizationId: req.user.organizationId,
       read: false,
     });
 
@@ -56,7 +54,6 @@ router.put("/read-all", authMiddleware, async (req, res) => {
     await Notification.updateMany(
       {
         userId: req.user._id,
-        organizationId: req.user.organizationId,
         read: false,
       },
       { read: true }

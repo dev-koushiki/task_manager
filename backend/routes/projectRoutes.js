@@ -73,6 +73,50 @@ async function calculateProjectMetrics(project, orgId) {
   };
 }
 
+// Helper: Send project or milestone notification with duplicate prevention
+async function sendProjectNotification({
+  userId,
+  organizationId,
+  type,
+  title,
+  message,
+  link,
+  projectId,
+  milestoneId,
+}) {
+  if (!userId) return null;
+  try {
+    // Check if duplicate notification already sent in past 24 hours
+    const duplicateQuery = {
+      userId,
+      type,
+      link,
+      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    };
+    const existing = await Notification.findOne(duplicateQuery);
+    if (existing) {
+      return existing; // Prevent duplicate notification
+    }
+
+    return await Notification.create({
+      userId,
+      organizationId: organizationId || null,
+      type,
+      title,
+      message,
+      link,
+      read: false,
+      metadata: {
+        projectId: projectId ? String(projectId) : undefined,
+        milestoneId: milestoneId ? String(milestoneId) : undefined,
+      },
+    });
+  } catch (err) {
+    console.warn("sendProjectNotification error:", err.message);
+    return null;
+  }
+}
+
 // -------------------------------------------------------------
 // POST /api/projects/analyze-concept-note - Upload & analyze concept note with AI
 // -------------------------------------------------------------
@@ -146,7 +190,10 @@ router.get("/", authMiddleware, async (req, res) => {
   try {
     const currentUser = req.user;
     const orgId = currentUser.organizationId;
-    let query = { organizationId: orgId };
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: currentUser.companyName }] }
+      : { companyName: currentUser.companyName };
+    let query = { ...orgCondition };
 
     const projectScope =
       currentUser.accessScopes?.projectScope || (currentUser.role === "admin" ? "company" : "project");
@@ -161,19 +208,22 @@ router.get("/", authMiddleware, async (req, res) => {
         const relevantUserIds = [currentUser.id, ...subordinateIds];
 
         const userTasks = await Task.find({
-          organizationId: orgId,
+          ...orgCondition,
           $or: [{ assignedTo: { $in: relevantUserIds } }, { assignedBy: currentUser.id }],
         }).select("projectId");
 
         const taskProjectIds = userTasks.map((t) => t.projectId).filter(Boolean);
 
-        query.$or = [
-          { directorId: currentUser.id },
-          { createdBy: currentUser.id },
-          { "assignedEmployees.userId": { $in: relevantUserIds } },
-          { "milestones.assignedTo.userId": { $in: relevantUserIds } },
-          { _id: { $in: taskProjectIds } },
-        ];
+        query = {
+          ...orgCondition,
+          $or: [
+            { directorId: currentUser.id },
+            { createdBy: currentUser.id },
+            { "assignedEmployees.userId": { $in: relevantUserIds } },
+            { "milestones.assignedTo.userId": { $in: relevantUserIds } },
+            { _id: { $in: taskProjectIds } },
+          ],
+        };
       }
     }
 
@@ -243,8 +293,12 @@ router.post("/", authMiddleware, async (req, res) => {
     let assignedDirectorId = directorId || user.id;
     let directorUser = null;
 
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
+
     if (assignedDirectorId) {
-      directorUser = await User.findOne({ _id: assignedDirectorId, organizationId: orgId });
+      directorUser = await User.findOne({ _id: assignedDirectorId, ...orgCondition });
     }
 
     // Resolve assigned employees
@@ -252,7 +306,7 @@ router.post("/", authMiddleware, async (req, res) => {
     if (Array.isArray(assignedEmployeeIds) && assignedEmployeeIds.length > 0) {
       const emps = await User.find({
         _id: { $in: assignedEmployeeIds },
-        organizationId: orgId,
+        ...orgCondition,
       }).select("firstName lastName email role designation team");
 
       assignedEmployeesList = emps.map((emp) => ({
@@ -293,6 +347,7 @@ router.post("/", authMiddleware, async (req, res) => {
         ? [expectedDeliverables]
         : [],
       organizationId: orgId,
+      companyName: user.companyName || "",
       department: department ? department.trim() : directorUser?.department || user.department || "General",
       team: team ? team.trim() : user.team || "",
       directorId: directorUser ? directorUser._id : user.id,
@@ -309,11 +364,11 @@ router.post("/", authMiddleware, async (req, res) => {
       conceptNote: conceptNote || null,
     });
 
-    // Notify assigned employees
+    // Notify assigned employees (with 24-hr deduplication)
     if (assignedEmployeesList.length > 0) {
       for (const emp of assignedEmployeesList) {
         if (emp.userId.toString() !== user.id.toString()) {
-          await Notification.create({
+          await sendProjectNotification({
             userId: emp.userId,
             organizationId: orgId,
             type: "project_assigned",
@@ -321,7 +376,8 @@ router.post("/", authMiddleware, async (req, res) => {
             message: `${user.firstName || "Admin"} assigned you to project "${project.name}". Target completion: ${
               project.targetCompletionDate || project.deadline || "TBD"
             }.`,
-            link: `/tasks?projectId=${project._id}`,
+            link: `/dashboard?tab=tasks&projectId=${project._id}`,
+            projectId: project._id,
           });
         }
       }
@@ -352,8 +408,13 @@ router.post("/", authMiddleware, async (req, res) => {
 // -------------------------------------------------------------
 router.get("/:id", authMiddleware, async (req, res) => {
   try {
-    const orgId = req.user.organizationId;
-    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId })
+    const user = req.user;
+    const orgId = user.organizationId;
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
+
+    const project = await Project.findOne({ _id: req.params.id, ...orgCondition })
       .populate("directorId", "firstName lastName email designation department")
       .populate("createdBy", "firstName lastName email")
       .populate("assignedEmployees.userId", "firstName lastName email designation role team");
@@ -362,7 +423,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "Project not found in your organization." });
     }
 
-    const tasks = await Task.find({ projectId: project._id, organizationId: orgId })
+    const tasks = await Task.find({ projectId: project._id, ...orgCondition })
       .populate("assignedTo", "firstName lastName email role designation")
       .populate("assignedBy", "firstName lastName role")
       .sort({ createdAt: 1 });
@@ -386,8 +447,11 @@ router.put("/:id", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
     const orgId = user.organizationId;
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
 
-    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    const project = await Project.findOne({ _id: req.params.id, ...orgCondition });
     if (!project) {
       return res.status(404).json({ message: "Project not found in your organization." });
     }
@@ -473,7 +537,11 @@ router.post("/:id/assign", authMiddleware, async (req, res) => {
     const orgId = user.organizationId;
     const { employeeIds } = req.body;
 
-    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
+
+    const project = await Project.findOne({ _id: req.params.id, ...orgCondition });
     if (!project) {
       return res.status(404).json({ message: "Project not found." });
     }
@@ -484,7 +552,7 @@ router.post("/:id/assign", authMiddleware, async (req, res) => {
 
     const employees = await User.find({
       _id: { $in: employeeIds },
-      organizationId: orgId,
+      ...orgCondition,
     }).select("firstName lastName email role designation team");
 
     project.assignedEmployees = employees.map((emp) => ({
@@ -499,10 +567,10 @@ router.post("/:id/assign", authMiddleware, async (req, res) => {
 
     await project.save();
 
-    // Send notifications to all assigned employees
+    // Send notifications to all assigned employees with duplicate prevention
     for (const emp of employees) {
       if (emp._id.toString() !== user.id.toString()) {
-        await Notification.create({
+        await sendProjectNotification({
           userId: emp._id,
           organizationId: orgId,
           type: "project_assigned",
@@ -510,7 +578,8 @@ router.post("/:id/assign", authMiddleware, async (req, res) => {
           message: `${user.firstName || "Admin"} assigned you to project "${project.name}". Target completion: ${
             project.targetCompletionDate || project.deadline || "TBD"
           }.`,
-          link: `/tasks?projectId=${project._id}`,
+          link: `/dashboard?tab=tasks&projectId=${project._id}`,
+          projectId: project._id,
         });
       }
     }
@@ -538,7 +607,11 @@ router.post("/:id/milestones", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "Milestone title is required." });
     }
 
-    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
+
+    const project = await Project.findOne({ _id: req.params.id, ...orgCondition });
     if (!project) {
       return res.status(404).json({ message: "Project not found." });
     }
@@ -547,7 +620,7 @@ router.post("/:id/milestones", authMiddleware, async (req, res) => {
     if (Array.isArray(assignedEmployeeIds) && assignedEmployeeIds.length > 0) {
       const emps = await User.find({
         _id: { $in: assignedEmployeeIds },
-        organizationId: orgId,
+        ...orgCondition,
       }).select("firstName lastName email role designation team");
 
       assignedToList = emps.map((emp) => ({
@@ -576,16 +649,20 @@ router.post("/:id/milestones", authMiddleware, async (req, res) => {
     project.milestones.push(newMilestone);
     await project.save();
 
+    const createdMilestone = project.milestones[project.milestones.length - 1];
+
     // Notify assigned employees
     for (const emp of assignedToList) {
       if (emp.userId.toString() !== user.id.toString()) {
-        await Notification.create({
+        await sendProjectNotification({
           userId: emp.userId,
           organizationId: orgId,
           type: "milestone_assigned",
           title: `Milestone Assignment: ${title}`,
           message: `${user.firstName || "Supervisor"} assigned you milestone "${title}" under project "${project.name}".`,
-          link: `/tasks?projectId=${project._id}`,
+          link: `/dashboard?tab=tasks&projectId=${project._id}&milestoneId=${createdMilestone._id}`,
+          projectId: project._id,
+          milestoneId: createdMilestone._id,
         });
       }
     }
@@ -594,7 +671,7 @@ router.post("/:id/milestones", authMiddleware, async (req, res) => {
 
     res.status(201).json({
       message: "Milestone added underneath project successfully",
-      milestone: project.milestones[project.milestones.length - 1],
+      milestone: createdMilestone,
       metrics,
     });
   } catch (error) {
@@ -610,9 +687,12 @@ router.put("/:id/milestones/:milestoneId", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
     const orgId = user.organizationId;
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
     const { title, description, deadline, dueDate, status, progress, completed, submissionNotes, phase } = req.body;
 
-    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    const project = await Project.findOne({ _id: req.params.id, ...orgCondition });
     if (!project) {
       return res.status(404).json({ message: "Project not found." });
     }
@@ -682,8 +762,12 @@ router.put("/:id/milestones/:milestoneId", authMiddleware, async (req, res) => {
 // -------------------------------------------------------------
 router.delete("/:id/milestones/:milestoneId", authMiddleware, async (req, res) => {
   try {
-    const orgId = req.user.organizationId;
-    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    const user = req.user;
+    const orgId = user.organizationId;
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
+    const project = await Project.findOne({ _id: req.params.id, ...orgCondition });
     if (!project) {
       return res.status(404).json({ message: "Project not found." });
     }
@@ -708,7 +792,11 @@ router.post("/:id/milestones/:milestoneId/assign", authMiddleware, async (req, r
     const orgId = user.organizationId;
     const { employeeIds } = req.body;
 
-    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
+
+    const project = await Project.findOne({ _id: req.params.id, ...orgCondition });
     if (!project) {
       return res.status(404).json({ message: "Project not found." });
     }
@@ -720,7 +808,7 @@ router.post("/:id/milestones/:milestoneId/assign", authMiddleware, async (req, r
 
     const employees = await User.find({
       _id: { $in: employeeIds || [] },
-      organizationId: orgId,
+      ...orgCondition,
     }).select("firstName lastName email role designation team");
 
     milestone.assignedTo = employees.map((emp) => ({
@@ -736,13 +824,15 @@ router.post("/:id/milestones/:milestoneId/assign", authMiddleware, async (req, r
 
     for (const emp of employees) {
       if (emp._id.toString() !== user.id.toString()) {
-        await Notification.create({
+        await sendProjectNotification({
           userId: emp._id,
           organizationId: orgId,
           type: "milestone_assigned",
           title: `Milestone Assignment: ${milestone.title}`,
           message: `${user.firstName || "Supervisor"} assigned you milestone "${milestone.title}" under project "${project.name}".`,
-          link: `/tasks?projectId=${project._id}`,
+          link: `/dashboard?tab=tasks&projectId=${project._id}&milestoneId=${milestone._id}`,
+          projectId: project._id,
+          milestoneId: milestone._id,
         });
       }
     }
@@ -764,13 +854,16 @@ router.post("/:id/recordings", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
     const orgId = user.organizationId;
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
     const { audioUrl, durationSeconds, title, associatedMilestoneId, transcript, language } = req.body;
 
     if (!audioUrl) {
       return res.status(400).json({ message: "audioUrl is required." });
     }
 
-    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    const project = await Project.findOne({ _id: req.params.id, ...orgCondition });
     if (!project) {
       return res.status(404).json({ message: "Project not found." });
     }
@@ -805,8 +898,12 @@ router.post("/:id/recordings", authMiddleware, async (req, res) => {
 // -------------------------------------------------------------
 router.delete("/:id/recordings/:recordingId", authMiddleware, async (req, res) => {
   try {
-    const orgId = req.user.organizationId;
-    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    const user = req.user;
+    const orgId = user.organizationId;
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
+    const project = await Project.findOne({ _id: req.params.id, ...orgCondition });
     if (!project) {
       return res.status(404).json({ message: "Project not found." });
     }
@@ -827,8 +924,11 @@ router.delete("/:id", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
     const orgId = user.organizationId;
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
 
-    const project = await Project.findOne({ _id: req.params.id, organizationId: orgId });
+    const project = await Project.findOne({ _id: req.params.id, ...orgCondition });
     if (!project) {
       return res.status(404).json({ message: "Project not found in your organization." });
     }
@@ -838,7 +938,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
       return res.status(403).json({ message: "Access denied. You do not have permission to delete projects." });
     }
 
-    await Task.deleteMany({ projectId: project._id, organizationId: orgId });
+    await Task.deleteMany({ projectId: project._id });
     await Project.findByIdAndDelete(project._id);
 
     res.json({ message: "Project and all associated tasks deleted successfully." });

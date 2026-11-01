@@ -2256,6 +2256,23 @@ export const api = {
     }
   },
 
+  async deleteNotification(id) {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/notifications/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders(),
+      });
+      return data;
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      const local = localStorage.getItem('tm_notifications');
+      let list = local ? JSON.parse(local) : [];
+      list = list.filter((item) => (item._id || item.id) !== id);
+      localStorage.setItem('tm_notifications', JSON.stringify(list));
+      return { message: 'Notification deleted.' };
+    }
+  },
+
   // ----------------------------------------------------
   // ORGANIZATIONAL TREE
   // ----------------------------------------------------

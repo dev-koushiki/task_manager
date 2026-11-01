@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   SparklesIcon,
   PlusIcon,
@@ -27,6 +27,8 @@ export const ProjectSectionView = ({
   onEditProject,
   onDeleteProject,
   onProjectsUpdated,
+  initialProjectId = null,
+  initialMilestoneId = null,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('All');
@@ -36,6 +38,42 @@ export const ProjectSectionView = ({
   const [isConceptModalOpen, setIsConceptModalOpen] = useState(false);
   const [assignModalTarget, setAssignModalTarget] = useState(null); // { type: 'project' | 'milestone', project, milestone }
   const [voiceModalTarget, setVoiceModalTarget] = useState(null); // { project, milestone }
+
+  // Auto-scroll and highlight target project from notification link
+  useEffect(() => {
+    if (initialProjectId) {
+      setTimeout(() => {
+        const el = document.getElementById(`project-${initialProjectId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.style.outline = '2px solid var(--primary-color)';
+          el.style.boxShadow = '0 0 16px rgba(99, 102, 241, 0.4)';
+          setTimeout(() => {
+            el.style.outline = '';
+            el.style.boxShadow = '';
+          }, 3500);
+        }
+      }, 300);
+    }
+  }, [initialProjectId]);
+
+  // Auto-scroll and highlight target milestone from notification link
+  useEffect(() => {
+    if (initialMilestoneId) {
+      setTimeout(() => {
+        const el = document.getElementById(`milestone-${initialMilestoneId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.style.outline = '2px solid #10b981';
+          el.style.background = 'rgba(16, 185, 129, 0.12)';
+          setTimeout(() => {
+            el.style.outline = '';
+            el.style.background = '';
+          }, 3500);
+        }
+      }, 400);
+    }
+  }, [initialMilestoneId]);
 
   // Quick milestone creation / editing state
   const [milestoneModalTarget, setMilestoneModalTarget] = useState(null); // { project, milestoneToEdit }
@@ -345,7 +383,7 @@ export const ProjectSectionView = ({
                 : 'status-badge-neutral';
 
             return (
-              <div key={pId} className="project-structured-card animate-scale-up">
+              <div key={pId} id={`project-${pId}`} className="project-structured-card animate-scale-up">
                 {/* Project Header Row */}
                 <div className="proj-header-row">
                   <div className="proj-header-left">
@@ -554,6 +592,7 @@ export const ProjectSectionView = ({
                         return (
                           <div
                             key={mId || idx}
+                            id={mId ? `milestone-${mId}` : undefined}
                             className={`milestone-item-row ${isDone ? 'milestone-done' : ''}`}
                           >
                             {/* Checkbox for Completion Tracking */}
