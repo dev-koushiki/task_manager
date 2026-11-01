@@ -364,7 +364,7 @@ export const GroupingChatView = ({ user }) => {
           {/* Header */}
           <div className="whatsapp-sidebar-header">
             <div className="user-profile-summary">
-              <div className="avatar-circle-sm">
+              <div className="wa-avatar-circle-sm">
                 {user?.firstName?.[0] || 'U'}
               </div>
               <div className="user-title-wrap">
@@ -422,21 +422,21 @@ export const GroupingChatView = ({ user }) => {
           <div className="whatsapp-filter-pills">
             <button
               type="button"
-              className={`filter-pill ${filterTab === 'all' ? 'active' : ''}`}
+              className={`wa-filter-pill ${filterTab === 'all' ? 'active' : ''}`}
               onClick={() => setFilterTab('all')}
             >
               All ({groups.length})
             </button>
             <button
               type="button"
-              className={`filter-pill ${filterTab === 'groups' ? 'active' : ''}`}
+              className={`wa-filter-pill ${filterTab === 'groups' ? 'active' : ''}`}
               onClick={() => setFilterTab('groups')}
             >
               Groups ({groups.filter((g) => !g.isDirectChat).length})
             </button>
             <button
               type="button"
-              className={`filter-pill ${filterTab === 'direct' ? 'active' : ''}`}
+              className={`wa-filter-pill ${filterTab === 'direct' ? 'active' : ''}`}
               onClick={() => setFilterTab('direct')}
             >
               Direct ({groups.filter((g) => g.isDirectChat).length})
@@ -446,12 +446,12 @@ export const GroupingChatView = ({ user }) => {
           {/* Conversation List */}
           <div className="whatsapp-conversation-list">
             {loading ? (
-              <div className="conv-loading-state">
+              <div className="wa-conv-loading-state">
                 <div className="spinner-border text-primary" style={{ width: '24px', height: '24px' }}></div>
                 <p>Loading chats and groups...</p>
               </div>
             ) : filteredConversations.length === 0 ? (
-              <div className="conv-empty-state">
+              <div className="wa-conv-empty-state">
                 <MessageSquareIcon size={32} className="text-muted" />
                 <p>No conversations found</p>
                 <button
@@ -475,10 +475,10 @@ export const GroupingChatView = ({ user }) => {
                 return (
                   <div
                     key={group._id}
-                    className={`conversation-item ${isSelected ? 'active' : ''}`}
+                    className={`wa-conversation-item ${isSelected ? 'active' : ''}`}
                     onClick={() => handleSelectGroup(group)}
                   >
-                    <div className={`conv-avatar ${isDirect ? 'direct' : 'group'}`}>
+                    <div className={`wa-conv-avatar ${isDirect ? 'direct' : 'group'}`}>
                       {isDirect ? (
                         displayName?.[0] || 'U'
                       ) : (
@@ -486,24 +486,24 @@ export const GroupingChatView = ({ user }) => {
                       )}
                     </div>
 
-                    <div className="conv-content">
-                      <div className="conv-top-row">
-                        <span className="conv-title" title={displayName}>
+                    <div className="wa-conv-content">
+                      <div className="wa-conv-top-row">
+                        <span className="wa-conv-title" title={displayName}>
                           {displayName}
                         </span>
-                        {lastTime && <span className="conv-time">{lastTime}</span>}
+                        {lastTime && <span className="wa-conv-time">{lastTime}</span>}
                       </div>
 
-                      <div className="conv-bottom-row">
-                        <span className="conv-snippet" title={lastMsg}>
+                      <div className="wa-conv-bottom-row">
+                        <span className="wa-conv-snippet" title={lastMsg}>
                           {group.lastMessage?.senderName && `${group.lastMessage.senderName}: `}
                           {lastMsg}
                         </span>
                         {group.unreadCount > 0 && (
-                          <span className="conv-unread-pill">{group.unreadCount}</span>
+                          <span className="wa-conv-unread-pill">{group.unreadCount}</span>
                         )}
                         {!isDirect && (
-                          <span className="conv-member-count" title={`${group.members?.length || 0} members`}>
+                          <span className="wa-conv-member-count" title={`${group.members?.length || 0} members`}>
                             {group.members?.length || 0}m
                           </span>
                         )}
@@ -525,18 +525,18 @@ export const GroupingChatView = ({ user }) => {
               {/* Chat Header */}
               <div className="whatsapp-chat-header">
                 <div
-                  className="chat-header-info"
+                  className="wa-chat-header-info"
                   onClick={() => setModalMode('details')}
                   title="Click to view group details"
                 >
-                  <div className={`chat-header-avatar ${selectedGroup.isDirectChat ? 'direct' : 'group'}`}>
+                  <div className={`wa-chat-header-avatar ${selectedGroup.isDirectChat ? 'direct' : 'group'}`}>
                     {selectedGroup.isDirectChat ? (
                       selectedGroup.displayName?.[0] || 'U'
                     ) : (
                       <UsersIcon size={20} />
                     )}
                   </div>
-                  <div className="chat-header-text">
+                  <div className="wa-chat-header-text">
                     <h3>{selectedGroup.displayName || selectedGroup.name}</h3>
                     <p>
                       {selectedGroup.isDirectChat
@@ -565,12 +565,12 @@ export const GroupingChatView = ({ user }) => {
               {/* Chat Message History */}
               <div className="whatsapp-messages-viewport">
                 {messagesLoading ? (
-                  <div className="messages-loading">
+                  <div className="wa-messages-loading">
                     <div className="spinner-border text-primary" style={{ width: '24px', height: '24px' }}></div>
                     <span>Loading conversation history...</span>
                   </div>
                 ) : messages.length === 0 ? (
-                  <div className="messages-empty-state">
+                  <div className="wa-messages-empty-state">
                     <SparklesIcon size={32} className="text-primary" />
                     <h4>Start the conversation</h4>
                     <p>Send a message to collaborate with your team members in real time.</p>
@@ -590,28 +590,28 @@ export const GroupingChatView = ({ user }) => {
                         <div className="whatsapp-bubble">
                           {/* Sender name in group chats */}
                           {!isMine && !selectedGroup.isDirectChat && (
-                            <span className="bubble-sender-name">
+                            <span className="wa-bubble-sender-name">
                               {msg.senderName}
                             </span>
                           )}
 
                           {/* Quoted Reply Preview */}
                           {msg.replyTo && (
-                            <div className="bubble-quoted-reply">
-                              <span className="quote-sender">{msg.replyTo.senderName}</span>
-                              <p className="quote-text">{msg.replyTo.text}</p>
+                            <div className="wa-bubble-quoted-reply">
+                              <span className="wa-quote-sender">{msg.replyTo.senderName}</span>
+                              <p className="wa-quote-text">{msg.replyTo.text}</p>
                             </div>
                           )}
 
                           {/* Message Text */}
-                          <div className="bubble-text">{msg.text}</div>
+                          <div className="wa-bubble-text">{msg.text}</div>
 
                           {/* Bubble Footer: Time & Action */}
-                          <div className="bubble-meta">
-                            <span className="bubble-time">{timeStr}</span>
+                          <div className="wa-bubble-meta">
+                            <span className="wa-bubble-time">{timeStr}</span>
                             <button
                               type="button"
-                              className="bubble-reply-btn"
+                              className="wa-bubble-reply-btn"
                               title="Reply to this message"
                               onClick={() =>
                                 setReplyingTo({
@@ -636,17 +636,17 @@ export const GroupingChatView = ({ user }) => {
               <div className="whatsapp-input-container">
                 {/* Active Reply Banner */}
                 {replyingTo && (
-                  <div className="replying-banner animate-fade-in">
+                  <div className="wa-replying-banner animate-fade-in">
                     <div className="replying-left-accent"></div>
-                    <div className="replying-content">
-                      <span className="replying-title">
+                    <div className="wa-replying-content">
+                      <span className="wa-replying-title">
                         Replying to <strong>{replyingTo.senderName}</strong>
                       </span>
-                      <p className="replying-text">{replyingTo.text}</p>
+                      <p className="wa-replying-text">{replyingTo.text}</p>
                     </div>
                     <button
                       type="button"
-                      className="close-reply-btn"
+                      className="wa-close-reply-btn"
                       onClick={() => setReplyingTo(null)}
                     >
                       &times;
@@ -677,8 +677,8 @@ export const GroupingChatView = ({ user }) => {
           ) : (
             /* Welcome / Zero State */
             <div className="whatsapp-welcome-stage">
-              <div className="welcome-card animate-scale-up">
-                <div className="welcome-icon-circle">
+              <div className="wa-welcome-card animate-scale-up">
+                <div className="wa-welcome-icon-circle">
                   <MessageSquareIcon size={48} className="text-primary" />
                 </div>
                 <h2>TaskFlow Grouping & Communication</h2>
@@ -687,7 +687,7 @@ export const GroupingChatView = ({ user }) => {
                   groups or start direct individual chats with WhatsApp-style messaging and replies.
                 </p>
 
-                <div className="welcome-actions">
+                <div className="wa-welcome-actions">
                   <button
                     type="button"
                     className="btn btn-primary"
@@ -719,8 +719,8 @@ export const GroupingChatView = ({ user }) => {
       {modalMode === 'create' && (
         <div className="grouping-modal-overlay animate-fade-in">
           <div className="grouping-modal-box animate-scale-up">
-            <div className="modal-header">
-              <div className="modal-title-wrap">
+            <div className="grouping-modal-header">
+              <div className="grouping-modal-title-wrap">
                 <UsersIcon size={20} className="text-primary" />
                 <h3>Create New Team Group</h3>
               </div>
@@ -734,7 +734,7 @@ export const GroupingChatView = ({ user }) => {
             </div>
 
             <form onSubmit={handleCreateGroup}>
-              <div className="modal-body">
+              <div className="grouping-modal-body">
                 {/* Group Details Form */}
                 <div className="form-group mb-3">
                   <label className="form-label">
@@ -764,11 +764,11 @@ export const GroupingChatView = ({ user }) => {
                 </div>
 
                 {/* Searchable Employees Table */}
-                <div className="employee-selection-section">
-                  <div className="selection-header-row">
+                <div className="grouping-emp-selection-section">
+                  <div className="grouping-selection-header-row">
                     <div>
-                      <h4 className="selection-title">Select Group Members</h4>
-                      <p className="selection-subtitle">
+                      <h4 className="grouping-selection-title">Select Group Members</h4>
+                      <p className="grouping-selection-subtitle">
                         Choose team members to include in this group ({selectedEmployeeIds.length} selected)
                       </p>
                     </div>
@@ -785,14 +785,14 @@ export const GroupingChatView = ({ user }) => {
                   </div>
 
                   {/* Search Bar */}
-                  <div className="selection-search-bar">
+                  <div className="grouping-selection-search-bar">
                     <SearchIcon size={15} className="text-muted" />
                     <input
                       type="text"
                       placeholder="Search employees by name, role, department..."
                       value={employeeSearch}
                       onChange={(e) => setEmployeeSearch(e.target.value)}
-                      className="selection-search-input"
+                      className="grouping-selection-search-input"
                     />
                     {employeeSearch && (
                       <button
@@ -806,8 +806,8 @@ export const GroupingChatView = ({ user }) => {
                   </div>
 
                   {/* Searchable Table */}
-                  <div className="searchable-employee-table-wrapper">
-                    <table className="employee-selection-table">
+                  <div className="grouping-emp-table-wrapper">
+                    <table className="grouping-emp-table">
                       <thead>
                         <tr>
                           <th style={{ width: '40px' }}>Select</th>
@@ -839,7 +839,7 @@ export const GroupingChatView = ({ user }) => {
                                 <td onClick={(e) => e.stopPropagation()}>
                                   <button
                                     type="button"
-                                    className="btn-checkbox"
+                                    className="wa-btn-checkbox"
                                     onClick={() => handleToggleSelectEmployee(empId)}
                                   >
                                     {isSelected ? (
@@ -850,21 +850,21 @@ export const GroupingChatView = ({ user }) => {
                                   </button>
                                 </td>
                                 <td>
-                                  <div className="table-emp-cell">
-                                    <div className="avatar-circle-xs">{emp.firstName?.[0] || 'E'}</div>
-                                    <div className="table-emp-info">
+                                  <div className="wa-table-emp-cell">
+                                    <div className="wa-avatar-circle-xs">{emp.firstName?.[0] || 'E'}</div>
+                                    <div className="wa-table-emp-info">
                                       <strong>{fullName}</strong>
                                       <span>{emp.email}</span>
                                     </div>
                                   </div>
                                 </td>
                                 <td>
-                                  <span className="badge-dept">
+                                  <span className="wa-badge-dept">
                                     <BuildingIcon size={12} /> {emp.department || 'General'}
                                   </span>
                                 </td>
                                 <td>
-                                  <span className="badge-role">
+                                  <span className="wa-badge-role">
                                     <BriefcaseIcon size={12} /> {emp.positionTitle || emp.role || 'Contributor'}
                                   </span>
                                 </td>
@@ -878,7 +878,7 @@ export const GroupingChatView = ({ user }) => {
                 </div>
               </div>
 
-              <div className="modal-footer">
+              <div className="grouping-modal-footer">
                 <button
                   type="button"
                   className="btn btn-secondary"
@@ -905,8 +905,8 @@ export const GroupingChatView = ({ user }) => {
       {modalMode === 'details' && selectedGroup && (
         <div className="grouping-modal-overlay animate-fade-in">
           <div className="grouping-modal-box animate-scale-up">
-            <div className="modal-header">
-              <div className="modal-title-wrap">
+            <div className="grouping-modal-header">
+              <div className="grouping-modal-title-wrap">
                 <UsersIcon size={20} className="text-primary" />
                 <h3>Group Information & Members</h3>
               </div>
@@ -919,9 +919,9 @@ export const GroupingChatView = ({ user }) => {
               </button>
             </div>
 
-            <div className="modal-body">
+            <div className="grouping-modal-body">
               {/* Group Metadata Card */}
-              <div className="group-info-card">
+              <div className="wa-group-info-card">
                 {isEditingDetails ? (
                   <div className="edit-group-form animate-fade-in">
                     <div className="form-group mb-2">
@@ -942,7 +942,7 @@ export const GroupingChatView = ({ user }) => {
                         onChange={(e) => setEditGroupDesc(e.target.value)}
                       />
                     </div>
-                    <div className="edit-btn-row">
+                    <div className="wa-edit-btn-row">
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
@@ -961,7 +961,7 @@ export const GroupingChatView = ({ user }) => {
                   </div>
                 ) : (
                   <div className="view-group-details">
-                    <div className="details-header-row">
+                    <div className="wa-details-header-row">
                       <div>
                         <h3>{selectedGroup.name}</h3>
                         <p>{selectedGroup.description || 'No description provided.'}</p>
@@ -974,7 +974,7 @@ export const GroupingChatView = ({ user }) => {
                         <EditIcon size={14} /> Edit Details
                       </button>
                     </div>
-                    <div className="details-meta-pill">
+                    <div className="wa-details-meta-pill">
                       Created by {selectedGroup.createdByName || 'Admin'} · {selectedGroup.members?.length || 0} Members
                     </div>
                   </div>
@@ -983,7 +983,7 @@ export const GroupingChatView = ({ user }) => {
 
               {/* Members Section */}
               <div className="group-members-section">
-                <div className="members-header-row">
+                <div className="wa-members-header-row">
                   <h4>Group Members ({selectedGroup.members?.length || 0})</h4>
                   {!selectedGroup.isDirectChat && (
                     <button
@@ -1003,19 +1003,19 @@ export const GroupingChatView = ({ user }) => {
                 {/* Add Members Drawer / Table if active */}
                 {addMembersMode && (
                   <div className="add-members-drawer animate-fade-in mb-3">
-                    <div className="selection-search-bar mb-2">
+                    <div className="grouping-selection-search-bar mb-2">
                       <SearchIcon size={15} className="text-muted" />
                       <input
                         type="text"
                         placeholder="Search colleagues to add..."
                         value={employeeSearch}
                         onChange={(e) => setEmployeeSearch(e.target.value)}
-                        className="selection-search-input"
+                        className="grouping-selection-search-input"
                       />
                     </div>
 
-                    <div className="searchable-employee-table-wrapper" style={{ maxHeight: '180px' }}>
-                      <table className="employee-selection-table">
+                    <div className="grouping-emp-table-wrapper" style={{ maxHeight: '180px' }}>
+                      <table className="grouping-emp-table">
                         <tbody>
                           {availableEmployeesToAdd.length === 0 ? (
                             <tr>
@@ -1036,7 +1036,7 @@ export const GroupingChatView = ({ user }) => {
                                   <td style={{ width: '36px' }}>
                                     <button
                                       type="button"
-                                      className="btn-checkbox"
+                                      className="wa-btn-checkbox"
                                       onClick={() => handleToggleSelectEmployee(empId)}
                                     >
                                       {isSelected ? (
@@ -1075,16 +1075,16 @@ export const GroupingChatView = ({ user }) => {
                 )}
 
                 {/* Existing Members List */}
-                <div className="existing-members-list">
+                <div className="wa-existing-members-list">
                   {selectedGroup.members?.map((member) => {
                     const isGroupCreator = selectedGroup.createdBy === member.userId;
                     const isSelf = member.userId === currentUserId;
 
                     return (
-                      <div key={member.userId} className="member-list-item">
-                        <div className="member-left-info">
-                          <div className="avatar-circle-xs">{member.name?.[0] || 'M'}</div>
-                          <div className="member-names">
+                      <div key={member.userId} className="wa-member-list-item">
+                        <div className="wa-member-left-info">
+                          <div className="wa-avatar-circle-xs">{member.name?.[0] || 'M'}</div>
+                          <div className="wa-member-names">
                             <strong>
                               {member.name} {isSelf && '(You)'}
                             </strong>
@@ -1092,20 +1092,20 @@ export const GroupingChatView = ({ user }) => {
                           </div>
                         </div>
 
-                        <div className="member-right-controls">
+                        <div className="wa-member-right-controls">
                           {isGroupCreator ? (
-                            <span className="badge-admin">Creator</span>
+                            <span className="wa-badge-admin">Creator</span>
                           ) : member.role === 'admin' ? (
-                            <span className="badge-admin">Admin</span>
+                            <span className="wa-badge-admin">Admin</span>
                           ) : (
-                            <span className="badge-member">Member</span>
+                            <span className="wa-badge-member">Member</span>
                           )}
 
                           {/* Remove button for creator / org admin */}
                           {!selectedGroup.isDirectChat && (isAdmin || selectedGroup.createdBy === currentUserId || isSelf) && (
                             <button
                               type="button"
-                              className="btn-remove-member"
+                              className="wa-btn-remove-member"
                               title={isSelf ? 'Leave group' : 'Remove member'}
                               onClick={() => handleRemoveMember(member.userId, member.name)}
                             >
@@ -1120,7 +1120,7 @@ export const GroupingChatView = ({ user }) => {
               </div>
             </div>
 
-            <div className="modal-footer">
+            <div className="grouping-modal-footer">
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -1139,8 +1139,8 @@ export const GroupingChatView = ({ user }) => {
       {modalMode === 'direct' && (
         <div className="grouping-modal-overlay animate-fade-in">
           <div className="grouping-modal-box animate-scale-up">
-            <div className="modal-header">
-              <div className="modal-title-wrap">
+            <div className="grouping-modal-header">
+              <div className="grouping-modal-title-wrap">
                 <MessageSquareIcon size={20} className="text-primary" />
                 <h3>Start Direct 1-on-1 Chat</h3>
               </div>
@@ -1153,21 +1153,21 @@ export const GroupingChatView = ({ user }) => {
               </button>
             </div>
 
-            <div className="modal-body">
-              <div className="selection-search-bar mb-3">
+            <div className="grouping-modal-body">
+              <div className="grouping-selection-search-bar mb-3">
                 <SearchIcon size={15} className="text-muted" />
                 <input
                   type="text"
                   placeholder="Search colleague by name, email, department..."
                   value={employeeSearch}
                   onChange={(e) => setEmployeeSearch(e.target.value)}
-                  className="selection-search-input"
+                  className="grouping-selection-search-input"
                   autoFocus
                 />
               </div>
 
-              <div className="searchable-employee-table-wrapper">
-                <table className="employee-selection-table">
+              <div className="grouping-emp-table-wrapper">
+                <table className="grouping-emp-table">
                   <thead>
                     <tr>
                       <th>Colleague</th>
@@ -1182,21 +1182,21 @@ export const GroupingChatView = ({ user }) => {
                       .map((emp) => (
                         <tr key={emp._id || emp.id}>
                           <td>
-                            <div className="table-emp-cell">
-                              <div className="avatar-circle-xs">{emp.firstName?.[0] || 'C'}</div>
-                              <div className="table-emp-info">
+                            <div className="wa-table-emp-cell">
+                              <div className="wa-avatar-circle-xs">{emp.firstName?.[0] || 'C'}</div>
+                              <div className="wa-table-emp-info">
                                 <strong>{emp.firstName} {emp.lastName}</strong>
                                 <span>{emp.email}</span>
                               </div>
                             </div>
                           </td>
                           <td>
-                            <span className="badge-dept">
+                            <span className="wa-badge-dept">
                               <BuildingIcon size={12} /> {emp.department || 'General'}
                             </span>
                           </td>
                           <td>
-                            <span className="badge-role">
+                            <span className="wa-badge-role">
                               <BriefcaseIcon size={12} /> {emp.positionTitle || emp.role || 'Contributor'}
                             </span>
                           </td>
@@ -1216,7 +1216,7 @@ export const GroupingChatView = ({ user }) => {
               </div>
             </div>
 
-            <div className="modal-footer">
+            <div className="grouping-modal-footer">
               <button
                 type="button"
                 className="btn btn-secondary"
