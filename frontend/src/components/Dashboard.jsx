@@ -514,16 +514,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 onClick={() => setActiveTab('grouping')}
               >
                 <UsersIcon size={18} className="nav-icon" />
-                <span>Grouping</span>
-              </button>
-
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'grouping' ? 'active' : ''}`}
-                onClick={() => setActiveTab('grouping')}
-              >
-                <UsersIcon size={18} className="nav-icon" />
-                <span>Grouping</span>
+                <span>Group</span>
               </button>
 
               <button
@@ -589,7 +580,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 onClick={() => setActiveTab('grouping')}
               >
                 <UsersIcon size={18} className="nav-icon" />
-                <span>Grouping</span>
+                <span>Group</span>
               </button>
 
               <button

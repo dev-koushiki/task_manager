@@ -681,7 +681,7 @@ export const GroupingChatView = ({ user }) => {
                 <div className="wa-welcome-icon-circle">
                   <MessageSquareIcon size={48} className="text-primary" />
                 </div>
-                <h2>TaskFlow Grouping & Communication</h2>
+                <h2>TaskFlow Group & Communication</h2>
                 <p>
                   Connect with teams, squads, and colleagues in real time. Create custom project
                   groups or start direct individual chats with WhatsApp-style messaging and replies.
