@@ -3,6 +3,9 @@
   "functions": {
     "api/**": {
       "includeFiles": "backend/**"
+    },
+    "frontend/api/**": {
+      "includeFiles": "frontend/backend/**"
     }
   },
   "rewrites": [

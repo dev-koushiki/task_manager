@@ -1,5 +1,17 @@
-const { PDFParse } = require("pdf-parse");
-const mammoth = require("mammoth");
+let PDFParse = null;
+try {
+  const pdfPkg = require("pdf-parse");
+  PDFParse = pdfPkg.PDFParse || pdfPkg;
+} catch (e) {
+  console.warn("pdf-parse not available, falling back to direct stream parser:", e.message);
+}
+
+let mammoth = null;
+try {
+  mammoth = require("mammoth");
+} catch (e) {
+  console.warn("mammoth not available, falling back to direct stream parser:", e.message);
+}
 
 /**
  * Extract raw text from uploaded document buffer
@@ -10,33 +22,45 @@ async function extractDocumentText(buffer, mimeType = "", filename = "") {
 
   // 1. DOCX Documents
   if (lowerName.endsWith(".docx") || lowerMime.includes("wordprocessingml") || lowerMime.includes("docx")) {
-    try {
-      const result = await mammoth.extractRawText({ buffer });
-      if (result && result.value) {
-        return result.value.trim();
+    if (mammoth && typeof mammoth.extractRawText === "function") {
+      try {
+        const result = await mammoth.extractRawText({ buffer });
+        if (result && result.value) {
+          return result.value.trim();
+        }
+      } catch (err) {
+        console.warn("Mammoth extraction warning:", err.message);
       }
-    } catch (err) {
-      console.warn("Mammoth extraction warning:", err.message);
     }
   }
 
   // 2. PDF Documents
   if (lowerName.endsWith(".pdf") || lowerMime.includes("pdf")) {
-    try {
-      const parser = new PDFParse({ data: buffer });
-      if (typeof parser.load === "function") {
-        await parser.load();
+    if (PDFParse) {
+      try {
+        if (typeof PDFParse === "function" && PDFParse.prototype && PDFParse.prototype.getText) {
+          const parser = new PDFParse({ data: buffer });
+          if (typeof parser.load === "function") {
+            await parser.load();
+          }
+          const textResult = await parser.getText();
+          const extracted = typeof textResult === "string" ? textResult : (textResult?.text || "");
+          if (typeof parser.destroy === "function") {
+            await parser.destroy();
+          }
+          if (extracted && extracted.trim().length > 20) {
+            return extracted.trim();
+          }
+        } else if (typeof PDFParse === "function") {
+          const textResult = await PDFParse(buffer);
+          const extracted = typeof textResult === "string" ? textResult : (textResult?.text || "");
+          if (extracted && extracted.trim().length > 20) {
+            return extracted.trim();
+          }
+        }
+      } catch (err) {
+        console.warn("PDFParse warning:", err.message);
       }
-      const textResult = await parser.getText();
-      const extracted = typeof textResult === "string" ? textResult : (textResult?.text || "");
-      if (typeof parser.destroy === "function") {
-        await parser.destroy();
-      }
-      if (extracted && extracted.trim().length > 20) {
-        return extracted.trim();
-      }
-    } catch (err) {
-      console.warn("PDFParse warning:", err.message);
     }
 
     // Fallback: extract text streams from PDF buffer directly
