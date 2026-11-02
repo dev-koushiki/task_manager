@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../services/api';
 import {
   SearchIcon,
@@ -169,8 +170,8 @@ export const EmployeeDirectoryModal = ({
     document.body.removeChild(link);
   };
 
-  return (
-    <div className="modal-overlay animate-fade-in" onClick={onClose}>
+  return createPortal(
+    <div className="modal-overlay employee-directory-modal-overlay animate-fade-in" onClick={onClose}>
       <div
         className="modal-card employee-directory-modal-card animate-scale-up"
         onClick={(e) => e.stopPropagation()}
@@ -686,6 +687,7 @@ export const EmployeeDirectoryModal = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

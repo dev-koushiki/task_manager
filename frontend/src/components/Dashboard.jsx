@@ -752,15 +752,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
               <button
                 type="button"
-                className={`sidebar-nav-item ${activeTab === 'analytics' ? 'active' : ''}`}
-                onClick={() => setActiveTab('analytics')}
-              >
-                <AwardIcon size={18} className="nav-icon" />
-                <span>Performance</span>
-              </button>
-
-              <button
-                type="button"
                 className={`sidebar-nav-item ${activeTab === 'settings' ? 'active' : ''}`}
                 onClick={() => setActiveTab('settings')}
               >

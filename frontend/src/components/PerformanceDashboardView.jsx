@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../services/api';
 import {
   AwardIcon,
@@ -1234,161 +1235,163 @@ export const PerformanceDashboardView = ({
       )}
 
       {/* ================= MODAL: ADMIN SCORING WEIGHTS CONFIGURATION ================= */}
-      {isConfigModalOpen && (
-        <div className="modal-overlay animate-fade-in" onClick={() => setIsConfigModalOpen(false)}>
-          <div className="modal-card perf-config-modal-card animate-scale-up" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title-row">
-                <SettingsIcon size={18} />
-                <h3>Configure Performance Evaluation Weights</h3>
+      {isConfigModalOpen &&
+        createPortal(
+          <div className="modal-overlay animate-fade-in" onClick={() => setIsConfigModalOpen(false)}>
+            <div className="modal-card perf-config-modal-card animate-scale-up" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <div className="modal-title-row">
+                  <SettingsIcon size={18} />
+                  <h3>Configure Performance Evaluation Weights</h3>
+                </div>
+                <button type="button" className="close-btn" onClick={() => setIsConfigModalOpen(false)}>
+                  ×
+                </button>
               </div>
-              <button type="button" className="close-btn" onClick={() => setIsConfigModalOpen(false)}>
-                ×
-              </button>
+
+              <form onSubmit={handleSaveConfig} className="modal-form">
+                <p className="config-help-text">
+                  Customize the percentage weights assigned to each of the 6 performance categories.
+                  The sum of all weights must equal exactly 100%.
+                </p>
+
+                {configSuccessMessage && (
+                  <div className="config-success-banner">
+                    <CheckCircleIcon size={16} /> {configSuccessMessage}
+                  </div>
+                )}
+
+                <div className="weights-form-grid">
+                  <div className="form-group">
+                    <label>1. Task Completion Rate Weight (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={weightsConfig.taskCompletionRate}
+                      onChange={(e) =>
+                        setWeightsConfig({ ...weightsConfig, taskCompletionRate: Number(e.target.value) })
+                      }
+                      required
+                    />
+                    <small className="help-text">Ratio of completed tasks vs total assigned tasks</small>
+                  </div>
+
+                  <div className="form-group">
+                    <label>2. On-Time Submission Rate Weight (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={weightsConfig.onTimeSubmissionRate}
+                      onChange={(e) =>
+                        setWeightsConfig({ ...weightsConfig, onTimeSubmissionRate: Number(e.target.value) })
+                      }
+                      required
+                    />
+                    <small className="help-text">Submissions delivered on or before official deadlines</small>
+                  </div>
+
+                  <div className="form-group">
+                    <label>3. Task Quality & First-Attempt Approval (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={weightsConfig.taskQualityFirstAttempt}
+                      onChange={(e) =>
+                        setWeightsConfig({ ...weightsConfig, taskQualityFirstAttempt: Number(e.target.value) })
+                      }
+                      required
+                    />
+                    <small className="help-text">Approval on first submission with minimal rework</small>
+                  </div>
+
+                  <div className="form-group">
+                    <label>4. Productivity & Work Consistency (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={weightsConfig.productivityConsistency}
+                      onChange={(e) =>
+                        setWeightsConfig({ ...weightsConfig, productivityConsistency: Number(e.target.value) })
+                      }
+                      required
+                    />
+                    <small className="help-text">Regularity of output across working weeks and active days</small>
+                  </div>
+
+                  <div className="form-group">
+                    <label>5. Comparable First Submissions (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={weightsConfig.comparableFirstSubmission}
+                      onChange={(e) =>
+                        setWeightsConfig({ ...weightsConfig, comparableFirstSubmission: Number(e.target.value) })
+                      }
+                      required
+                    />
+                    <small className="help-text">Submitting first among peer tasks with similar scope</small>
+                  </div>
+
+                  <div className="form-group">
+                    <label>6. Workload Management (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={weightsConfig.workloadManagement}
+                      onChange={(e) =>
+                        setWeightsConfig({ ...weightsConfig, workloadManagement: Number(e.target.value) })
+                      }
+                      required
+                    />
+                    <small className="help-text">Volume handling factoring in high/urgent task priority</small>
+                  </div>
+                </div>
+
+                <div className="weights-total-summary">
+                  <span>Total Weight:</span>
+                  <strong
+                    style={{
+                      color:
+                        Number(weightsConfig.taskCompletionRate) +
+                          Number(weightsConfig.onTimeSubmissionRate) +
+                          Number(weightsConfig.taskQualityFirstAttempt) +
+                          Number(weightsConfig.productivityConsistency) +
+                          Number(weightsConfig.comparableFirstSubmission) +
+                          Number(weightsConfig.workloadManagement) ===
+                        100
+                          ? '#10b981'
+                          : '#ef4444',
+                    }}
+                  >
+                    {Number(weightsConfig.taskCompletionRate) +
+                      Number(weightsConfig.onTimeSubmissionRate) +
+                      Number(weightsConfig.taskQualityFirstAttempt) +
+                      Number(weightsConfig.productivityConsistency) +
+                      Number(weightsConfig.comparableFirstSubmission) +
+                      Number(weightsConfig.workloadManagement)}
+                    % (Must be exactly 100%)
+                  </strong>
+                </div>
+
+                <div className="modal-actions">
+                  <button type="button" className="btn-secondary" onClick={() => setIsConfigModalOpen(false)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary" disabled={savingConfig}>
+                    {savingConfig ? 'Saving Configuration...' : 'Save & Recalculate'}
+                  </button>
+                </div>
+              </form>
             </div>
-
-            <form onSubmit={handleSaveConfig} className="modal-form">
-              <p className="config-help-text">
-                Customize the percentage weights assigned to each of the 6 performance categories.
-                The sum of all weights must equal exactly 100%.
-              </p>
-
-              {configSuccessMessage && (
-                <div className="config-success-banner">
-                  <CheckCircleIcon size={16} /> {configSuccessMessage}
-                </div>
-              )}
-
-              <div className="weights-form-grid">
-                <div className="form-group">
-                  <label>1. Task Completion Rate Weight (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={weightsConfig.taskCompletionRate}
-                    onChange={(e) =>
-                      setWeightsConfig({ ...weightsConfig, taskCompletionRate: Number(e.target.value) })
-                    }
-                    required
-                  />
-                  <small className="help-text">Ratio of completed tasks vs total assigned tasks</small>
-                </div>
-
-                <div className="form-group">
-                  <label>2. On-Time Submission Rate Weight (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={weightsConfig.onTimeSubmissionRate}
-                    onChange={(e) =>
-                      setWeightsConfig({ ...weightsConfig, onTimeSubmissionRate: Number(e.target.value) })
-                    }
-                    required
-                  />
-                  <small className="help-text">Submissions delivered on or before official deadlines</small>
-                </div>
-
-                <div className="form-group">
-                  <label>3. Task Quality & First-Attempt Approval (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={weightsConfig.taskQualityFirstAttempt}
-                    onChange={(e) =>
-                      setWeightsConfig({ ...weightsConfig, taskQualityFirstAttempt: Number(e.target.value) })
-                    }
-                    required
-                  />
-                  <small className="help-text">Approval on first submission with minimal rework</small>
-                </div>
-
-                <div className="form-group">
-                  <label>4. Productivity & Work Consistency (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={weightsConfig.productivityConsistency}
-                    onChange={(e) =>
-                      setWeightsConfig({ ...weightsConfig, productivityConsistency: Number(e.target.value) })
-                    }
-                    required
-                  />
-                  <small className="help-text">Regularity of output across working weeks and active days</small>
-                </div>
-
-                <div className="form-group">
-                  <label>5. Comparable First Submissions (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={weightsConfig.comparableFirstSubmission}
-                    onChange={(e) =>
-                      setWeightsConfig({ ...weightsConfig, comparableFirstSubmission: Number(e.target.value) })
-                    }
-                    required
-                  />
-                  <small className="help-text">Submitting first among peer tasks with similar scope</small>
-                </div>
-
-                <div className="form-group">
-                  <label>6. Workload Management (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={weightsConfig.workloadManagement}
-                    onChange={(e) =>
-                      setWeightsConfig({ ...weightsConfig, workloadManagement: Number(e.target.value) })
-                    }
-                    required
-                  />
-                  <small className="help-text">Volume handling factoring in high/urgent task priority</small>
-                </div>
-              </div>
-
-              <div className="weights-total-summary">
-                <span>Total Weight:</span>
-                <strong
-                  style={{
-                    color:
-                      Number(weightsConfig.taskCompletionRate) +
-                        Number(weightsConfig.onTimeSubmissionRate) +
-                        Number(weightsConfig.taskQualityFirstAttempt) +
-                        Number(weightsConfig.productivityConsistency) +
-                        Number(weightsConfig.comparableFirstSubmission) +
-                        Number(weightsConfig.workloadManagement) ===
-                      100
-                        ? '#10b981'
-                        : '#ef4444',
-                  }}
-                >
-                  {Number(weightsConfig.taskCompletionRate) +
-                    Number(weightsConfig.onTimeSubmissionRate) +
-                    Number(weightsConfig.taskQualityFirstAttempt) +
-                    Number(weightsConfig.productivityConsistency) +
-                    Number(weightsConfig.comparableFirstSubmission) +
-                    Number(weightsConfig.workloadManagement)}
-                  % (Must be exactly 100%)
-                </strong>
-              </div>
-
-              <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={() => setIsConfigModalOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary" disabled={savingConfig}>
-                  {savingConfig ? 'Saving Configuration...' : 'Save & Recalculate'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
