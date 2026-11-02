@@ -18,6 +18,7 @@ import {
   SidebarIcon,
 } from './Icons';
 import { api } from '../services/api';
+import { EmployeeDirectoryModal } from './EmployeeDirectoryModal';
 
 export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
   const [treeNodes, setTreeNodes] = useState([]);
@@ -57,6 +58,7 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [mergeSourceId, setMergeSourceId] = useState('');
   const [mergeTargetId, setMergeTargetId] = useState('');
+  const [isDirectoryModalOpen, setIsDirectoryModalOpen] = useState(false);
 
   // In-app Confirmation Modals
   const [nodeToDelete, setNodeToDelete] = useState(null);
@@ -900,7 +902,17 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
               <h4>Active Profiles</h4>
               <small className="profiles-subtext">Activated employees available for tree assignment & ID generation</small>
             </div>
-            <span className="count-pill">{activeEmployees.length} Total</span>
+            <div className="profiles-header-action-btns">
+              <span className="count-pill">{activeEmployees.length} Total</span>
+              <button
+                type="button"
+                className="view-all-profiles-btn"
+                onClick={() => setIsDirectoryModalOpen(true)}
+                title="View complete Employee Directory with performance statistics"
+              >
+                <UsersIcon size={12} /> View All
+              </button>
+            </div>
           </div>
 
           {/* Search & Filter */}
@@ -1379,6 +1391,12 @@ export const OrgTreeManagement = ({ onHierarchyUpdated }) => {
           </div>
         </div>
       )}
+
+      {/* 5. Complete Employee Directory & Performance Registry Modal */}
+      <EmployeeDirectoryModal
+        isOpen={isDirectoryModalOpen}
+        onClose={() => setIsDirectoryModalOpen(false)}
+      />
     </div>
   );
 };

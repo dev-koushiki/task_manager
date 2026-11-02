@@ -2884,6 +2884,83 @@ export const api = {
   },
 
   // ----------------------------------------------------
+  // AUTOMATED TASK PERFORMANCE EVALUATION & ANALYTICS
+  // ----------------------------------------------------
+  async getEmployeePerformanceEvaluation(employeeId, params = {}) {
+    const q = new URLSearchParams(params).toString();
+    const url = `${API_BASE_URL}/performance/evaluation/employee/${encodeURIComponent(employeeId)}${q ? `?${q}` : ''}`;
+    try {
+      return await safeFetchJson(url, { headers: getHeaders() });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: false, evaluation: null };
+    }
+  },
+
+  async getMyPerformanceEvaluation(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    const url = `${API_BASE_URL}/performance/evaluation/my-evaluation${q ? `?${q}` : ''}`;
+    try {
+      return await safeFetchJson(url, { headers: getHeaders() });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: false, evaluation: null };
+    }
+  },
+
+  async getPerformanceLeaderboard(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    const url = `${API_BASE_URL}/performance/evaluation/leaderboard${q ? `?${q}` : ''}`;
+    try {
+      return await safeFetchJson(url, { headers: getHeaders() });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, leaderboard: [] };
+    }
+  },
+
+  async getPerformanceAnalytics(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    const url = `${API_BASE_URL}/performance/evaluation/analytics${q ? `?${q}` : ''}`;
+    try {
+      return await safeFetchJson(url, { headers: getHeaders() });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: false, analytics: null };
+    }
+  },
+
+  async getPerformanceDirectory(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    const url = `${API_BASE_URL}/performance/evaluation/directory${q ? `?${q}` : ''}`;
+    try {
+      return await safeFetchJson(url, { headers: getHeaders() });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, directory: [] };
+    }
+  },
+
+  async getPerformanceConfig() {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/performance/evaluation/config`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: false, config: null };
+    }
+  },
+
+  async updatePerformanceConfig(payload) {
+    return await safeFetchJson(`${API_BASE_URL}/performance/evaluation/config`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // ----------------------------------------------------
   // GLOBAL SEARCH (Phase 7)
   // ----------------------------------------------------
   async globalSearch(query, category = 'all') {

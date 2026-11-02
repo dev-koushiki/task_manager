@@ -7,6 +7,13 @@ const Project = require("../models/Project");
 const User = require("../models/User");
 const Notification = require("../models/Notification");
 const Recognition = require("../models/Recognition");
+const Organization = require("../models/Organization");
+const {
+  getPeriodDateRange,
+  calculateEmployeePerformance,
+  calculateOrganizationLeaderboard,
+  calculateOrganizationAnalytics,
+} = require("../services/performanceEvaluationEngine");
 
 // Helper: Check if evaluator has supervisory authority over target employee
 async function canEvaluate(evaluator, targetEmployee) {
@@ -1124,6 +1131,304 @@ router.post("/recognition/certificate", authMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Failed to save certificate:", error);
     res.status(500).json({ message: "Failed to save certificate", error: error.message });
+  }
+});
+
+// ==========================================
+// AUTOMATED TASK PERFORMANCE EVALUATION ROUTES
+// ==========================================
+
+// 13. GET /api/performance/evaluation/my-evaluation
+// Authenticated employee views their automated task performance
+router.get("/evaluation/my-evaluation", authMiddleware, async (req, res) => {
+  try {
+    const { periodType = "month", year = new Date().getFullYear(), periodValue = "" } = req.query;
+    const orgId = req.user.organizationId;
+
+    const evaluation = await calculateEmployeePerformance(
+      req.user._id,
+      orgId,
+      periodType,
+      year,
+      periodValue
+    );
+
+    res.json({
+      success: true,
+      evaluation,
+    });
+  } catch (error) {
+    console.error("Failed to calculate personal evaluation:", error);
+    res.status(500).json({ message: "Failed to calculate performance evaluation", error: error.message });
+  }
+});
+
+// 14. GET /api/performance/evaluation/employee/:employeeId
+// Admin / Manager / Self inspects employee task performance
+router.get("/evaluation/employee/:employeeId", authMiddleware, async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const { periodType = "month", year = new Date().getFullYear(), periodValue = "" } = req.query;
+
+    const targetEmployee = await User.findById(employeeId);
+    if (!targetEmployee) {
+      return res.status(404).json({ message: "Employee not found" });
+    }
+
+    // Company isolation check
+    if (targetEmployee.companyName && req.user.companyName && targetEmployee.companyName !== req.user.companyName) {
+      return res.status(403).json({ message: "Access denied. Employee belongs to another company." });
+    }
+
+    // Permission check: Admin, Level 1, Supervisor, or Self
+    const isSelf = String(req.user._id) === String(employeeId);
+    const isAdmin = req.user.role === "admin" || req.user.hierarchyLevel === 1;
+    const isDirectManager = targetEmployee.reportsTo && String(targetEmployee.reportsTo) === String(req.user._id);
+
+    if (!isSelf && !isAdmin && !isDirectManager) {
+      return res.status(403).json({ message: "Access denied. You do not have managerial authority over this employee." });
+    }
+
+    const orgId = req.user.organizationId || targetEmployee.organizationId;
+    const evaluation = await calculateEmployeePerformance(
+      targetEmployee._id,
+      orgId,
+      periodType,
+      year,
+      periodValue
+    );
+
+    res.json({
+      success: true,
+      evaluation,
+    });
+  } catch (error) {
+    console.error("Failed to calculate employee evaluation:", error);
+    res.status(500).json({ message: "Failed to calculate employee performance evaluation", error: error.message });
+  }
+});
+
+// 15. GET /api/performance/evaluation/leaderboard
+// Organization-wide performance leaderboard
+router.get("/evaluation/leaderboard", authMiddleware, async (req, res) => {
+  try {
+    const {
+      periodType = "month",
+      year = new Date().getFullYear(),
+      periodValue = "",
+      department = "all",
+      designation = "all",
+      managerId = "all",
+      sortBy = "overallScore",
+    } = req.query;
+
+    const orgId = req.user.organizationId;
+    const filters = { department, designation, managerId, sortBy };
+
+    const result = await calculateOrganizationLeaderboard(
+      orgId,
+      periodType,
+      year,
+      periodValue,
+      filters
+    );
+
+    res.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    console.error("Failed to generate leaderboard:", error);
+    res.status(500).json({ message: "Failed to generate performance leaderboard", error: error.message });
+  }
+});
+
+// 16. GET /api/performance/evaluation/analytics
+// Comparative periodic analytics (current vs previous period)
+router.get("/evaluation/analytics", authMiddleware, async (req, res) => {
+  try {
+    const { periodType = "month", year = new Date().getFullYear(), periodValue = "" } = req.query;
+    const orgId = req.user.organizationId;
+
+    const analytics = await calculateOrganizationAnalytics(
+      orgId,
+      periodType,
+      year,
+      periodValue
+    );
+
+    res.json({
+      success: true,
+      analytics,
+    });
+  } catch (error) {
+    console.error("Failed to generate organization analytics:", error);
+    res.status(500).json({ message: "Failed to generate performance analytics", error: error.message });
+  }
+});
+
+// 17. GET /api/performance/evaluation/directory
+// Complete employee directory with task-based performance statistics
+router.get("/evaluation/directory", authMiddleware, async (req, res) => {
+  try {
+    const { periodType = "month", year = new Date().getFullYear(), periodValue = "" } = req.query;
+    const orgId = req.user.organizationId;
+
+    const query = {
+      isActivated: { $ne: false },
+      role: { $ne: "superadmin" },
+    };
+    if (orgId) {
+      query.organizationId = orgId;
+    } else if (req.user.companyName) {
+      query.companyName = req.user.companyName;
+    }
+
+    const employees = await User.find(query)
+      .select("_id firstName lastName email department designation role reportsTo hierarchyLevel employeeId profilePicture")
+      .lean();
+
+    const directory = [];
+    for (const emp of employees) {
+      try {
+        const evalResult = await calculateEmployeePerformance(emp._id, orgId, periodType, year, periodValue);
+        directory.push({
+          _id: emp._id,
+          name: `${emp.firstName || ""} ${emp.lastName || ""}`.trim(),
+          email: emp.email,
+          employeeId: emp.employeeId || `EMP-${emp._id.toString().slice(-4).toUpperCase()}`,
+          department: emp.department || "General",
+          designation: emp.designation || emp.role || "Specialist",
+          hierarchyLevel: emp.hierarchyLevel || 4,
+          reportsTo: emp.reportsTo,
+          overallScore: evalResult.overallScore,
+          performanceLevel: evalResult.performanceLevel,
+          hasSufficientData: evalResult.hasSufficientData,
+          trend: evalResult.trend,
+          scoreDelta: evalResult.scoreDelta,
+          metrics: {
+            completionRate: evalResult.metrics.taskCompletion.completionRate,
+            onTimeRate: evalResult.metrics.submissionSpeed.onTimeRate,
+            qualityScore: evalResult.metrics.quality.qualityScore,
+            totalCompleted: evalResult.metrics.taskCompletion.totalCompleted,
+            firstSubmissionCount: evalResult.metrics.firstSubmission.comparableFirstSubmissionsCount,
+          },
+        });
+      } catch (err) {
+        directory.push({
+          _id: emp._id,
+          name: `${emp.firstName || ""} ${emp.lastName || ""}`.trim(),
+          email: emp.email,
+          employeeId: emp.employeeId || "",
+          department: emp.department || "General",
+          designation: emp.designation || emp.role,
+          overallScore: 0,
+          performanceLevel: "Insufficient Data",
+          hasSufficientData: false,
+          trend: "stable",
+          scoreDelta: 0,
+          metrics: {},
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      directory,
+    });
+  } catch (error) {
+    console.error("Failed to load performance directory:", error);
+    res.status(500).json({ message: "Failed to load employee directory", error: error.message });
+  }
+});
+
+// 18. GET /api/performance/evaluation/config
+// Get organization-configured scoring weights and thresholds
+router.get("/evaluation/config", authMiddleware, async (req, res) => {
+  try {
+    const orgId = req.user.organizationId;
+    let config = null;
+    if (orgId) {
+      const org = await Organization.findById(orgId).select("performanceConfig").lean();
+      if (org && org.performanceConfig) {
+        config = org.performanceConfig;
+      }
+    }
+
+    const defaultConfig = {
+      weights: {
+        taskCompletionRate: 25,
+        onTimeSubmissionRate: 20,
+        taskQualityFirstAttempt: 25,
+        productivityConsistency: 15,
+        comparableFirstSubmission: 5,
+        workloadManagement: 10,
+      },
+      thresholds: {
+        outstanding: 90,
+        excellent: 80,
+        veryGood: 70,
+        good: 60,
+        needsImprovement: 50,
+      },
+      minTasksForEvaluation: 1,
+    };
+
+    res.json({
+      success: true,
+      config: config || defaultConfig,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch performance config", error: error.message });
+  }
+});
+
+// 19. POST /api/performance/evaluation/config
+// Admin updates organization weights and thresholds
+router.post("/evaluation/config", authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== "admin" && req.user.hierarchyLevel !== 1) {
+      return res.status(403).json({ message: "Access denied. Only administrators can configure performance evaluation rules." });
+    }
+
+    const orgId = req.user.organizationId;
+    if (!orgId) {
+      return res.status(400).json({ message: "Organization ID required" });
+    }
+
+    const { weights, thresholds, minTasksForEvaluation } = req.body;
+
+    const org = await Organization.findById(orgId);
+    if (!org) {
+      return res.status(404).json({ message: "Organization not found" });
+    }
+
+    if (!org.performanceConfig) org.performanceConfig = {};
+    if (weights) {
+      org.performanceConfig.weights = {
+        ...org.performanceConfig.weights,
+        ...weights,
+      };
+    }
+    if (thresholds) {
+      org.performanceConfig.thresholds = {
+        ...org.performanceConfig.thresholds,
+        ...thresholds,
+      };
+    }
+    if (minTasksForEvaluation !== undefined) {
+      org.performanceConfig.minTasksForEvaluation = minTasksForEvaluation;
+    }
+
+    await org.save();
+
+    res.json({
+      success: true,
+      message: "Performance evaluation configuration updated successfully",
+      config: org.performanceConfig,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to update performance config", error: error.message });
   }
 });
 

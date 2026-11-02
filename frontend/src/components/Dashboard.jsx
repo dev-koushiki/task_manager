@@ -32,7 +32,10 @@ import {
   GitBranchIcon,
   VideoIcon,
   MailIcon,
+  AwardIcon,
 } from './Icons';
+import { PerformanceDashboardView } from './PerformanceDashboardView';
+import { EmployeeDirectoryModal } from './EmployeeDirectoryModal';
 import { GroupingChatView } from './GroupingChatView';
 import { ProjectSectionView } from './ProjectSectionView';
 import { MyProgressView } from './MyProgressView';
@@ -109,6 +112,8 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const [isInspectModalOpen, setIsInspectModalOpen] = useState(false);
   const [inspectingProject, setInspectingProject] = useState(null);
   const [connectRoomCode, setConnectRoomCode] = useState('');
+  const [isDirectoryModalOpen, setIsDirectoryModalOpen] = useState(false);
+  const [selectedEmployeeForEval, setSelectedEmployeeForEval] = useState(null);
 
   const refreshAllData = async () => {
     try {
@@ -716,6 +721,18 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
               <button
                 type="button"
+                className={`sidebar-nav-item ${activeTab === 'analytics' ? 'active' : ''}`}
+                onClick={() => {
+                  setSelectedEmployeeForEval(user?._id);
+                  setActiveTab('analytics');
+                }}
+              >
+                <AwardIcon size={18} className="nav-icon" />
+                <span>Performance</span>
+              </button>
+
+              <button
+                type="button"
                 className={`sidebar-nav-item ${activeTab === 'invites' || activeTab === 'team' ? 'active' : ''}`}
                 onClick={() => setActiveTab('invites')}
               >
@@ -731,6 +748,15 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <MessageSquareIcon size={18} className="nav-icon" />
                 <span>Messages</span>
                 {unreadNotifCount > 0 && <span className="sidebar-badge">{unreadNotifCount}</span>}
+              </button>
+
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'analytics' ? 'active' : ''}`}
+                onClick={() => setActiveTab('analytics')}
+              >
+                <AwardIcon size={18} className="nav-icon" />
+                <span>Performance</span>
               </button>
 
               <button
@@ -787,6 +813,18 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               >
                 <TrendingUpIcon size={18} className="nav-icon" />
                 <span>My Progress</span>
+              </button>
+
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'analytics' ? 'active' : ''}`}
+                onClick={() => {
+                  setSelectedEmployeeForEval(user?._id);
+                  setActiveTab('analytics');
+                }}
+              >
+                <AwardIcon size={18} className="nav-icon" />
+                <span>Performance</span>
               </button>
 
               <button
@@ -869,7 +907,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'connect' && 'Connect · Video Meetings & Collaboration'}
               {activeTab === 'overview' && 'Executive Administration Overview'}
               {activeTab === 'projects' && 'Projects'}
-              {activeTab === 'analytics' && 'Analytics'}
+              {activeTab === 'analytics' && 'Automated Performance Evaluation & Periodic Analytics'}
               {activeTab === 'documents' && 'Documents'}
               {activeTab === 'messages' && 'Messages & Notifications'}
               {activeTab === 'team' && 'Team & Personnel Management'}
@@ -883,7 +921,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'connect' && 'Native in-website video conferencing, screen sharing, chat, and Google Calendar sync'}
               {activeTab === 'overview' && 'Executive summary, progress health, and organization KPIs'}
               {activeTab === 'projects' && 'Project deliverables, milestone tracks, and inspection'}
-              {activeTab === 'analytics' && 'Performance analytics, team velocity, and task completion'}
+              {activeTab === 'analytics' && 'Dynamic task delivery scoring, on-time telemetry, quality audits, and organization leaderboard'}
               {activeTab === 'documents' && 'Review submissions, project attachments, and files'}
               {activeTab === 'messages' && 'Taskflow communications and meeting invitations'}
               {activeTab === 'team' && 'Department structure, personnel, and secure invitations'}
@@ -1896,17 +1934,13 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             </div>
           )}
 
-          {/* TAB: ANALYTICS */}
+          {/* TAB: AUTOMATED PERFORMANCE EVALUATION & ANALYTICS */}
           {activeTab === 'analytics' && (
-            <AdminSummaryView
-              projects={projects}
-              tasks={tasks}
-              loading={loading}
-              onOpenNewProject={() => {
-                setEditingProject(null);
-                setIsProjectModalOpen(true);
-              }}
-              onInspectProject={handleInspectProject}
+            <PerformanceDashboardView
+              user={user}
+              isAdmin={isAdmin}
+              selectedEmployeeId={selectedEmployeeForEval}
+              onOpenDirectory={() => setIsDirectoryModalOpen(true)}
             />
           )}
 
@@ -1977,6 +2011,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
         }}
         project={inspectingProject}
         tasks={tasks}
+      />
+
+      {/* Complete Employee Directory & Performance Registry Modal */}
+      <EmployeeDirectoryModal
+        isOpen={isDirectoryModalOpen}
+        onClose={() => setIsDirectoryModalOpen(false)}
+        onSelectEmployeeForEvaluation={(empId) => {
+          setSelectedEmployeeForEval(empId);
+          setActiveTab('analytics');
+        }}
       />
     </div>
   );

@@ -409,12 +409,19 @@ router.patch("/:id/progress", authMiddleware, async (req, res) => {
     if (status) {
       task.status = status;
     }
+    if (task.status === "in-progress" && !task.startedAt) {
+      task.startedAt = new Date();
+    }
     if (blocker !== undefined) {
       task.blocker = blocker.trim();
     }
 
     if (task.progress === 100 && task.status === "in-progress") {
       task.status = "submitted";
+      task.submittedAt = new Date();
+      if (!task.firstSubmittedAt) {
+        task.firstSubmittedAt = task.submittedAt;
+      }
     }
 
     await task.save();
@@ -447,10 +454,33 @@ router.post("/:id/submit", authMiddleware, async (req, res) => {
     }
 
     const { submissionNotes } = req.body;
+    const now = new Date();
     task.status = "submitted";
     task.progress = 100;
     if (submissionNotes) {
       task.submissionNotes = submissionNotes.trim();
+    }
+    task.submittedAt = now;
+    if (!task.firstSubmittedAt) {
+      task.firstSubmittedAt = now;
+    }
+    task.submissionCount = (task.submissionCount || 0) + 1;
+
+    // Track effective work duration
+    const startTime = task.startedAt || task.assignedAt || task.createdAt || now;
+    const workMs = Math.max(0, now.getTime() - new Date(startTime).getTime());
+    task.workDurationMs = (task.workDurationMs || 0) + workMs;
+
+    // First submission recognition among comparable tasks
+    if (task.projectId) {
+      const priorSiblingSubmissions = await Task.countDocuments({
+        projectId: task.projectId,
+        _id: { $ne: task._id },
+        submittedAt: { $ne: null },
+      });
+      if (priorSiblingSubmissions === 0) {
+        task.isFirstSubmission = true;
+      }
     }
     await task.save();
 
@@ -515,19 +545,54 @@ router.post("/:id/review", authMiddleware, async (req, res) => {
     const reviewerName = `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim() || "Supervisor";
     const reviewerRole = req.user.role === "admin" ? "Administrator" : (req.user.designation || req.user.positionTitle || "Supervisor");
 
+    const now = new Date();
+    const submissionTime = task.submittedAt || task.firstSubmittedAt || now;
+    const reviewDelayMs = Math.max(0, now.getTime() - new Date(submissionTime).getTime());
+    task.reviewDurationMs = (task.reviewDurationMs || 0) + reviewDelayMs;
+
+    let wasBeforeDeadline = true;
+    if (task.deadline) {
+      const dDate = new Date(task.deadline);
+      if (!isNaN(dDate.getTime())) {
+        wasBeforeDeadline = new Date(submissionTime) <= dDate;
+      }
+    }
+
     if (decision === "approved") {
       task.status = "completed";
       task.progress = 100;
       task.reviewFeedback = feedback ? feedback.trim() : "Approved by supervisor.";
       task.reviewedBy = req.user.id;
-      task.reviewedAt = new Date();
+      task.reviewedAt = now;
+      task.approvedAt = now;
+      if ((task.submissionCount || 1) === 1 && (task.reworkCount || 0) === 0) {
+        task.firstAttemptApproved = true;
+      }
     } else {
       task.status = "in-progress";
       task.progress = Math.min(task.progress, 80);
       task.reviewFeedback = feedback ? feedback.trim() : "Changes requested by supervisor.";
       task.reviewedBy = req.user.id;
-      task.reviewedAt = new Date();
+      task.reviewedAt = now;
+      task.rejectedAt = now;
+      task.reworkCount = (task.reworkCount || 0) + 1;
+      task.firstAttemptApproved = false;
     }
+
+    if (!Array.isArray(task.reviewHistory)) {
+      task.reviewHistory = [];
+    }
+    task.reviewHistory.push({
+      attemptNumber: task.submissionCount || 1,
+      submittedAt: task.submittedAt,
+      reviewedAt: now,
+      decision,
+      feedback: task.reviewFeedback,
+      reviewerId: req.user.id,
+      reviewerName,
+      reviewDurationMs: reviewDelayMs,
+      wasBeforeDeadline,
+    });
 
     if (!Array.isArray(task.reviewComments)) {
       task.reviewComments = [];

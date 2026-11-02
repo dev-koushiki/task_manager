@@ -319,6 +319,24 @@ const organizationSchema = new mongoose.Schema(
       type: [treeNodeSchema],
       default: () => [],
     },
+    performanceConfig: {
+      weights: {
+        taskCompletionRate: { type: Number, default: 25 },
+        onTimeSubmissionRate: { type: Number, default: 20 },
+        taskQualityFirstAttempt: { type: Number, default: 25 },
+        productivityConsistency: { type: Number, default: 15 },
+        comparableFirstSubmission: { type: Number, default: 5 },
+        workloadManagement: { type: Number, default: 10 },
+      },
+      thresholds: {
+        outstanding: { type: Number, default: 90 },
+        excellent: { type: Number, default: 80 },
+        veryGood: { type: Number, default: 70 },
+        good: { type: Number, default: 60 },
+        needsImprovement: { type: Number, default: 50 },
+      },
+      minTasksForEvaluation: { type: Number, default: 1 },
+    },
   },
   { timestamps: true }
 );

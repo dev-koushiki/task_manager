@@ -132,6 +132,70 @@ const taskSchema = new mongoose.Schema(
       type: String,
       default: "Supervisor",
     },
+    assignedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    startedAt: {
+      type: Date,
+      default: null,
+    },
+    submittedAt: {
+      type: Date,
+      default: null,
+    },
+    firstSubmittedAt: {
+      type: Date,
+      default: null,
+    },
+    submissionCount: {
+      type: Number,
+      default: 0,
+    },
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
+    rejectedAt: {
+      type: Date,
+      default: null,
+    },
+    firstAttemptApproved: {
+      type: Boolean,
+      default: false,
+    },
+    isFirstSubmission: {
+      type: Boolean,
+      default: false,
+    },
+    reworkCount: {
+      type: Number,
+      default: 0,
+    },
+    workDurationMs: {
+      type: Number,
+      default: 0,
+    },
+    reviewDurationMs: {
+      type: Number,
+      default: 0,
+    },
+    reviewHistory: {
+      type: [
+        {
+          attemptNumber: { type: Number, default: 1 },
+          submittedAt: { type: Date, default: null },
+          reviewedAt: { type: Date, default: null },
+          decision: { type: String, enum: ["approved", "changes_requested", "comment"], default: "comment" },
+          feedback: { type: String, default: "" },
+          reviewerId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+          reviewerName: { type: String, default: "" },
+          reviewDurationMs: { type: Number, default: 0 },
+          wasBeforeDeadline: { type: Boolean, default: false },
+        },
+      ],
+      default: () => [],
+    },
     blocker: {
       type: String,
       trim: true,
