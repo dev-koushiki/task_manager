@@ -5448,6 +5448,34 @@
   font-weight: 600;
 }
 
+.recording-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(239, 68, 68, 0.25);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 6px #ef4444;
+  animation: pulseDot 1s infinite alternate;
+}
+
+@keyframes pulseDot {
+  0% { opacity: 0.4; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1.15); }
+}
+
 .call-meeting-title {
   margin: 0;
   font-size: 16px;
@@ -5964,6 +5992,124 @@
 
 .control-circle-btn.btn-leave-call:hover {
   background: #b91c1c !important;
+}
+
+.control-circle-btn.btn-recording {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+  animation: recordingPulse 1.8s infinite;
+}
+
+.control-circle-btn.btn-recording:hover {
+  background: #b91c1c !important;
+  color: #ffffff !important;
+}
+
+@keyframes recordingPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.75);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(220, 38, 38, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+  }
+}
+
+.meeting-record-modal-content {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  width: 90%;
+  max-width: 640px;
+  color: #f8fafc;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+[data-theme="light"] .meeting-record-modal-content {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.record-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="light"] .record-modal-header {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.record-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.record-modal-title h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+[data-theme="light"] .record-modal-title h3 {
+  color: #0f172a;
+}
+
+.record-modal-body {
+  padding: 20px;
+}
+
+.record-modal-subtext {
+  font-size: 13px;
+  color: #94a3b8;
+  margin-top: 0;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+[data-theme="light"] .record-modal-subtext {
+  color: #64748b;
+}
+
+.record-video-preview-wrapper {
+  background: #000000;
+  border-radius: 8px;
+  overflow: hidden;
+  max-height: 340px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.record-preview-video {
+  width: 100%;
+  max-height: 340px;
+  outline: none;
+}
+
+.record-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.6);
+}
+
+[data-theme="light"] .record-modal-footer {
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
 }
 
 .dock-badge {

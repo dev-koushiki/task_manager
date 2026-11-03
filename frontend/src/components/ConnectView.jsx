@@ -22,6 +22,9 @@ import {
   SettingsIcon,
   AlertTriangleIcon,
   UserIcon,
+  RecordIcon,
+  StopCircleIcon,
+  DownloadIcon,
 } from './Icons';
 import { api } from '../services/api';
 
@@ -51,6 +54,18 @@ export const ConnectView = ({
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [hostControls, setHostControls] = useState({ muteAll: false, lockMeeting: false });
+
+  // Meeting Recording State & Refs
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [recordedVideoUrl, setRecordedVideoUrl] = useState(null);
+  const [showRecordModal, setShowRecordModal] = useState(false);
+
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+  const recordingIntervalRef = useRef(null);
+  const recordingStreamRef = useRef(null);
+  const audioContextRef = useRef(null);
 
   // Out-of-Call Hub Data
   const [upcomingMeetings, setUpcomingMeetings] = useState([]);
@@ -130,6 +145,18 @@ export const ConnectView = ({
     } else if (roomParam || initialRoomCode) {
       handleJoinRoom(roomParam || initialRoomCode);
     }
+
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try { mediaRecorderRef.current.stop(); } catch (_) {}
+      }
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+      if (audioContextRef.current) {
+        try { audioContextRef.current.close(); } catch (_) {}
+      }
+    };
   }, []);
 
   const loadHubData = async () => {
@@ -658,6 +685,205 @@ export const ConnectView = ({
     }
   };
 
+  // -------------------------------------------------------------------
+  // Meeting Recording (Screen / Meeting Tab Video + Mixed Microphone Audio)
+  // -------------------------------------------------------------------
+  const startRecording = async () => {
+    try {
+      recordedChunksRef.current = [];
+      let recordStream = null;
+
+      // Method 1: Ask user to capture the meeting tab/window with system audio
+      if (navigator.mediaDevices?.getDisplayMedia) {
+        try {
+          const displayStream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+              displaySurface: 'browser',
+            },
+            audio: true, // Captures other participants and tab sounds
+          });
+
+          // Mix local microphone into audio track so the recorder's voice is included
+          try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) {
+              const audioCtx = new AudioCtx();
+              audioContextRef.current = audioCtx;
+              const dest = audioCtx.createMediaStreamDestination();
+
+              let hasAudioSource = false;
+              const displayAudioTracks = displayStream.getAudioTracks();
+              if (displayAudioTracks.length > 0) {
+                const displaySource = audioCtx.createMediaStreamSource(
+                  new MediaStream([displayAudioTracks[0]])
+                );
+                displaySource.connect(dest);
+                hasAudioSource = true;
+              }
+
+              if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
+                const micTrack = localStreamRef.current.getAudioTracks()[0];
+                const micSource = audioCtx.createMediaStreamSource(new MediaStream([micTrack]));
+                micSource.connect(dest);
+                hasAudioSource = true;
+              }
+
+              const mixedAudioTracks = hasAudioSource
+                ? dest.stream.getAudioTracks()
+                : displayStream.getAudioTracks();
+
+              recordStream = new MediaStream([
+                ...displayStream.getVideoTracks(),
+                ...mixedAudioTracks,
+              ]);
+            } else {
+              recordStream = displayStream;
+            }
+          } catch (mixErr) {
+            console.warn('Audio mixing error, using display stream directly:', mixErr);
+            recordStream = displayStream;
+          }
+
+          // If the user clicks Chrome's blue "Stop sharing" bar, stop recording cleanly
+          const videoTrack = displayStream.getVideoTracks()[0];
+          if (videoTrack) {
+            videoTrack.onended = () => {
+              stopRecording();
+            };
+          }
+        } catch (displayErr) {
+          if (displayErr.name === 'NotAllowedError' || displayErr.name === 'AbortError') {
+            return; // User cancelled prompt
+          }
+          console.warn('Display capture failed, falling back to local stream:', displayErr);
+        }
+      }
+
+      // Method 2 fallback: If displayMedia is not available or rejected
+      if (!recordStream) {
+        if (localStreamRef.current) {
+          recordStream = localStreamRef.current;
+        } else {
+          alert('Cannot access camera/screen to record.');
+          return;
+        }
+      }
+
+      recordingStreamRef.current = recordStream;
+
+      // Detect best supported MIME type
+      const mimeTypes = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm;codecs=h264,opus',
+        'video/webm',
+        'video/mp4',
+      ];
+      let selectedMimeType = '';
+      for (const type of mimeTypes) {
+        if (window.MediaRecorder?.isTypeSupported?.(type)) {
+          selectedMimeType = type;
+          break;
+        }
+      }
+
+      const recorder = new MediaRecorder(
+        recordStream,
+        selectedMimeType ? { mimeType: selectedMimeType } : undefined
+      );
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const mimeType = selectedMimeType || 'video/webm';
+        const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+        if (blob.size > 0) {
+          const url = URL.createObjectURL(blob);
+          setRecordedVideoUrl(url);
+          setShowRecordModal(true);
+
+          // Auto-download recorded meeting
+          const meetingTitle = (activeMeeting?.title || 'Connect_Meeting').replace(/[^a-z0-9_-]/gi, '_');
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+          const filename = `TaskFlow_${meetingTitle}_${timestamp}.${ext}`;
+
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            document.body.removeChild(a);
+          }, 200);
+        }
+
+        // Cleanup display capture tracks without touching active local camera/mic
+        if (recordingStreamRef.current) {
+          recordingStreamRef.current.getTracks().forEach((t) => {
+            const isLocal =
+              localStreamRef.current &&
+              (t === localStreamRef.current.getVideoTracks()[0] ||
+                t === localStreamRef.current.getAudioTracks()[0]);
+            if (!isLocal) {
+              try { t.stop(); } catch (_) {}
+            }
+          });
+          recordingStreamRef.current = null;
+        }
+
+        if (audioContextRef.current) {
+          try { audioContextRef.current.close(); } catch (_) {}
+          audioContextRef.current = null;
+        }
+
+        setIsRecording(false);
+        setRecordingDuration(0);
+        if (recordingIntervalRef.current) {
+          clearInterval(recordingIntervalRef.current);
+          recordingIntervalRef.current = null;
+        }
+      };
+
+      recorder.start(1000);
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+      alert('Unable to start recording: ' + (err.message || 'Permission denied'));
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (err) {
+        console.warn('Error stopping media recorder:', err);
+      }
+    }
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
   const handleSendChat = async (e) => {
     e?.preventDefault();
     if (!chatInput.trim() || !currentRoomCode) return;
@@ -748,6 +974,15 @@ export const ConnectView = ({
     // Clear intervals
     if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+
+    // Safely stop active recording
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try { mediaRecorderRef.current.stop(); } catch (_) {}
+    }
 
     setActiveTab('hub');
     setCurrentRoomCode('');
@@ -798,6 +1033,13 @@ export const ConnectView = ({
                 <strong>LIVE</strong>
                 <span className="call-timer-badge">{formatTimer(callDuration)}</span>
               </div>
+              {isRecording && (
+                <div className="recording-status-pill" title="Meeting is currently being recorded">
+                  <span className="rec-dot"></span>
+                  <strong>REC</strong>
+                  <span>{formatTimer(recordingDuration)}</span>
+                </div>
+              )}
               <h3 className="call-meeting-title">{activeMeeting?.title || 'Connect Video Meeting'}</h3>
               <div className="call-room-code-badge" onClick={copyRoomLink} title="Click to copy join link">
                 <CopyIcon size={13} />
@@ -1147,6 +1389,16 @@ export const ConnectView = ({
               <HandIcon size={20} />
             </button>
 
+            {/* Record Meeting */}
+            <button
+              type="button"
+              className={`control-circle-btn ${isRecording ? 'btn-recording' : 'btn-control-secondary'}`}
+              onClick={toggleRecording}
+              title={isRecording ? `Stop Recording (${formatTimer(recordingDuration)})` : 'Record Meeting'}
+            >
+              {isRecording ? <StopCircleIcon size={20} /> : <RecordIcon size={20} />}
+            </button>
+
             {/* Participants Toggle */}
             <button
               type="button"
@@ -1468,6 +1720,75 @@ export const ConnectView = ({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Meeting Recording Review & Download Modal */}
+      {showRecordModal && (
+        <div className="modal-backdrop" onClick={() => setShowRecordModal(false)}>
+          <div className="meeting-record-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="record-modal-header">
+              <div className="record-modal-title">
+                <CheckCircleIcon size={20} className="text-success" />
+                <h3>Meeting Recording Saved</h3>
+              </div>
+              <button
+                type="button"
+                className="btn-icon-close"
+                onClick={() => setShowRecordModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'inherit',
+                  fontSize: '22px',
+                  cursor: 'pointer',
+                  lineHeight: '1',
+                  padding: '4px',
+                }}
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="record-modal-body">
+              <p className="record-modal-subtext">
+                Your meeting recording is complete and has been downloaded to your computer. You can play it below or download another copy anytime.
+              </p>
+
+              {recordedVideoUrl && (
+                <div className="record-video-preview-wrapper">
+                  <video
+                    src={recordedVideoUrl}
+                    controls
+                    playsInline
+                    className="record-preview-video"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="record-modal-footer">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowRecordModal(false)}
+              >
+                Close
+              </button>
+              {recordedVideoUrl && (
+                <a
+                  href={recordedVideoUrl}
+                  download={`TaskFlow_Meeting_${new Date().toISOString().slice(0, 10)}.webm`}
+                  className="btn btn-primary btn-sm"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <DownloadIcon size={16} />
+                  <span>Download Again</span>
+                </a>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
