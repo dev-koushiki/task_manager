@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   /* Brand Accents - Modern Indigo & Slate */
   --primary: #4f46e5;
   --primary-hover: #4338ca;
@@ -23,10 +24,14 @@
 
   /* Executive White-Based Foundation (Default) */
   --bg-dark: #f8fafc;
+  --bg-main: #f8fafc;
   --bg-radial: radial-gradient(circle at 50% 0%, #f1f5f9 0%, #f8fafc 100%);
   --bg-card: #ffffff;
   --bg-card-hover: #f8fafc;
   --bg-card-task: #ffffff;
+  --bg-card-subtle: #f8fafc;
+  --bg-subtle: #f8fafc;
+  --bg-muted: #f1f5f9;
   --bg-column: #f1f5f9;
   --bg-header: rgba(255, 255, 255, 0.94);
   --bg-input: #ffffff;
@@ -55,17 +60,22 @@
 /* Optional Dark Mode Override (Only if user specifically toggles to Dark) */
 [data-theme="dark"],
 .dark-mode {
-  --bg-dark: #0f172a;
-  --bg-radial: radial-gradient(circle at 50% 10%, #1e293b 0%, #0f172a 75%);
-  --bg-card: #1e293b;
-  --bg-card-hover: #334155;
+  color-scheme: dark;
+  --bg-dark: #0b0f19;
+  --bg-main: #0b0f19;
+  --bg-radial: radial-gradient(circle at 50% 10%, #1e293b 0%, #0b0f19 75%);
+  --bg-card: #111827;
+  --bg-card-hover: #1f2937;
   --bg-card-task: #1e293b;
+  --bg-card-subtle: #162032;
+  --bg-subtle: #162032;
+  --bg-muted: #1f2937;
   --bg-column: #162032;
-  --bg-header: rgba(30, 41, 59, 0.92);
-  --bg-input: #0f172a;
+  --bg-header: rgba(17, 24, 39, 0.95);
+  --bg-input: #1f2937;
   --bg-input-focus: #1e293b;
-  --border-color: rgba(255, 255, 255, 0.12);
-  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-color: #1f2937;
+  --border-subtle: rgba(255, 255, 255, 0.08);
   --border-focus: #818cf8;
 
   --text-main: #f8fafc;
@@ -112,4 +122,10 @@ button {
 input, select, textarea {
   font-family: inherit;
   color: inherit;
+}
+
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  color-scheme: dark;
 }
