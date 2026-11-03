@@ -1237,10 +1237,10 @@ export const GroupingChatView = ({ user }) => {
                     <table className="grouping-emp-table">
                       <thead>
                         <tr>
-                          <th style={{ width: '40px' }}>Select</th>
-                          <th>Employee</th>
-                          <th>Department</th>
-                          <th>Designation / Role</th>
+                          <th style={{ width: '48px', textAlign: 'center' }}>Select</th>
+                          <th style={{ width: '38%' }}>Employee</th>
+                          <th style={{ width: '28%' }}>Department</th>
+                          <th style={{ width: '34%' }}>Designation / Role</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1270,7 +1270,7 @@ export const GroupingChatView = ({ user }) => {
                                 onClick={() => handleToggleSelectEmployee(empId)}
                                 style={{ cursor: 'pointer' }}
                               >
-                                <td onClick={(e) => e.stopPropagation()}>
+                                <td style={{ width: '48px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
                                   <button
                                     type="button"
                                     className="wa-btn-checkbox"
@@ -1604,10 +1604,10 @@ export const GroupingChatView = ({ user }) => {
                 <table className="grouping-emp-table">
                   <thead>
                     <tr>
-                      <th>Colleague</th>
-                      <th>Department</th>
-                      <th>Designation / Role</th>
-                      <th style={{ width: '90px' }}>Action</th>
+                      <th style={{ width: '38%' }}>Colleague</th>
+                      <th style={{ width: '28%' }}>Department</th>
+                      <th style={{ width: '24%' }}>Designation / Role</th>
+                      <th style={{ width: '90px', textAlign: 'center' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
