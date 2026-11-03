@@ -67,6 +67,67 @@ export const ConnectView = ({
   const recordingStreamRef = useRef(null);
   const audioContextRef = useRef(null);
 
+  // Custom Website Popup Dialog State (replaces native window.alert and window.confirm)
+  const [dialogState, setDialogState] = useState({
+    isOpen: false,
+    type: 'alert', // 'alert' | 'confirm'
+    variant: 'info', // 'info' | 'danger' | 'warning' | 'success'
+    title: '',
+    message: '',
+    confirmText: 'OK',
+    cancelText: 'Cancel',
+    onConfirm: null,
+    onCancel: null,
+  });
+
+  const showCustomAlert = (message, title = 'Notice', variant = 'info', onOk = null) => {
+    setDialogState({
+      isOpen: true,
+      type: 'alert',
+      variant,
+      title,
+      message,
+      confirmText: 'OK',
+      cancelText: 'Cancel',
+      onConfirm: () => {
+        setDialogState((prev) => ({ ...prev, isOpen: false }));
+        if (onOk) onOk();
+      },
+      onCancel: () => {
+        setDialogState((prev) => ({ ...prev, isOpen: false }));
+        if (onOk) onOk();
+      },
+    });
+  };
+
+  const showCustomConfirm = ({
+    title = 'Confirm Action',
+    message,
+    confirmText = 'Confirm',
+    cancelText = 'Cancel',
+    variant = 'danger',
+    onConfirm,
+    onCancel,
+  }) => {
+    setDialogState({
+      isOpen: true,
+      type: 'confirm',
+      variant,
+      title,
+      message,
+      confirmText,
+      cancelText,
+      onConfirm: () => {
+        setDialogState((prev) => ({ ...prev, isOpen: false }));
+        if (onConfirm) onConfirm();
+      },
+      onCancel: () => {
+        setDialogState((prev) => ({ ...prev, isOpen: false }));
+        if (onCancel) onCancel();
+      },
+    });
+  };
+
   // Out-of-Call Hub Data
   const [upcomingMeetings, setUpcomingMeetings] = useState([]);
   const [meetingHistory, setMeetingHistory] = useState([]);
@@ -218,30 +279,39 @@ export const ConnectView = ({
         checkGoogleStatus();
       }
     } catch (err) {
-      alert(err.message || 'Failed to initialize Google authorization.');
+      showCustomAlert(err.message || 'Failed to initialize Google authorization.', 'Google Authorization', 'danger');
     } finally {
       setGoogleLoading(false);
     }
   };
 
   const handleDisconnectGoogle = async () => {
-    if (!window.confirm('Disconnect your Google account from TaskFlow?')) return;
-    try {
-      await api.disconnectGoogle();
-      checkGoogleStatus();
-      setGoogleNotice('Google account disconnected.');
-    } catch (err) {
-      alert(err.message || 'Failed to disconnect Google account.');
-    }
+    showCustomConfirm({
+      title: 'Disconnect Google Account?',
+      message: 'Are you sure you want to disconnect your Google account from TaskFlow? Calendar sync will be disabled.',
+      confirmText: 'Disconnect',
+      cancelText: 'Cancel',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.disconnectGoogle();
+          checkGoogleStatus();
+          setGoogleNotice('Google account disconnected.');
+          showCustomAlert('Google account disconnected successfully.', 'Disconnected', 'info');
+        } catch (err) {
+          showCustomAlert(err.message || 'Failed to disconnect Google account.', 'Disconnect Error', 'danger');
+        }
+      },
+    });
   };
 
   const handleSyncMeeting = async (meetingId) => {
     try {
       const res = await api.syncMeetingWithGoogle(meetingId);
-      alert(res.message || 'Meeting synchronized with Google Calendar.');
+      showCustomAlert(res.message || 'Meeting synchronized with Google Calendar.', 'Google Calendar', 'success');
       loadHubData();
     } catch (err) {
-      alert(err.message || 'Google sync failed. Please connect Google account first.');
+      showCustomAlert(err.message || 'Google sync failed. Please connect Google account first.', 'Sync Failed', 'danger');
     }
   };
 
@@ -317,7 +387,7 @@ export const ConnectView = ({
         handleJoinRoom(res.roomCode);
       }
     } catch (err) {
-      alert(err.message || 'Failed to create meeting room.');
+      showCustomAlert(err.message || 'Failed to create meeting room.', 'Meeting Creation Failed', 'danger');
     } finally {
       setLoading(false);
     }
@@ -326,7 +396,7 @@ export const ConnectView = ({
   const handleJoinRoom = async (codeToJoin) => {
     const code = (codeToJoin || roomCodeInput || '').trim();
     if (!code) {
-      alert('Please enter a valid meeting room code.');
+      showCustomAlert('Please enter a valid meeting room code.', 'Room Code Required', 'warning');
       return;
     }
 
@@ -335,7 +405,7 @@ export const ConnectView = ({
       // Verify room & permissions
       const roomData = await api.getConnectRoom(code);
       if (!roomData || !roomData.meeting) {
-        alert('Meeting room not found or access denied.');
+        showCustomAlert('Meeting room not found or access denied. Please verify your room code.', 'Room Not Found', 'danger');
         return;
       }
 
@@ -365,7 +435,7 @@ export const ConnectView = ({
       // Start polling for active peers, signaling, and chat
       startRoomPolling(code);
     } catch (err) {
-      alert(err.message || 'Unable to join meeting room.');
+      showCustomAlert(err.message || 'Unable to join meeting room.', 'Unable to Join', 'danger');
     } finally {
       setLoading(false);
     }
@@ -383,8 +453,12 @@ export const ConnectView = ({
 
         if (signalData.meetingStatus === 'completed') {
           if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-          alert('This meeting has been ended by the host.');
           cleanupCallSession();
+          showCustomAlert(
+            'This meeting has been ended by the host. All attendance records have been saved.',
+            'Meeting Ended',
+            'warning'
+          );
           return;
         }
 
@@ -764,7 +838,7 @@ export const ConnectView = ({
         if (localStreamRef.current) {
           recordStream = localStreamRef.current;
         } else {
-          alert('Cannot access camera/screen to record.');
+          showCustomAlert('Cannot access camera or screen to record.', 'Recording Error', 'warning');
           return;
         }
       }
@@ -861,7 +935,7 @@ export const ConnectView = ({
       }, 1000);
     } catch (err) {
       console.error('Failed to start recording:', err);
-      alert('Unable to start recording: ' + (err.message || 'Permission denied'));
+      showCustomAlert('Unable to start recording: ' + (err.message || 'Permission denied'), 'Recording Error', 'danger');
       setIsRecording(false);
     }
   };
@@ -927,32 +1001,46 @@ export const ConnectView = ({
         }
       }
     } catch (err) {
-      alert(err.message || 'Host action failed.');
+      showCustomAlert(err.message || 'Host action failed.', 'Host Action Error', 'danger');
     }
   };
 
-  const handleLeaveMeeting = async () => {
-    if (!window.confirm('Are you sure you want to leave this meeting?')) return;
-
-    try {
-      if (currentRoomCode) {
-        await api.leaveConnectRoom(currentRoomCode).catch(() => {});
-      }
-    } finally {
-      cleanupCallSession();
-    }
+  const handleLeaveMeeting = () => {
+    showCustomConfirm({
+      title: 'Leave Meeting?',
+      message: 'Are you sure you want to leave this meeting? You can rejoin anytime with your room code.',
+      confirmText: 'Leave Meeting',
+      cancelText: 'Stay',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          if (currentRoomCode) {
+            await api.leaveConnectRoom(currentRoomCode).catch(() => {});
+          }
+        } finally {
+          cleanupCallSession();
+        }
+      },
+    });
   };
 
-  const handleEndMeetingForAll = async () => {
-    if (!window.confirm('End this meeting for all participants? All attendance records will be saved.')) return;
-
-    try {
-      if (currentRoomCode) {
-        await api.endConnectRoom(currentRoomCode).catch(() => {});
-      }
-    } finally {
-      cleanupCallSession();
-    }
+  const handleEndMeetingForAll = () => {
+    showCustomConfirm({
+      title: 'End Meeting for All?',
+      message: 'End this meeting for all participants? All active peers will be disconnected and attendance records will be saved.',
+      confirmText: 'End Meeting for All',
+      cancelText: 'Cancel',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          if (currentRoomCode) {
+            await api.endConnectRoom(currentRoomCode).catch(() => {});
+          }
+        } finally {
+          cleanupCallSession();
+        }
+      },
+    });
   };
 
   const cleanupCallSession = () => {
@@ -1620,7 +1708,7 @@ export const ConnectView = ({
                             onClick={() => {
                               const link = `${window.location.origin}/connect?room=${m.roomCode}`;
                               navigator.clipboard.writeText(link);
-                              alert('Meeting link copied to clipboard!');
+                              showCustomAlert('Meeting link copied to clipboard!', 'Link Copied', 'success');
                             }}
                             title="Copy link"
                           >
@@ -1787,6 +1875,59 @@ export const ConnectView = ({
                   <span>Download Again</span>
                 </a>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom TaskFlow In-Website Dialog / Popup Modal */}
+      {dialogState.isOpen && (
+        <div
+          className="taskflow-dialog-overlay"
+          onClick={() => {
+            if (dialogState.type === 'alert') {
+              dialogState.onConfirm?.();
+            } else {
+              dialogState.onCancel?.();
+            }
+          }}
+        >
+          <div
+            className="taskflow-dialog-card"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className={`taskflow-dialog-icon-wrapper variant-${dialogState.variant}`}>
+              {dialogState.variant === 'danger' && <PhoneOffIcon size={24} />}
+              {dialogState.variant === 'warning' && <AlertTriangleIcon size={24} />}
+              {dialogState.variant === 'success' && <CheckCircleIcon size={24} />}
+              {dialogState.variant === 'info' && <SparklesIcon size={24} />}
+            </div>
+
+            <h3 className="taskflow-dialog-title">{dialogState.title}</h3>
+            <p className="taskflow-dialog-message">{dialogState.message}</p>
+
+            <div className="taskflow-dialog-actions">
+              {dialogState.type === 'confirm' && (
+                <button
+                  type="button"
+                  className="taskflow-dialog-btn-cancel"
+                  onClick={dialogState.onCancel}
+                >
+                  {dialogState.cancelText}
+                </button>
+              )}
+              <button
+                type="button"
+                className={`taskflow-dialog-btn-confirm ${
+                  dialogState.variant === 'danger' ? 'variant-danger' : ''
+                }`}
+                onClick={dialogState.onConfirm}
+                autoFocus
+              >
+                {dialogState.confirmText}
+              </button>
             </div>
           </div>
         </div>
