@@ -889,7 +889,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'tree' && 'Organizational Tree & Hierarchy'}
               {activeTab === 'tasks' && (!isAdmin ? 'Unified Employee Dashboard' : 'Taskflow Tasks')}
               {activeTab === 'calendar' && 'Calendar & Meetings'}
-              {activeTab === 'connect' && 'Connekt · Video Meetings & Collaboration'}
+              {activeTab === 'connect' && 'Connekt'}
               {activeTab === 'overview' && 'Executive Administration Overview'}
               {activeTab === 'projects' && 'Projects'}
               {activeTab === 'analytics' && 'Automated Performance Evaluation & Periodic Analytics'}

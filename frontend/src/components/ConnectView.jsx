@@ -1158,7 +1158,7 @@ export const ConnectView = ({
               <div className="connect-badge-capsule">
                 <VideoIcon size={16} /> Built-in WebRTC Video System
               </div>
-              <h2>Connect · Video Meetings & Google Workspace</h2>
+              <h2>Connekt</h2>
               <p className="hero-subtext">
                 Native Google Meet-style audio/video calling built directly inside TaskFlow. Schedule,
                 join, present screens, chat, and keep automatic attendance records.
