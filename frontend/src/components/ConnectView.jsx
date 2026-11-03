@@ -1085,7 +1085,7 @@ export const ConnectView = ({
             {/* Screen Share */}
             <button
               type="button"
-              className={`control-circle-btn ${isScreenSharing ? 'btn-highlight' : 'btn-secondary'}`}
+              className={`control-circle-btn ${isScreenSharing ? 'btn-highlight' : 'btn-control-secondary'}`}
               onClick={toggleScreenShare}
               title={isScreenSharing ? 'Stop sharing screen' : 'Share entire screen or window'}
             >
@@ -1095,7 +1095,7 @@ export const ConnectView = ({
             {/* Raise Hand */}
             <button
               type="button"
-              className={`control-circle-btn ${isHandRaised ? 'btn-highlight' : 'btn-secondary'}`}
+              className={`control-circle-btn ${isHandRaised ? 'btn-highlight' : 'btn-control-secondary'}`}
               onClick={() => setIsHandRaised(!isHandRaised)}
               title={isHandRaised ? 'Lower hand' : 'Raise hand'}
             >
@@ -1105,7 +1105,7 @@ export const ConnectView = ({
             {/* Participants Toggle */}
             <button
               type="button"
-              className={`control-circle-btn ${activeSidePanel === 'participants' ? 'btn-active' : 'btn-secondary'}`}
+              className={`control-circle-btn ${activeSidePanel === 'participants' ? 'btn-active' : 'btn-control-secondary'}`}
               onClick={() => setActiveSidePanel(activeSidePanel === 'participants' ? '' : 'participants')}
               title="Participants list"
             >
@@ -1116,7 +1116,7 @@ export const ConnectView = ({
             {/* Chat Toggle */}
             <button
               type="button"
-              className={`control-circle-btn ${activeSidePanel === 'chat' ? 'btn-active' : 'btn-secondary'}`}
+              className={`control-circle-btn ${activeSidePanel === 'chat' ? 'btn-active' : 'btn-control-secondary'}`}
               onClick={() => setActiveSidePanel(activeSidePanel === 'chat' ? '' : 'chat')}
               title="Meeting chat"
             >
@@ -1127,7 +1127,7 @@ export const ConnectView = ({
             {/* Info Toggle */}
             <button
               type="button"
-              className={`control-circle-btn ${activeSidePanel === 'info' ? 'btn-active' : 'btn-secondary'}`}
+              className={`control-circle-btn ${activeSidePanel === 'info' ? 'btn-active' : 'btn-control-secondary'}`}
               onClick={() => setActiveSidePanel(activeSidePanel === 'info' ? '' : 'info')}
               title="Meeting info"
             >
