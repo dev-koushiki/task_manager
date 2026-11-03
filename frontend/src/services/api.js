@@ -2769,21 +2769,32 @@ export const api = {
     }
   },
 
-  async sendGroupMessage(id, text, replyTo = null) {
+  async sendGroupMessage(id, textOrPayload, replyTo = null, extraPayload = {}) {
     try {
+      const payload = typeof textOrPayload === 'object' && textOrPayload !== null
+        ? textOrPayload
+        : { text: textOrPayload, replyTo, ...extraPayload };
+
       return await safeFetchJson(`${API_BASE_URL}/groups/${encodeURIComponent(id)}/messages`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ text, replyTo }),
+        body: JSON.stringify(payload),
       });
     } catch (err) {
       if (!isOfflineError(err)) throw err;
+      const basePayload = typeof textOrPayload === 'object' && textOrPayload !== null
+        ? textOrPayload
+        : { text: textOrPayload, replyTo, ...extraPayload };
+
       return {
         message: 'Message sent.',
         chatMessage: {
+          _id: 'msg_' + Date.now(),
           id: 'msg_' + Date.now(),
-          text,
-          replyTo,
+          ...basePayload,
+          senderId: api.getUser()?.id || api.getUser()?._id || 'me',
+          senderName: `${api.getUser()?.firstName || 'You'} ${api.getUser()?.lastName || ''}`.trim(),
+          createdAt: new Date().toISOString(),
           timestamp: new Date().toISOString(),
         },
       };

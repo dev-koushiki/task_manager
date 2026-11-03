@@ -480,16 +480,25 @@ router.get("/:id/messages", authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/groups/:id/messages - Send a message with optional replyTo
+// POST /api/groups/:id/messages - Send a message with optional replyTo, voice, or file attachment
 router.post("/:id/messages", authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const { text, replyTo = null } = req.body;
+    const {
+      text = "",
+      replyTo = null,
+      messageType = "text",
+      fileUrl = "",
+      fileName = "",
+      fileSize = 0,
+      fileType = "",
+      audioDuration = 0,
+    } = req.body;
     const userId = req.user.id;
     const organizationId = req.user.organizationId;
 
-    if (!text || !text.trim()) {
-      return res.status(400).json({ message: "Message text cannot be empty." });
+    if (!text?.trim() && !fileUrl) {
+      return res.status(400).json({ message: "Message content cannot be empty." });
     }
 
     const group = await Group.findOne({
@@ -513,12 +522,24 @@ router.post("/:id/messages", authMiddleware, async (req, res) => {
 
     // Build reply metadata if present
     let replyPayload = null;
-    if (replyTo && replyTo.text) {
+    if (replyTo && (replyTo.text || replyTo.fileName)) {
       replyPayload = {
         messageId: replyTo.messageId || replyTo._id || null,
         senderName: replyTo.senderName || "User",
-        text: replyTo.text.substring(0, 150),
+        text: (replyTo.text || replyTo.fileName || "Attachment").substring(0, 150),
       };
+    }
+
+    // Determine message preview text
+    let previewText = text?.trim();
+    if (!previewText) {
+      if (messageType === "voice") {
+        previewText = "🎤 Voice message";
+      } else if (messageType === "image" || (fileType && fileType.startsWith("image/"))) {
+        previewText = "📷 Photo";
+      } else {
+        previewText = `📎 ${fileName || "Attachment"}`;
+      }
     }
 
     const message = await Message.create({
@@ -527,14 +548,20 @@ router.post("/:id/messages", authMiddleware, async (req, res) => {
       senderId: userId,
       senderName,
       senderAvatar,
-      text: text.trim(),
+      text: (text || "").trim(),
+      messageType,
+      fileUrl: fileUrl || "",
+      fileName: fileName || "",
+      fileSize: Number(fileSize) || 0,
+      fileType: fileType || "",
+      audioDuration: Number(audioDuration) || 0,
       replyTo: replyPayload,
       readBy: [userId],
     });
 
     // Update group last message preview
     group.lastMessage = {
-      text: text.trim().substring(0, 100),
+      text: previewText.substring(0, 100),
       senderId: userId,
       senderName,
       timestamp: new Date(),
@@ -552,7 +579,7 @@ router.post("/:id/messages", authMiddleware, async (req, res) => {
           organizationId,
           type: "chat_message",
           title: `Message from ${senderName}`,
-          message: text.trim().substring(0, 120),
+          message: previewText.substring(0, 120),
           link: `/grouping?group=${group._id}`,
           metadata: { groupId: group._id, messageId: message._id },
         }).catch(() => {});
@@ -566,7 +593,7 @@ router.post("/:id/messages", authMiddleware, async (req, res) => {
           organizationId,
           type: "group_message",
           title: `Reply from ${senderName}`,
-          message: `${senderName} replied to your message in ${group.name}: "${text.trim().substring(0, 80)}"`,
+          message: `${senderName} replied to your message in ${group.name}: "${previewText.substring(0, 80)}"`,
           link: `/grouping?group=${group._id}`,
           metadata: { groupId: group._id, messageId: message._id },
         }).catch(() => {});

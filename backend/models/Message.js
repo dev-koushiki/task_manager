@@ -49,8 +49,33 @@ const messageSchema = new mongoose.Schema(
     },
     text: {
       type: String,
-      required: true,
+      default: "",
       trim: true,
+    },
+    messageType: {
+      type: String,
+      enum: ["text", "voice", "file", "image"],
+      default: "text",
+    },
+    fileUrl: {
+      type: String,
+      default: "",
+    },
+    fileName: {
+      type: String,
+      default: "",
+    },
+    fileSize: {
+      type: Number,
+      default: 0,
+    },
+    fileType: {
+      type: String,
+      default: "",
+    },
+    audioDuration: {
+      type: Number,
+      default: 0,
     },
     replyTo: {
       type: replySchema,

@@ -15,8 +15,115 @@ import {
   BuildingIcon,
   BriefcaseIcon,
   SparklesIcon,
+  MicIcon,
+  PaperclipIcon,
+  PlayIcon,
+  PauseIcon,
+  DownloadIcon,
+  FileTextIcon,
 } from './Icons';
 import { api } from '../services/api';
+
+const formatDuration = (secs) => {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+};
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
+const VoiceMessagePlayer = ({ fileUrl, duration = 0, isMine = false }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(duration || 0);
+  const audioRef = useRef(null);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const handleLoadedMetadata = () => {
+      if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
+        setAudioDuration(audio.duration);
+      }
+    };
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    };
+
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('ended', handleEnded);
+
+    return () => {
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('ended', handleEnded);
+    };
+  }, []);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+    } else {
+      audio.play().then(() => setIsPlaying(true)).catch((e) => console.error(e));
+    }
+  };
+
+  const progressPercent = audioDuration > 0 ? (currentTime / audioDuration) * 100 : 0;
+
+  return (
+    <div className={`wa-voice-player ${isMine ? 'mine' : 'theirs'}`}>
+      <audio ref={audioRef} src={fileUrl} preload="metadata" />
+      <button
+        type="button"
+        className="wa-voice-play-btn"
+        onClick={togglePlay}
+        title={isPlaying ? 'Pause' : 'Play voice note'}
+      >
+        {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={16} />}
+      </button>
+
+      <div className="wa-voice-track-wrap">
+        <div className="wa-voice-waveform">
+          {[25, 45, 65, 35, 80, 50, 95, 65, 40, 75, 90, 45, 60, 35, 70, 45, 55, 75, 35, 50].map((h, i) => {
+            const barProgress = (i / 20) * 100;
+            const isPlayed = barProgress <= progressPercent;
+            return (
+              <span
+                key={i}
+                className={`wa-waveform-bar ${isPlayed ? 'played' : ''}`}
+                style={{ height: `${h}%` }}
+              />
+            );
+          })}
+        </div>
+        <div className="wa-voice-time-row">
+          <span>{formatDuration(isPlaying ? currentTime : audioDuration || duration)}</span>
+          <a
+            href={fileUrl}
+            download={`voice_note_${Math.round(audioDuration || duration || 0)}s.webm`}
+            className="wa-voice-dl-link"
+            title="Download voice recording"
+          >
+            <DownloadIcon size={12} />
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const GroupingChatView = ({ user }) => {
   const currentUserId = String(user?.id || user?._id || '');
@@ -48,6 +155,18 @@ export const GroupingChatView = ({ user }) => {
   const [addMembersMode, setAddMembersMode] = useState(false);
   const [actionNotice, setActionNotice] = useState('');
 
+  // Voice note recording state
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [voiceDuration, setVoiceDuration] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
+  const audioStreamRef = useRef(null);
+
+  // File attachment state
+  const [attachedFile, setAttachedFile] = useState(null); // { name, size, type, dataUrl, isImage }
+  const fileInputRef = useRef(null);
+
   // Polling ref and scroll ref
   const messagesEndRef = useRef(null);
   const pollingRef = useRef(null);
@@ -56,6 +175,10 @@ export const GroupingChatView = ({ user }) => {
     loadInitialData();
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
     };
   }, []);
 
@@ -136,31 +259,179 @@ export const GroupingChatView = ({ user }) => {
     }
   };
 
+  // Voice Recording Handlers
+  const handleStartRecording = async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Voice recording is not supported in this browser.');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+      audioChunksRef.current = [];
+
+      let mimeType = 'audio/webm';
+      if (typeof MediaRecorder !== 'undefined') {
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          mimeType = 'audio/mp4';
+        }
+      }
+
+      const recorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.start(100);
+      setIsRecordingVoice(true);
+      setVoiceDuration(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setVoiceDuration((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('Microphone error:', err);
+      alert('Microphone access was denied. Please allow microphone access in your browser settings to record voice messages.');
+    }
+  };
+
+  const handleCancelRecording = () => {
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try { mediaRecorderRef.current.stop(); } catch (_) {}
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach((track) => track.stop());
+    }
+    audioChunksRef.current = [];
+    setIsRecordingVoice(false);
+    setVoiceDuration(0);
+  };
+
+  const handleSendVoiceRecording = () => {
+    if (!mediaRecorderRef.current) return;
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+
+    const finalDuration = voiceDuration;
+    const recorder = mediaRecorderRef.current;
+
+    recorder.onstop = () => {
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+
+      const mime = recorder.mimeType || 'audio/webm';
+      const audioBlob = new Blob(audioChunksRef.current, { type: mime });
+      const reader = new FileReader();
+
+      reader.onloadend = async () => {
+        const base64Audio = reader.result;
+        await sendActualMessage({
+          text: '',
+          messageType: 'voice',
+          fileUrl: base64Audio,
+          fileName: `voice_note_${Date.now()}.${mime.includes('mp4') ? 'mp4' : 'webm'}`,
+          fileSize: audioBlob.size,
+          fileType: mime,
+          audioDuration: finalDuration,
+        });
+      };
+
+      reader.readAsDataURL(audioBlob);
+      setIsRecordingVoice(false);
+      setVoiceDuration(0);
+    };
+
+    if (recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+  };
+
+  // File Attachment Handlers
+  const handleTriggerFileInput = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const maxSize = 12 * 1024 * 1024; // 12MB limit
+    if (file.size > maxSize) {
+      alert('Selected file is too large. Please select a file under 12MB.');
+      e.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAttachedFile({
+        name: file.name,
+        size: file.size,
+        type: file.type || 'application/octet-stream',
+        dataUrl: reader.result,
+        isImage: file.type.startsWith('image/'),
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleRemoveAttachment = () => {
+    setAttachedFile(null);
+  };
+
   const handleSendMessage = async (e) => {
     e?.preventDefault();
-    if (!chatInput.trim() || !selectedGroup?._id) return;
+    if ((!chatInput.trim() && !attachedFile) || !selectedGroup?._id) return;
 
     const text = chatInput.trim();
+    const file = attachedFile;
     const reply = replyingTo ? { ...replyingTo } : null;
 
     setChatInput('');
+    setAttachedFile(null);
     setReplyingTo(null);
 
-    // Optimistic message
+    let messageType = 'text';
+    if (file) {
+      messageType = file.isImage ? 'image' : 'file';
+    }
+
+    await sendActualMessage({
+      text,
+      replyTo: reply,
+      messageType,
+      fileUrl: file?.dataUrl || '',
+      fileName: file?.name || '',
+      fileSize: file?.size || 0,
+      fileType: file?.type || '',
+    });
+  };
+
+  const sendActualMessage = async (payload) => {
+    if (!selectedGroup?._id) return;
+
     const tempId = 'temp_' + Date.now();
     const optimisticMsg = {
       _id: tempId,
       groupId: selectedGroup._id,
       senderId: currentUserId,
       senderName: `${user?.firstName || 'You'} ${user?.lastName || ''}`.trim(),
-      text,
-      replyTo: reply,
       createdAt: new Date().toISOString(),
+      ...payload,
     };
     setMessages((prev) => [...prev, optimisticMsg]);
 
     try {
-      const res = await api.sendGroupMessage(selectedGroup._id, text, reply);
+      const res = await api.sendGroupMessage(selectedGroup._id, payload);
       if (res && res.chatMessage) {
         setMessages((prev) =>
           prev.map((m) => (m._id === tempId ? res.chatMessage : m))
@@ -618,8 +889,54 @@ export const GroupingChatView = ({ user }) => {
                             </div>
                           )}
 
+                          {/* Voice Note Player */}
+                          {(msg.messageType === 'voice' || (msg.fileUrl && (msg.fileType?.includes('audio') || msg.messageType === 'voice'))) && (
+                            <VoiceMessagePlayer
+                              fileUrl={msg.fileUrl}
+                              duration={msg.audioDuration}
+                              isMine={isMine}
+                            />
+                          )}
+
+                          {/* Image Attachment Preview */}
+                          {(msg.messageType === 'image' || (msg.fileUrl && msg.fileType?.startsWith('image/'))) && (
+                            <div className="wa-bubble-image-wrap">
+                              <img
+                                src={msg.fileUrl}
+                                alt={msg.fileName || 'Attachment photo'}
+                                className="wa-bubble-image"
+                                onClick={() => window.open(msg.fileUrl, '_blank')}
+                              />
+                            </div>
+                          )}
+
+                          {/* Generic Document / File Attachment Card */}
+                          {(msg.messageType === 'file' || (msg.fileUrl && msg.messageType !== 'voice' && !msg.fileType?.startsWith('image/'))) && (
+                            <div className="wa-bubble-file-card">
+                              <div className="wa-file-card-icon">
+                                <FileTextIcon size={22} />
+                              </div>
+                              <div className="wa-file-card-info">
+                                <strong className="wa-file-card-name" title={msg.fileName || 'Document'}>
+                                  {msg.fileName || 'Attachment'}
+                                </strong>
+                                <span className="wa-file-card-size">{formatFileSize(msg.fileSize)}</span>
+                              </div>
+                              <a
+                                href={msg.fileUrl}
+                                download={msg.fileName || 'document'}
+                                className="wa-file-card-download"
+                                title="Download file"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <DownloadIcon size={15} />
+                              </a>
+                            </div>
+                          )}
+
                           {/* Message Text */}
-                          <div className="wa-bubble-text">{msg.text}</div>
+                          {msg.text && <div className="wa-bubble-text">{msg.text}</div>}
 
                           {/* Bubble Footer: Time & Action */}
                           <div className="wa-bubble-meta">
@@ -632,7 +949,7 @@ export const GroupingChatView = ({ user }) => {
                                 setReplyingTo({
                                   messageId: msg._id,
                                   senderName: msg.senderName,
-                                  text: msg.text,
+                                  text: msg.text || msg.fileName || 'Attachment',
                                 })
                               }
                             >
@@ -669,24 +986,123 @@ export const GroupingChatView = ({ user }) => {
                   </div>
                 )}
 
-                <form className="whatsapp-input-form" onSubmit={handleSendMessage}>
-                  <input
-                    type="text"
-                    placeholder="Type a message..."
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    className="whatsapp-message-input"
-                    autoFocus
-                  />
-                  <button
-                    type="submit"
-                    className="whatsapp-send-btn"
-                    disabled={!chatInput.trim()}
-                    title="Send message"
-                  >
-                    <SendIcon size={18} />
-                  </button>
-                </form>
+                {/* Attached File Preview Banner */}
+                {attachedFile && (
+                  <div className="wa-attached-preview-banner animate-slide-up">
+                    <div className="wa-attached-preview-info">
+                      {attachedFile.isImage ? (
+                        <img
+                          src={attachedFile.dataUrl}
+                          alt={attachedFile.name}
+                          className="wa-attached-thumbnail"
+                        />
+                      ) : (
+                        <div className="wa-attached-icon-wrap">
+                          <FileTextIcon size={20} className="text-primary" />
+                        </div>
+                      )}
+                      <div className="wa-attached-details">
+                        <span className="wa-attached-name" title={attachedFile.name}>
+                          {attachedFile.name}
+                        </span>
+                        <span className="wa-attached-size">
+                          {formatFileSize(attachedFile.size)}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="wa-remove-attachment-btn"
+                      onClick={handleRemoveAttachment}
+                      title="Remove attachment"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                )}
+
+                {/* Live Voice Recording Bar OR Normal Input Form */}
+                {isRecordingVoice ? (
+                  <div className="wa-recording-active-bar animate-fade-in">
+                    <div className="wa-recording-pulse-dot"></div>
+                    <span className="wa-recording-label">Recording voice note...</span>
+                    <span className="wa-recording-timer">{formatDuration(voiceDuration)}</span>
+                    <div className="wa-recording-waves">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                    <button
+                      type="button"
+                      className="wa-cancel-rec-btn"
+                      onClick={handleCancelRecording}
+                      title="Cancel recording"
+                    >
+                      <TrashIcon size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="wa-send-rec-btn"
+                      onClick={handleSendVoiceRecording}
+                      title="Send voice note"
+                    >
+                      <SendIcon size={16} />
+                    </button>
+                  </div>
+                ) : (
+                  <form className="whatsapp-input-form" onSubmit={handleSendMessage}>
+                    {/* Hidden Native File Input */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileSelect}
+                      style={{ display: 'none' }}
+                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip,.rar"
+                    />
+
+                    {/* Paperclip / File Sharing Option */}
+                    <button
+                      type="button"
+                      className="whatsapp-icon-btn"
+                      onClick={handleTriggerFileInput}
+                      title="Attach file or photo"
+                    >
+                      <PaperclipIcon size={19} />
+                    </button>
+
+                    {/* Mic Option for Audio Recording */}
+                    <button
+                      type="button"
+                      className="whatsapp-icon-btn whatsapp-mic-btn"
+                      onClick={handleStartRecording}
+                      title="Record voice message"
+                    >
+                      <MicIcon size={19} />
+                    </button>
+
+                    {/* Text Message / Caption Input */}
+                    <input
+                      type="text"
+                      placeholder={attachedFile ? 'Add a caption...' : 'Type a message...'}
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      className="whatsapp-message-input"
+                      autoFocus
+                    />
+
+                    {/* Send Message Button */}
+                    <button
+                      type="submit"
+                      className="whatsapp-send-btn"
+                      disabled={!chatInput.trim() && !attachedFile}
+                      title="Send message"
+                    >
+                      <SendIcon size={18} />
+                    </button>
+                  </form>
+                )}
               </div>
             </>
           ) : (
