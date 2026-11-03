@@ -427,11 +427,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
     }
 
     if (item.type === 'message') {
-      if (item.link && item.link.includes('groupId=')) {
-        setActiveTab('grouping');
-      } else {
-        setActiveTab('messages');
-      }
+      setActiveTab('grouping');
       return;
     }
 
@@ -656,6 +652,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
         <nav className="sidebar-nav">
           {isAdmin ? (
             <>
+              {/* 1. Org Tree */}
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeTab === 'tree' ? 'active' : ''}`}
@@ -665,6 +662,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>Org Tree</span>
               </button>
 
+              {/* 2. Overview */}
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeTab === 'overview' ? 'active' : ''}`}
@@ -674,33 +672,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>Overview</span>
               </button>
 
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'tasks' ? 'active' : ''}`}
-                onClick={() => setActiveTab('tasks')}
-              >
-                <CheckSquareIcon size={18} className="nav-icon" />
-                <span>Tasks</span>
-              </button>
-
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'calendar' ? 'active' : ''}`}
-                onClick={() => setActiveTab('calendar')}
-              >
-                <CalendarIcon size={18} className="nav-icon" />
-                <span>Calendar</span>
-              </button>
-
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'connect' ? 'active' : ''}`}
-                onClick={() => setActiveTab('connect')}
-              >
-                <VideoIcon size={18} className="nav-icon" />
-                <span>Connect</span>
-              </button>
-
+              {/* 3. Group */}
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeTab === 'grouping' ? 'active' : ''}`}
@@ -710,6 +682,37 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>Group</span>
               </button>
 
+              {/* 4. Tasks */}
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'tasks' ? 'active' : ''}`}
+                onClick={() => setActiveTab('tasks')}
+              >
+                <CheckSquareIcon size={18} className="nav-icon" />
+                <span>Tasks</span>
+              </button>
+
+              {/* 5. Calendar */}
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'calendar' ? 'active' : ''}`}
+                onClick={() => setActiveTab('calendar')}
+              >
+                <CalendarIcon size={18} className="nav-icon" />
+                <span>Calendar</span>
+              </button>
+
+              {/* 6. Connekt */}
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'connect' ? 'active' : ''}`}
+                onClick={() => setActiveTab('connect')}
+              >
+                <VideoIcon size={18} className="nav-icon" />
+                <span>Connekt</span>
+              </button>
+
+              {/* 7. My Progress */}
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeTab === 'my_progress' ? 'active' : ''}`}
@@ -719,6 +722,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>My Progress</span>
               </button>
 
+              {/* 8. Performance */}
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeTab === 'analytics' ? 'active' : ''}`}
@@ -731,6 +735,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>Performance</span>
               </button>
 
+              {/* 9. Invites */}
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeTab === 'invites' || activeTab === 'team' ? 'active' : ''}`}
@@ -740,16 +745,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>Invites</span>
               </button>
 
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'messages' ? 'active' : ''}`}
-                onClick={() => setActiveTab('messages')}
-              >
-                <MessageSquareIcon size={18} className="nav-icon" />
-                <span>Messages</span>
-                {unreadNotifCount > 0 && <span className="sidebar-badge">{unreadNotifCount}</span>}
-              </button>
-
+              {/* 10. Settings */}
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeTab === 'settings' ? 'active' : ''}`}
@@ -761,33 +757,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             </>
           ) : (
             <>
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'tasks' || activeTab === 'overview' || activeTab === 'projects' || activeTab === 'team' ? 'active' : ''}`}
-                onClick={() => setActiveTab('tasks')}
-              >
-                <CheckSquareIcon size={18} className="nav-icon" />
-                <span>My Dashboard</span>
-              </button>
-
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'calendar' ? 'active' : ''}`}
-                onClick={() => setActiveTab('calendar')}
-              >
-                <CalendarIcon size={18} className="nav-icon" />
-                <span>Calendar</span>
-              </button>
-
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'connect' ? 'active' : ''}`}
-                onClick={() => setActiveTab('connect')}
-              >
-                <VideoIcon size={18} className="nav-icon" />
-                <span>Connect</span>
-              </button>
-
+              {/* Group */}
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeTab === 'grouping' ? 'active' : ''}`}
@@ -797,6 +767,37 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>Group</span>
               </button>
 
+              {/* My Dashboard / Tasks */}
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'tasks' || activeTab === 'overview' || activeTab === 'projects' || activeTab === 'team' ? 'active' : ''}`}
+                onClick={() => setActiveTab('tasks')}
+              >
+                <CheckSquareIcon size={18} className="nav-icon" />
+                <span>My Dashboard</span>
+              </button>
+
+              {/* Calendar */}
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'calendar' ? 'active' : ''}`}
+                onClick={() => setActiveTab('calendar')}
+              >
+                <CalendarIcon size={18} className="nav-icon" />
+                <span>Calendar</span>
+              </button>
+
+              {/* Connekt */}
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'connect' ? 'active' : ''}`}
+                onClick={() => setActiveTab('connect')}
+              >
+                <VideoIcon size={18} className="nav-icon" />
+                <span>Connekt</span>
+              </button>
+
+              {/* My Progress */}
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeTab === 'my_progress' ? 'active' : ''}`}
@@ -806,6 +807,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>My Progress</span>
               </button>
 
+              {/* Performance */}
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeTab === 'analytics' ? 'active' : ''}`}
@@ -818,16 +820,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>Performance</span>
               </button>
 
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'messages' ? 'active' : ''}`}
-                onClick={() => setActiveTab('messages')}
-              >
-                <MessageSquareIcon size={18} className="nav-icon" />
-                <span>Messages</span>
-                {unreadNotifCount > 0 && <span className="sidebar-badge">{unreadNotifCount}</span>}
-              </button>
-
+              {/* My Profile */}
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeTab === 'profile' ? 'active' : ''}`}
@@ -895,7 +888,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'tree' && 'Organizational Tree & Hierarchy'}
               {activeTab === 'tasks' && (!isAdmin ? 'Unified Employee Dashboard' : 'Taskflow Tasks')}
               {activeTab === 'calendar' && 'Calendar & Meetings'}
-              {activeTab === 'connect' && 'Connect · Video Meetings & Collaboration'}
+              {activeTab === 'connect' && 'Connekt · Video Meetings & Collaboration'}
               {activeTab === 'overview' && 'Executive Administration Overview'}
               {activeTab === 'projects' && 'Projects'}
               {activeTab === 'analytics' && 'Automated Performance Evaluation & Periodic Analytics'}
@@ -1040,12 +1033,12 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               )}
             </div>
 
-            {/* Messages Icon */}
+            {/* Group Chat Icon */}
             <button
               type="button"
               className="top-round-icon-btn"
-              onClick={() => setActiveTab('messages')}
-              title="Messages"
+              onClick={() => setActiveTab('grouping')}
+              title="Group Chat"
             >
               <MessageSquareIcon size={18} />
             </button>
