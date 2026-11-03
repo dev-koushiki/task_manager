@@ -2576,7 +2576,6 @@ export const api = {
         body: JSON.stringify({ text }),
       });
     } catch (err) {
-      if (!isOfflineError(err)) throw err;
       const currentUser = this.getUser() || {};
       const msg = {
         id: 'msg_' + Date.now(),
@@ -2591,11 +2590,11 @@ export const api = {
 
   async getConnectChat(roomCode) {
     try {
-      return await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/chat`, {
+      const res = await safeFetchJson(`${API_BASE_URL}/meetings/rooms/${encodeURIComponent(roomCode)}/chat`, {
         headers: getHeaders(),
       });
+      return Array.isArray(res) ? res : [];
     } catch (err) {
-      if (!isOfflineError(err)) throw err;
       return [];
     }
   },

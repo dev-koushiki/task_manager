@@ -75,7 +75,15 @@ export const ConnectView = ({
   const pollingIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
   const lastMuteAllTimestampRef = useRef(0);
+  const chatBottomRef = useRef(null);
   const [peersTick, setPeersTick] = useState(0);
+
+  // Auto-scroll chat container to the latest message
+  useEffect(() => {
+    if (activeSidePanel === 'chat') {
+      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages, activeSidePanel]);
 
   // Ensure local video element is wired when room view is active
   useEffect(() => {
@@ -304,11 +312,13 @@ export const ConnectView = ({
         return;
       }
 
-      setCurrentRoomCode(code);
+      setCurrentRoomCode(roomData.roomCode || code);
       setActiveMeeting(roomData.meeting);
       setIsHost(Boolean(roomData.isHost));
       setHostControls(roomData.hostControls || { muteAll: false, lockMeeting: false });
-      setChatMessages(roomData.chatMessages || []);
+      if (roomData.chatMessages && Array.isArray(roomData.chatMessages)) {
+        setChatMessages(roomData.chatMessages);
+      }
 
       // Register join attendance in DB
       await api.joinConnectRoom(code);
@@ -409,7 +419,18 @@ export const ConnectView = ({
         }
 
         if (chatData && Array.isArray(chatData)) {
-          setChatMessages(chatData);
+          setChatMessages((prev) => {
+            const map = new Map();
+            // Retain any pending optimistic messages that have not yet arrived from server
+            prev.filter((m) => String(m.id || '').startsWith('temp_')).forEach((m) => map.set(m.id, m));
+            chatData.forEach((m) => {
+              const key = m.id || `${m.senderId}_${new Date(m.timestamp).getTime()}_${m.text}`;
+              map.set(key, m);
+            });
+            const merged = Array.from(map.values());
+            merged.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+            return merged;
+          });
         }
 
         // Process queued WebRTC signals
@@ -643,13 +664,28 @@ export const ConnectView = ({
     const text = chatInput.trim();
     setChatInput('');
 
+    const myName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || user?.email || 'Me';
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const optimisticMsg = {
+      id: tempId,
+      senderId: myId,
+      senderName: myName,
+      text,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Optimistically show message immediately
+    setChatMessages((prev) => [...prev, optimisticMsg]);
+
     try {
       const res = await api.sendConnectChat(currentRoomCode, text);
       if (res && res.chatMessage) {
-        setChatMessages((prev) => [...prev, res.chatMessage]);
+        setChatMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? res.chatMessage : m))
+        );
       }
     } catch (err) {
-      alert(err.message || 'Failed to send message.');
+      console.warn('Failed to send chat message:', err);
     }
   };
 
@@ -1009,16 +1045,25 @@ export const ConnectView = ({
                       {chatMessages.length === 0 ? (
                         <p className="no-chat-yet">Messages sent here are visible to everyone in this call.</p>
                       ) : (
-                        chatMessages.map((m, idx) => (
-                          <div key={m.id || idx} className={`chat-bubble-row ${m.senderId === user?.id ? 'mine' : ''}`}>
-                            <div className="chat-meta">
-                              <strong>{m.senderName}</strong>
-                              <span>{new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        chatMessages.map((m, idx) => {
+                          const isMine =
+                            String(m.senderId) === myId ||
+                            (m.senderId && (m.senderId === user?.id || m.senderId === user?._id)) ||
+                            (m.senderName &&
+                              m.senderName.toLowerCase() ===
+                                `${user?.firstName || ''} ${user?.lastName || ''}`.trim().toLowerCase());
+                          return (
+                            <div key={m.id || idx} className={`chat-bubble-row ${isMine ? 'mine' : ''}`}>
+                              <div className="chat-meta">
+                                <strong>{isMine ? 'You' : m.senderName}</strong>
+                                <span>{m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                              </div>
+                              <div className="chat-text-bubble">{m.text}</div>
                             </div>
-                            <div className="chat-text-bubble">{m.text}</div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
+                      <div ref={chatBottomRef} />
                     </div>
 
                     <form className="chat-input-form" onSubmit={handleSendChat}>

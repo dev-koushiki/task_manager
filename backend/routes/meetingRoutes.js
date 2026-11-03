@@ -14,6 +14,8 @@ const authMiddleware = require("../middleware/auth");
 const roomSignals = new Map();
 // roomCode -> Map(userId -> { userId, name, email, cameraOn, micOn, screenSharing, joinedAt, lastPing })
 const roomPeers = new Map();
+// roomCode -> Array of { id, senderId, senderName, text, timestamp }
+const roomChat = new Map();
 
 // Generate human-friendly, secure room codes: con-abc-def
 function generateRoomCode() {
@@ -490,13 +492,29 @@ router.get("/rooms/:roomCode", authMiddleware, async (req, res) => {
     const fifteenSecsAgo = new Date(Date.now() - 15000);
     const activePeers = (meeting.activePeers || []).filter((p) => p.lastPing && new Date(p.lastPing) >= fifteenSecsAgo);
 
+    // Combine DB chat messages and in-memory chat
+    const cleanCode = String(roomCode || "").trim().toLowerCase();
+    const memChat = roomChat.get(cleanCode) || roomChat.get(roomCode) || [];
+    const chatMap = new Map();
+    (meeting.chatMessages || []).forEach((m) => {
+      const key = m.id || `${m.senderId}_${new Date(m.timestamp).getTime()}_${m.text}`;
+      chatMap.set(key, m);
+    });
+    memChat.forEach((m) => {
+      const key = m.id || `${m.senderId}_${new Date(m.timestamp).getTime()}_${m.text}`;
+      chatMap.set(key, m);
+    });
+    const combinedChat = Array.from(chatMap.values()).sort(
+      (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+    );
+
     res.json({
       meeting,
       roomCode: meeting.roomCode || roomCode,
       isHost,
       hostControls: meeting.hostControls || { muteAll: false, lockMeeting: false },
       activePeers,
-      chatMessages: meeting.chatMessages || [],
+      chatMessages: combinedChat,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -858,31 +876,74 @@ router.post("/rooms/:roomCode/peer-state", authMiddleware, async (req, res) => {
 // POST /api/meetings/rooms/:roomCode/chat - Send message in meeting chat
 router.post("/rooms/:roomCode/chat", authMiddleware, async (req, res) => {
   try {
-    const { roomCode } = req.params;
-    const text = req.body.text || req.body.message;
+    const rawCode = String(req.params.roomCode || "").trim();
+    const cleanCode = rawCode.toLowerCase();
+    const text = (req.body.text || req.body.message || "").trim();
 
-    if (!text || !text.trim()) {
+    if (!text) {
       return res.status(400).json({ message: "Message text cannot be empty." });
     }
 
-    const meeting = await Meeting.findOne({
-      roomCode,
-      organizationId: req.user.organizationId,
-    });
-
-    if (!meeting) {
-      return res.status(404).json({ message: "Meeting room not found." });
-    }
+    const userId = req.user._id || req.user.id;
+    const userName =
+      `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim() ||
+      req.user.name ||
+      req.user.email ||
+      "Participant";
 
     const msg = {
-      senderId: req.user._id,
-      senderName: `${req.user.firstName} ${req.user.lastName}`.trim(),
-      text: text.trim(),
+      id: new mongoose.Types.ObjectId().toString(),
+      senderId: userId,
+      senderName: userName,
+      text: text,
       timestamp: new Date(),
     };
 
-    meeting.chatMessages.push(msg);
-    await meeting.save();
+    // Store in in-memory chat buffer for immediate real-time sync across peers
+    if (!roomChat.has(cleanCode)) {
+      roomChat.set(cleanCode, []);
+    }
+    const memList = roomChat.get(cleanCode);
+    memList.push(msg);
+    if (memList.length > 300) memList.shift();
+    if (rawCode !== cleanCode) {
+      roomChat.set(rawCode, memList);
+    }
+
+    // Persist to MongoDB if meeting document exists
+    try {
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(rawCode);
+      let meeting = null;
+      if (req.user?.organizationId) {
+        meeting = await Meeting.findOne({
+          $or: [
+            { roomCode: rawCode },
+            { roomCode: cleanCode },
+            ...(isObjectId ? [{ _id: rawCode }] : []),
+          ],
+          organizationId: req.user.organizationId,
+        }).select("_id");
+      }
+
+      if (!meeting) {
+        meeting = await Meeting.findOne({
+          $or: [
+            { roomCode: rawCode },
+            { roomCode: cleanCode },
+            ...(isObjectId ? [{ _id: rawCode }] : []),
+          ],
+        }).select("_id");
+      }
+
+      if (meeting) {
+        await Meeting.updateOne(
+          { _id: meeting._id },
+          { $push: { chatMessages: msg } }
+        );
+      }
+    } catch (dbErr) {
+      console.warn("Could not persist meeting chat to DB:", dbErr.message);
+    }
 
     res.status(201).json({ message: "Message sent.", chatMessage: msg });
   } catch (err) {
@@ -893,17 +954,64 @@ router.post("/rooms/:roomCode/chat", authMiddleware, async (req, res) => {
 // GET /api/meetings/rooms/:roomCode/chat - Get meeting chat messages
 router.get("/rooms/:roomCode/chat", authMiddleware, async (req, res) => {
   try {
-    const { roomCode } = req.params;
-    const meeting = await Meeting.findOne({
-      roomCode,
-      organizationId: req.user.organizationId,
-    }).select("chatMessages");
+    const rawCode = String(req.params.roomCode || "").trim();
+    const cleanCode = rawCode.toLowerCase();
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(rawCode);
 
-    if (!meeting) {
-      return res.status(404).json({ message: "Meeting room not found." });
+    // Look up in DB
+    let dbMessages = [];
+    try {
+      let meeting = null;
+      if (req.user?.organizationId) {
+        meeting = await Meeting.findOne({
+          $or: [
+            { roomCode: rawCode },
+            { roomCode: cleanCode },
+            ...(isObjectId ? [{ _id: rawCode }] : []),
+          ],
+          organizationId: req.user.organizationId,
+        }).select("chatMessages");
+      }
+
+      if (!meeting) {
+        meeting = await Meeting.findOne({
+          $or: [
+            { roomCode: rawCode },
+            { roomCode: cleanCode },
+            ...(isObjectId ? [{ _id: rawCode }] : []),
+          ],
+        }).select("chatMessages");
+      }
+
+      if (meeting?.chatMessages) {
+        dbMessages = meeting.chatMessages;
+      }
+    } catch (e) {
+      console.warn("DB chat lookup error:", e.message);
     }
 
-    res.json(meeting.chatMessages || []);
+    // Merge with in-memory chat
+    const memMessages = roomChat.get(cleanCode) || roomChat.get(rawCode) || [];
+
+    // Deduplicate by id or (senderId + timestamp + text)
+    const seen = new Set();
+    const merged = [];
+    for (const m of [...dbMessages, ...memMessages]) {
+      const key = m.id || `${m.senderId}_${new Date(m.timestamp).getTime()}_${m.text}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push({
+          id: m.id || key,
+          senderId: m.senderId,
+          senderName: m.senderName,
+          text: m.text,
+          timestamp: m.timestamp,
+        });
+      }
+    }
+
+    merged.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    res.json(merged);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
