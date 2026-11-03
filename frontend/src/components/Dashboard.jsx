@@ -57,6 +57,7 @@ import { UnifiedEmployeeDashboard } from './UnifiedEmployeeDashboard';
 import { EmployeeProfileView } from './EmployeeProfileView';
 import { GlobalSearchBar } from './GlobalSearchBar';
 import { ThemeToggle } from './ThemeToggle';
+import { ErrorBoundary } from './ErrorBoundary';
 import { api } from '../services/api';
 
 export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptInvite, onUpdateUser }) => {
@@ -1071,6 +1072,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             3. TAB CONTENT
             ======================================================== */}
         <main className="workspace-main-content">
+          <ErrorBoundary key={activeTab} fallbackTitle="Error loading workspace view" onReset={refreshAllData}>
           {/* NON-ADMIN EMPLOYEES: UNIFIED EMPLOYEE DASHBOARD (Submission Panel + Assignment Panel) */}
           {!isAdmin && (activeTab === 'tasks' || activeTab === 'overview' || activeTab === 'projects' || activeTab === 'team') && (
             <UnifiedEmployeeDashboard
@@ -1939,6 +1941,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               }}
             />
           )}
+          </ErrorBoundary>
         </main>
       </div>
 

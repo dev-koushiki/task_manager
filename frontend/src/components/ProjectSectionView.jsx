@@ -6,6 +6,7 @@ import {
   CalendarIcon,
   CheckIcon,
   UsersIcon,
+  UserIcon,
   MicIcon,
   MoreVerticalIcon,
   ClockIcon,
