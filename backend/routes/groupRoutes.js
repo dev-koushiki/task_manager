@@ -103,10 +103,11 @@ router.post("/", authMiddleware, async (req, res) => {
 
     // Add selected members from current organization
     if (Array.isArray(memberIds) && memberIds.length > 0) {
-      const usersToAdd = await User.find({
-        _id: { $in: memberIds },
-        organizationId,
-      });
+      const company = req.user.companyName;
+      const orgFilter = organizationId
+        ? (company ? { _id: { $in: memberIds }, $or: [{ organizationId }, { companyName: company }] } : { _id: { $in: memberIds }, organizationId })
+        : { _id: { $in: memberIds } };
+      const usersToAdd = await User.find(orgFilter);
 
       usersToAdd.forEach((u) => {
         const uId = u._id.toString();
@@ -173,7 +174,11 @@ router.post("/direct/:targetUserId", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "Cannot create a direct conversation with yourself." });
     }
 
-    const targetUser = await User.findOne({ _id: targetUserId, organizationId });
+    const company = req.user.companyName;
+    const targetFilter = organizationId
+      ? (company ? { _id: targetUserId, $or: [{ organizationId }, { companyName: company }] } : { _id: targetUserId, organizationId })
+      : { _id: targetUserId };
+    const targetUser = await User.findOne(targetFilter);
     if (!targetUser) {
       return res.status(404).json({ message: "Colleague not found in your organization." });
     }

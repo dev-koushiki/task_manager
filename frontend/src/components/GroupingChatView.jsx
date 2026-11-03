@@ -87,7 +87,8 @@ export const GroupingChatView = ({ user }) => {
         api.getEmployees().catch(() => []),
       ]);
       setGroups(groupsData || []);
-      setEmployees(empsData || []);
+      const parsedEmps = Array.isArray(empsData) ? empsData : (empsData?.employees || []);
+      setEmployees(parsedEmps);
 
       // If groups exist, select first conversation
       if (groupsData && groupsData.length > 0 && !selectedGroup) {
@@ -172,13 +173,31 @@ export const GroupingChatView = ({ user }) => {
     }
   };
 
-  // Group Creation
+  // Group Creation & Direct Chat Modals
   const handleOpenCreateModal = () => {
     setNewGroupName('');
     setNewGroupDesc('');
     setSelectedEmployeeIds([]);
     setEmployeeSearch('');
     setModalMode('create');
+    api.getEmployees()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data?.employees || []);
+        if (list.length > 0) setEmployees(list);
+      })
+      .catch(() => {});
+  };
+
+  const handleOpenDirectModal = () => {
+    setSelectedEmployeeIds([]);
+    setEmployeeSearch('');
+    setModalMode('direct');
+    api.getEmployees()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data?.employees || []);
+        if (list.length > 0) setEmployees(list);
+      })
+      .catch(() => {});
   };
 
   const handleToggleSelectEmployee = (empId) => {
@@ -329,7 +348,7 @@ export const GroupingChatView = ({ user }) => {
   // Filter employees for tables
   const filteredEmployees = employees.filter((emp) => {
     const q = employeeSearch.toLowerCase().trim();
-    const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim().toLowerCase();
+    const fullName = `${emp.firstName || ''} ${emp.lastName || ''} ${emp.name || ''}`.trim().toLowerCase();
     const email = (emp.email || '').toLowerCase();
     const dept = (emp.department || '').toLowerCase();
     const role = (emp.positionTitle || emp.role || emp.designation || '').toLowerCase();
@@ -386,11 +405,7 @@ export const GroupingChatView = ({ user }) => {
                 type="button"
                 className="btn-icon-action"
                 title="Start 1-on-1 Direct Chat"
-                onClick={() => {
-                  setSelectedEmployeeIds([]);
-                  setEmployeeSearch('');
-                  setModalMode('direct');
-                }}
+                onClick={handleOpenDirectModal}
               >
                 <MessageSquareIcon size={18} />
               </button>
@@ -698,11 +713,7 @@ export const GroupingChatView = ({ user }) => {
                   <button
                     type="button"
                     className="btn btn-secondary"
-                    onClick={() => {
-                      setSelectedEmployeeIds([]);
-                      setEmployeeSearch('');
-                      setModalMode('direct');
-                    }}
+                    onClick={handleOpenDirectModal}
                   >
                     <UserIcon size={16} /> <span>Start Direct Chat</span>
                   </button>
@@ -820,14 +831,21 @@ export const GroupingChatView = ({ user }) => {
                         {filteredEmployees.length === 0 ? (
                           <tr>
                             <td colSpan="4" className="text-center py-4 text-muted">
-                              No employees matching &quot;{employeeSearch}&quot;
+                              {employeeSearch ? (
+                                <>No employees matching &quot;{employeeSearch}&quot;</>
+                              ) : (
+                                <>No employees found in your organization directory.</>
+                              )}
                             </td>
                           </tr>
                         ) : (
                           filteredEmployees.map((emp) => {
                             const empId = emp._id || emp.id;
                             const isSelected = selectedEmployeeIds.includes(empId);
-                            const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || 'Employee';
+                            const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || emp.name || emp.email || 'Employee';
+                            const roleDisplay = emp.positionTitle || emp.designation || (emp.role ? emp.role.replace(/_/g, ' ') : 'Contributor');
+                            const deptDisplay = emp.department || 'General';
+                            const avatarInitial = (emp.firstName?.[0] || emp.name?.[0] || emp.email?.[0] || 'E').toUpperCase();
 
                             return (
                               <tr
@@ -851,7 +869,7 @@ export const GroupingChatView = ({ user }) => {
                                 </td>
                                 <td>
                                   <div className="wa-table-emp-cell">
-                                    <div className="wa-avatar-circle-xs">{emp.firstName?.[0] || 'E'}</div>
+                                    <div className="wa-avatar-circle-xs">{avatarInitial}</div>
                                     <div className="wa-table-emp-info">
                                       <strong>{fullName}</strong>
                                       <span>{emp.email}</span>
@@ -860,12 +878,12 @@ export const GroupingChatView = ({ user }) => {
                                 </td>
                                 <td>
                                   <span className="wa-badge-dept">
-                                    <BuildingIcon size={12} /> {emp.department || 'General'}
+                                    <BuildingIcon size={12} /> {deptDisplay}
                                   </span>
                                 </td>
                                 <td>
                                   <span className="wa-badge-role">
-                                    <BriefcaseIcon size={12} /> {emp.positionTitle || emp.role || 'Contributor'}
+                                    <BriefcaseIcon size={12} /> {roleDisplay}
                                   </span>
                                 </td>
                               </tr>
@@ -1047,9 +1065,9 @@ export const GroupingChatView = ({ user }) => {
                                     </button>
                                   </td>
                                   <td>
-                                    <strong>{emp.firstName} {emp.lastName}</strong>
+                                    <strong>{`${emp.firstName || ''} ${emp.lastName || ''}`.trim() || emp.name || emp.email}</strong>
                                     <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)' }}>
-                                      {emp.department || 'General'}
+                                      {emp.department || 'General'} · {emp.positionTitle || emp.role || 'Contributor'}
                                     </span>
                                   </td>
                                 </tr>
@@ -1177,40 +1195,60 @@ export const GroupingChatView = ({ user }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredEmployees
-                      .filter((e) => String(e._id || e.id) !== currentUserId)
-                      .map((emp) => (
-                        <tr key={emp._id || emp.id}>
-                          <td>
-                            <div className="wa-table-emp-cell">
-                              <div className="wa-avatar-circle-xs">{emp.firstName?.[0] || 'C'}</div>
-                              <div className="wa-table-emp-info">
-                                <strong>{emp.firstName} {emp.lastName}</strong>
-                                <span>{emp.email}</span>
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <span className="wa-badge-dept">
-                              <BuildingIcon size={12} /> {emp.department || 'General'}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="wa-badge-role">
-                              <BriefcaseIcon size={12} /> {emp.positionTitle || emp.role || 'Contributor'}
-                            </span>
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-xs"
-                              onClick={() => handleStartDirectChat(emp)}
-                            >
-                              Message
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                    {filteredEmployees.filter((e) => String(e._id || e.id) !== String(currentUserId)).length === 0 ? (
+                      <tr>
+                        <td colSpan="4" className="text-center py-4 text-muted">
+                          {employeeSearch ? (
+                            <>No colleagues matching &quot;{employeeSearch}&quot;</>
+                          ) : (
+                            <>No other colleagues found in your organization directory.</>
+                          )}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredEmployees
+                        .filter((e) => String(e._id || e.id) !== String(currentUserId))
+                        .map((emp) => {
+                          const empId = emp._id || emp.id;
+                          const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || emp.name || emp.email || 'Colleague';
+                          const roleDisplay = emp.positionTitle || emp.designation || (emp.role ? emp.role.replace(/_/g, ' ') : 'Contributor');
+                          const deptDisplay = emp.department || 'General';
+                          const avatarInitial = (emp.firstName?.[0] || emp.name?.[0] || emp.email?.[0] || 'C').toUpperCase();
+
+                          return (
+                            <tr key={empId}>
+                              <td>
+                                <div className="wa-table-emp-cell">
+                                  <div className="wa-avatar-circle-xs">{avatarInitial}</div>
+                                  <div className="wa-table-emp-info">
+                                    <strong>{fullName}</strong>
+                                    <span>{emp.email}</span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td>
+                                <span className="wa-badge-dept">
+                                  <BuildingIcon size={12} /> {deptDisplay}
+                                </span>
+                              </td>
+                              <td>
+                                <span className="wa-badge-role">
+                                  <BriefcaseIcon size={12} /> {roleDisplay}
+                                </span>
+                              </td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-xs"
+                                  onClick={() => handleStartDirectChat(emp)}
+                                >
+                                  Message
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                    )}
                   </tbody>
                 </table>
               </div>

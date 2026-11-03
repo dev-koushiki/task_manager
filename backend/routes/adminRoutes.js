@@ -394,14 +394,19 @@ router.post("/employees/invite", authMiddleware, requireAdminOrEmployeeManager, 
 router.get("/employees", authMiddleware, async (req, res) => {
   try {
     const orgId = req.user.organizationId;
+    const company = req.user.companyName;
 
-    const users = await User.find({ organizationId: orgId })
+    const query = orgId
+      ? (company ? { $or: [{ organizationId: orgId }, { companyName: company }] } : { organizationId: orgId })
+      : (company ? { companyName: company } : {});
+
+    const users = await User.find(query)
       .select("-password")
       .populate("reportsTo", "firstName lastName role designation")
       .populate("reportingRelationships.managerId", "firstName lastName role designation positionTitle")
       .sort({ createdAt: -1 });
 
-    const allInvites = await Invitation.find({ organizationId: orgId }).sort({ createdAt: -1 });
+    const allInvites = await Invitation.find(orgId ? { organizationId: orgId } : {}).sort({ createdAt: -1 });
 
     const now = new Date();
     const formattedInvites = allInvites.map((inv) => {

@@ -485,6 +485,9 @@ export const api = {
       const data = await safeFetchJson(`${API_BASE_URL}/admin/employees`, {
         headers: getHeaders(),
       });
+      if (data && Array.isArray(data.employees)) {
+        try { localStorage.setItem('tm_admin_employees', JSON.stringify(data.employees)); } catch (_) {}
+      }
       return data;
     } catch {
       const localEmps = localStorage.getItem('tm_admin_employees');
@@ -504,6 +507,39 @@ export const api = {
         employees,
         pendingInvitations,
       };
+    }
+  },
+
+  // Get all active employees / colleagues in organization (returns User[] array)
+  async getEmployees() {
+    try {
+      const data = await safeFetchJson(`${API_BASE_URL}/admin/employees`, {
+        headers: getHeaders(),
+      });
+      if (Array.isArray(data)) {
+        try { localStorage.setItem('tm_admin_employees', JSON.stringify(data)); } catch (_) {}
+        return data;
+      }
+      if (Array.isArray(data?.employees)) {
+        try { localStorage.setItem('tm_admin_employees', JSON.stringify(data.employees)); } catch (_) {}
+        return data.employees;
+      }
+      return [];
+    } catch {
+      try {
+        const adminData = await this.getAdminEmployees();
+        if (Array.isArray(adminData?.employees)) return adminData.employees;
+        if (Array.isArray(adminData)) return adminData;
+      } catch (e) {
+        // Fallback below
+      }
+      const localEmps = localStorage.getItem('tm_admin_employees') || localStorage.getItem('tm_employees');
+      let employees = localEmps ? JSON.parse(localEmps) : [];
+      const currentUser = api.getUser();
+      if (currentUser && !employees.find((e) => (e.email && e.email === currentUser.email) || (e._id && currentUser._id && (e._id === currentUser._id || e.id === currentUser.id)))) {
+        employees.unshift(currentUser);
+      }
+      return employees;
     }
   },
 
