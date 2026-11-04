@@ -724,17 +724,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>Overview</span>
               </button>
 
-              {/* 3. Group */}
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'grouping' ? 'active' : ''}`}
-                onClick={() => setActiveTab('grouping')}
-              >
-                <UsersIcon size={18} className="nav-icon" />
-                <span>Group</span>
-              </button>
-
-              {/* 4. Tasks */}
+              {/* 3. Tasks */}
               <button
                 type="button"
                 className={`sidebar-nav-item ${activeTab === 'tasks' ? 'active' : ''}`}
@@ -742,6 +732,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               >
                 <CheckSquareIcon size={18} className="nav-icon" />
                 <span>Tasks</span>
+              </button>
+
+              {/* 4. Group */}
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'grouping' ? 'active' : ''}`}
+                onClick={() => setActiveTab('grouping')}
+              >
+                <UsersIcon size={18} className="nav-icon" />
+                <span>Group</span>
               </button>
 
               {/* 5. Calendar */}
@@ -820,16 +820,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             </>
           ) : (
             <>
-              {/* Group */}
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'grouping' ? 'active' : ''}`}
-                onClick={() => setActiveTab('grouping')}
-              >
-                <UsersIcon size={18} className="nav-icon" />
-                <span>Group</span>
-              </button>
-
               {/* My Dashboard / Tasks */}
               <button
                 type="button"
@@ -838,6 +828,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               >
                 <CheckSquareIcon size={18} className="nav-icon" />
                 <span>My Dashboard</span>
+              </button>
+
+              {/* Group */}
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'grouping' ? 'active' : ''}`}
+                onClick={() => setActiveTab('grouping')}
+              >
+                <UsersIcon size={18} className="nav-icon" />
+                <span>Group</span>
               </button>
 
               {/* Calendar */}
