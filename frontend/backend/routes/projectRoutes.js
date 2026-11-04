@@ -1,4 +1,5 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const Project = require("../models/Project");
 const Task = require("../models/Task");
 const User = require("../models/User");
@@ -113,6 +114,47 @@ async function sendProjectNotification({
     });
   } catch (err) {
     console.warn("sendProjectNotification error:", err.message);
+    return null;
+  }
+}
+
+// Helper: Send task assignment notification with duplicate prevention
+async function sendTaskNotification({
+  userId,
+  organizationId,
+  type,
+  title,
+  message,
+  link,
+  taskId,
+  metadata = {},
+}) {
+  if (!userId) return null;
+  try {
+    const duplicateQuery = {
+      userId,
+      type,
+      link,
+      createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    };
+    const existing = await Notification.findOne(duplicateQuery);
+    if (existing) return existing;
+
+    return await Notification.create({
+      userId,
+      organizationId: organizationId || null,
+      type,
+      title,
+      message,
+      link,
+      read: false,
+      metadata: {
+        taskId: taskId ? String(taskId) : undefined,
+        ...metadata,
+      },
+    });
+  } catch (err) {
+    console.warn("sendTaskNotification error:", err.message);
     return null;
   }
 }
@@ -400,6 +442,271 @@ router.post("/", authMiddleware, async (req, res) => {
   } catch (error) {
     console.error("Create project error:", error);
     res.status(400).json({ message: error.message });
+  }
+});
+
+// -------------------------------------------------------------
+// POST /api/projects/create-with-tasks - Unified creation of Project + Team + Tasks with Milestones
+// -------------------------------------------------------------
+router.post("/create-with-tasks", authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+    const orgId = user.organizationId;
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
+
+    const {
+      name,
+      department,
+      priority,
+      targetOutcome,
+      startDate,
+      targetCompletionDate,
+      deadline,
+      directorId,
+      description,
+      assignedEmployeeIds = [],
+      tasks = [],
+    } = req.body;
+
+    // 1. Validation
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: "Project name is required." });
+    }
+
+    const finalCompletionDate = targetCompletionDate || deadline;
+    if (!finalCompletionDate) {
+      return res.status(400).json({ message: "Target completion date is required." });
+    }
+
+    if (startDate && finalCompletionDate && startDate > finalCompletionDate) {
+      return res.status(400).json({
+        message: "Target completion date cannot be earlier than project start date.",
+      });
+    }
+
+    if (!targetOutcome || !targetOutcome.trim()) {
+      return res.status(400).json({ message: "Target outcome / objective is required." });
+    }
+
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+      return res.status(400).json({ message: "At least one task must be created with the project." });
+    }
+
+    for (let i = 0; i < tasks.length; i++) {
+      const t = tasks[i];
+      if (!t.title || !t.title.trim()) {
+        return res.status(400).json({ message: `Task #${i + 1} requires a title.` });
+      }
+      if (!t.deadline && !t.dueDate) {
+        return res.status(400).json({ message: `Task #${i + 1} ("${t.title}") requires a completion deadline.` });
+      }
+    }
+
+    // 2. Resolve Director
+    let assignedDirectorId = directorId || user.id;
+    let directorUser = null;
+    if (assignedDirectorId) {
+      directorUser = await User.findOne({ _id: assignedDirectorId, ...orgCondition });
+    }
+
+    // 3. Collect all unique user IDs involved (selected team + task assignees + director)
+    const allUserIds = new Set();
+    if (Array.isArray(assignedEmployeeIds)) {
+      assignedEmployeeIds.forEach((id) => id && allUserIds.add(String(id)));
+    }
+    tasks.forEach((t) => {
+      if (t.assignedTo) allUserIds.add(String(t.assignedTo));
+    });
+    if (directorUser) {
+      allUserIds.add(String(directorUser._id));
+    }
+
+    const users = await User.find({
+      _id: { $in: Array.from(allUserIds) },
+      ...orgCondition,
+    }).select("firstName lastName email role designation team department");
+
+    const userMap = new Map();
+    users.forEach((u) => userMap.set(String(u._id), u));
+
+    // Build assignedEmployees array for the Project
+    const assignedEmployeesList = users.map((emp) => ({
+      userId: emp._id,
+      name: `${emp.firstName} ${emp.lastName}`.trim(),
+      email: emp.email,
+      role: emp.role || "employee",
+      designation: emp.designation || "",
+      team: emp.team || "",
+      assignedAt: new Date(),
+    }));
+
+    // 4. Create Project document
+    let project = null;
+    try {
+      project = await Project.create({
+        name: name.trim(),
+        description: description ? description.trim() : "",
+        targetOutcome: targetOutcome ? targetOutcome.trim() : "",
+        organizationId: orgId,
+        companyName: user.companyName || "",
+        department: department ? department.trim() : (directorUser?.department || user.department || "General"),
+        team: user.team || "",
+        directorId: directorUser ? directorUser._id : user.id,
+        directorName: directorUser ? `${directorUser.firstName} ${directorUser.lastName}`.trim() : "Unassigned",
+        createdBy: user.id,
+        startDate: startDate || "",
+        targetCompletionDate: finalCompletionDate,
+        deadline: finalCompletionDate,
+        priority: (priority || "medium").toLowerCase(),
+        status: "not-started",
+        progress: 0,
+        assignedEmployees: assignedEmployeesList,
+        milestones: [],
+      });
+    } catch (projErr) {
+      console.error("Error creating project:", projErr);
+      return res.status(400).json({ message: "Failed to create project: " + projErr.message });
+    }
+
+    // 5. Create each Task (with atomic rollback on failure)
+    const createdTasks = [];
+    try {
+      const assignedByName = `${user.firstName || "Admin"} ${user.lastName || ""}`.trim();
+
+      for (const t of tasks) {
+        let assignedToUser = null;
+        let assignedToName = "Unassigned";
+        if (t.assignedTo) {
+          assignedToUser = userMap.get(String(t.assignedTo)) || null;
+          if (assignedToUser) {
+            assignedToName = `${assignedToUser.firstName} ${assignedToUser.lastName}`.trim();
+          }
+        }
+
+        // Sanitize milestones
+        let sanitizedMilestones = [];
+        if (Array.isArray(t.milestones)) {
+          sanitizedMilestones = t.milestones
+            .map((m) => {
+              if (typeof m === "string") {
+                const trimmed = m.trim();
+                return trimmed
+                  ? {
+                      id: new mongoose.Types.ObjectId().toString(),
+                      title: trimmed,
+                      completed: false,
+                    }
+                  : null;
+              }
+              if (m && typeof m === "object" && m.title && m.title.trim()) {
+                return {
+                  id: m.id || new mongoose.Types.ObjectId().toString(),
+                  title: m.title.trim(),
+                  completed: Boolean(m.completed),
+                  completedAt: m.completedAt || null,
+                  completedBy: m.completedBy || null,
+                  completedByName: m.completedByName || "",
+                };
+              }
+              return null;
+            })
+            .filter(Boolean);
+        }
+
+        const taskDeadline = t.deadline || t.dueDate || finalCompletionDate;
+        const taskInitialStatus = t.status || "not-started";
+
+        const createdTask = await Task.create({
+          title: t.title.trim(),
+          description: t.description ? t.description.trim() : "",
+          organizationId: orgId,
+          department: t.department || project.department,
+          team: t.team || (assignedToUser?.team || project.team || ""),
+          projectId: project._id,
+          assignedTo: assignedToUser ? assignedToUser._id : null,
+          assignedToName,
+          assignedBy: user.id,
+          assignedByName,
+          deadline: taskDeadline,
+          dueDate: taskDeadline,
+          priority: (t.priority || "medium").toLowerCase(),
+          weight: t.weight ? Number(t.weight) : 1,
+          status: taskInitialStatus,
+          progress: taskInitialStatus === "completed" ? 100 : 0,
+          user: user.id,
+          milestones: sanitizedMilestones,
+        });
+
+        // Notification to task assignee
+        if (assignedToUser && assignedToUser._id.toString() !== user.id.toString()) {
+          await sendTaskNotification({
+            userId: assignedToUser._id,
+            organizationId: orgId,
+            type: "task_assigned",
+            title: "New Task Assigned",
+            message: `${assignedByName} assigned you: "${createdTask.title}" in project "${project.name}".`,
+            link: `/tasks/${createdTask._id}`,
+            taskId: createdTask._id,
+            metadata: { taskId: createdTask._id, assignedBy: user.id, projectId: project._id },
+          });
+        }
+
+        createdTasks.push(createdTask);
+      }
+    } catch (taskErr) {
+      console.error("Error creating tasks, rolling back project and partial tasks:", taskErr);
+      if (createdTasks.length > 0) {
+        await Task.deleteMany({ _id: { $in: createdTasks.map((t) => t._id) } });
+      }
+      await Project.deleteOne({ _id: project._id });
+      return res.status(500).json({
+        message: "Failed to create all tasks. All changes were rolled back: " + taskErr.message,
+      });
+    }
+
+    // 6. Project member notifications
+    if (assignedEmployeesList.length > 0) {
+      for (const emp of assignedEmployeesList) {
+        if (emp.userId.toString() !== user.id.toString()) {
+          await sendProjectNotification({
+            userId: emp.userId,
+            organizationId: orgId,
+            type: "project_assigned",
+            title: `Assigned to Project: ${project.name}`,
+            message: `${user.firstName || "Admin"} assigned you to project "${project.name}". Target completion: ${finalCompletionDate}.`,
+            link: `/dashboard?tab=tasks&projectId=${project._id}`,
+            projectId: project._id,
+          });
+        }
+      }
+    }
+
+    // 7. Calculate metrics and return
+    const populatedProject = await Project.findById(project._id).populate(
+      "directorId",
+      "firstName lastName email designation department"
+    );
+    const metrics = await calculateProjectMetrics(populatedProject, orgId);
+
+    const populatedTasks = await Task.find({ _id: { $in: createdTasks.map((t) => t._id) } })
+      .populate("assignedTo", "firstName lastName email designation positionTitle role")
+      .populate("assignedBy", "firstName lastName email role")
+      .populate("projectId", "name deadline status priority");
+
+    res.status(201).json({
+      success: true,
+      message: "Project and tasks created and assigned successfully",
+      project: {
+        ...populatedProject.toObject(),
+        metrics,
+      },
+      tasks: populatedTasks,
+    });
+  } catch (error) {
+    console.error("Create project with tasks error:", error);
+    res.status(500).json({ message: error.message || "Failed to create project with tasks" });
   }
 });
 

@@ -171,7 +171,7 @@ export const AdminSummaryView = ({
               style={{ marginTop: '12px' }}
             >
               <PlusIcon size={18} />
-              <span>Launch New Project</span>
+              <span>Create Project & Tasks</span>
             </button>
           )}
         </div>

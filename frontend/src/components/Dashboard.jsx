@@ -45,6 +45,7 @@ import { ProjectSectionView } from './ProjectSectionView';
 import { MyProgressView } from './MyProgressView';
 import { WorkConnectView } from './WorkConnectView';
 import { HelpDeskView } from './HelpDeskView';
+import { CreateProjectTaskModal } from './CreateProjectTaskModal';
 import { TaskModal } from './TaskModal';
 import { ProjectModal } from './ProjectModal';
 import { TaskReviewModal } from './TaskReviewModal';
@@ -103,6 +104,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const [targetMilestoneId, setTargetMilestoneId] = useState(null);
 
   // Modal states
+  const [isCreateProjectTaskModalOpen, setIsCreateProjectTaskModalOpen] = useState(false);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
 
@@ -233,9 +235,26 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
   // Task Actions
   const handleOpenNewTask = (projectId = '', parentTaskId = null, defaultStatus = 'not-started') => {
+    // If delegating a subtask to an existing task, use TaskModal
+    if (parentTaskId) {
+      setEditingTask(null);
+      setTaskModalProjectId(projectId || (projects.length > 0 ? (projects[0]._id || projects[0].id) : ''));
+      setTaskModalParentId(parentTaskId);
+      setTaskModalInitialStatus(defaultStatus || 'not-started');
+      setIsTaskModalOpen(true);
+      return;
+    }
+
+    // Unified creation: for Admin / assigners, open the comprehensive Create Project & Assign Tasks modal
+    if (isAdmin || perms.canAssignTasks || perms.canCreateTasks) {
+      setIsCreateProjectTaskModalOpen(true);
+      return;
+    }
+
+    // Fallback for non-admin individual task creation if authorized
     setEditingTask(null);
     setTaskModalProjectId(projectId || (projects.length > 0 ? (projects[0]._id || projects[0].id) : ''));
-    setTaskModalParentId(parentTaskId || null);
+    setTaskModalParentId(null);
     setTaskModalInitialStatus(defaultStatus || 'not-started');
     setIsTaskModalOpen(true);
   };
@@ -1853,8 +1872,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                   initialProjectId={targetProjectId}
                   initialMilestoneId={targetMilestoneId}
                   onOpenNewProject={() => {
-                    setEditingProject(null);
-                    setIsProjectModalOpen(true);
+                    setIsCreateProjectTaskModalOpen(true);
                   }}
                   onEditProject={(proj) => {
                     setEditingProject(proj);
@@ -2090,8 +2108,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               tasks={tasks}
               loading={loading}
               onOpenNewProject={() => {
-                setEditingProject(null);
-                setIsProjectModalOpen(true);
+                setIsCreateProjectTaskModalOpen(true);
               }}
               onInspectProject={handleInspectProject}
             />
@@ -2301,6 +2318,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
         editingProject={editingProject}
       />
 
+      {/* Unified Create Project & Assign Tasks Modal */}
+      <CreateProjectTaskModal
+        isOpen={isCreateProjectTaskModalOpen}
+        onClose={() => setIsCreateProjectTaskModalOpen(false)}
+        onSuccess={async () => {
+          setIsCreateProjectTaskModalOpen(false);
+          await refreshAllData();
+        }}
+      />
+
       <TaskModal
         isOpen={isTaskModalOpen}
         onClose={() => {
@@ -2316,8 +2343,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
         onConnectForAssistance={handleOpenWorkConnectForTask}
         onOpenNewProject={() => {
           setIsTaskModalOpen(false);
-          setEditingProject(null);
-          setIsProjectModalOpen(true);
+          setIsCreateProjectTaskModalOpen(true);
         }}
       />
 

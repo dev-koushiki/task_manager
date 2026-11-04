@@ -644,6 +644,16 @@ export const api = {
     }
   },
 
+  // POST /api/projects/create-with-tasks - Admin creates project with team & initial tasks
+  async createProjectWithTasks(payload) {
+    const data = await safeFetchJson(`${API_BASE_URL}/projects/create-with-tasks`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return data;
+  },
+
   // GET /api/projects/:id
   async getProjectDetails(id) {
     try {

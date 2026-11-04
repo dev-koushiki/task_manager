@@ -148,29 +148,6 @@ const TaskModalDialog = ({
             : 'Create a single assigned task and add multiple milestones within it for the employee to complete.'}
         </p>
 
-        {!editingTask && !parentTaskId && onOpenNewProject && (
-          <div style={{ display: 'flex', gap: '6px', margin: '4px 0 14px', padding: '3px', background: 'var(--bg-card-hover, #f1f5f9)', borderRadius: '8px' }}>
-            <button
-              type="button"
-              className="btn btn-sm btn-primary"
-              style={{ flex: 1, padding: '6px 12px', fontSize: '12px', justifyContent: 'center' }}
-            >
-              <SparklesIcon size={13} />
-              <span>New Task</span>
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-secondary"
-              style={{ flex: 1, padding: '6px 12px', fontSize: '12px', background: 'transparent', border: 'none', justifyContent: 'center', color: 'var(--text-muted)' }}
-              onClick={onOpenNewProject}
-              title="Switch to creating a project initiative"
-            >
-              <FolderIcon size={13} />
-              <span>New Project</span>
-            </button>
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="modal-form">
           <div className="form-group">
             <label htmlFor="taskTitle">Task Title *</label>
@@ -191,13 +168,7 @@ const TaskModalDialog = ({
               <select
                 id="taskProject"
                 value={formData.projectId}
-                onChange={(e) => {
-                  if (e.target.value === '__new_project__') {
-                    if (onOpenNewProject) onOpenNewProject();
-                    return;
-                  }
-                  setFormData((prev) => ({ ...prev, projectId: e.target.value }));
-                }}
+                onChange={(e) => setFormData((prev) => ({ ...prev, projectId: e.target.value }))}
               >
                 <option value="">Independent Task</option>
                 {projects.map((p) => (
@@ -205,7 +176,6 @@ const TaskModalDialog = ({
                     {p.name}
                   </option>
                 ))}
-                {onOpenNewProject && <option value="__new_project__">+ Initialize New Project...</option>}
               </select>
             </div>
 
