@@ -36,6 +36,9 @@ export const UnifiedEmployeeDashboard = ({
   const [addingMilestoneTaskId, setAddingMilestoneTaskId] = useState(null);
   const [submissionFilter, setSubmissionFilter] = useState('all');
   const [assignmentFilter, setAssignmentFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expandedMilestones, setExpandedMilestones] = useState({});
+  const toggleMilestones = (id) => setExpandedMilestones((prev) => ({ ...prev, [id]: !prev[id] }));
   const [notice, setNotice] = useState('');
   const [errorNotice, setErrorNotice] = useState('');
   const [editingBlockerId, setEditingBlockerId] = useState(null);
@@ -177,11 +180,25 @@ export const UnifiedEmployeeDashboard = ({
 
   // Filter tasks
   const filteredSubmissionTasks = myAssignedTasks.filter((t) => {
+    const q = searchTerm.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      t.title?.toLowerCase().includes(q) ||
+      t.description?.toLowerCase().includes(q) ||
+      t.assignedByName?.toLowerCase().includes(q);
+    if (!matchesSearch) return false;
     if (submissionFilter === 'all') return true;
     return t.status === submissionFilter;
   });
 
   const filteredAssignmentTasks = myDelegatedTasks.filter((t) => {
+    const q = searchTerm.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      t.title?.toLowerCase().includes(q) ||
+      t.description?.toLowerCase().includes(q) ||
+      t.assignedToName?.toLowerCase().includes(q);
+    if (!matchesSearch) return false;
     if (assignmentFilter === 'all') return true;
     return t.status === assignmentFilter;
   });
@@ -260,8 +277,28 @@ export const UnifiedEmployeeDashboard = ({
       {activePanel === 'submission' && (
         <div className="submission-panel-section animate-fade-in">
           <div className="panel-controls-bar">
+            {/* Search Input */}
+            <div className="employee-task-search-box">
+              <SearchIcon size={14} className="text-muted" />
+              <input
+                type="text"
+                placeholder="Search my tasks..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  className="clear-search-btn"
+                  onClick={() => setSearchTerm('')}
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+
             <div className="filter-pills-row">
-              <span className="filter-label">Filter:</span>
+              <span className="filter-label">Status:</span>
               <button
                 type="button"
                 className={`filter-pill ${submissionFilter === 'all' ? 'active' : ''}`}
@@ -489,19 +526,29 @@ export const UnifiedEmployeeDashboard = ({
 
                     {/* ================= MILESTONES SECTION ================= */}
                     <div className="task-milestones-container">
-                      <div className="milestones-header-row">
-                        <strong>
-                          Milestones ({completedMilestonesCount} / {milestones.length} completed)
-                        </strong>
+                      <div
+                        className="milestones-header-row clickable-milestones-header"
+                        onClick={() => toggleMilestones(t._id || t.id)}
+                      >
+                        <div className="milestones-header-left">
+                          <span className="milestones-chevron-icon">
+                            {(expandedMilestones[t._id || t.id] ?? (milestones.length > 0 && !isCompleted)) ? '▼' : '▶'}
+                          </span>
+                          <strong>
+                            Milestones ({completedMilestonesCount} / {milestones.length} completed)
+                          </strong>
+                        </div>
                         {!isCompleted && (
                           <button
                             type="button"
                             className="btn-add-milestone-text"
-                            onClick={() =>
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setAddingMilestoneTaskId(
                                 addingMilestoneTaskId === (t._id || t.id) ? null : (t._id || t.id)
-                              )
-                            }
+                              );
+                              setExpandedMilestones((prev) => ({ ...prev, [t._id || t.id]: true }));
+                            }}
                           >
                             + Add Milestone
                           </button>
@@ -539,62 +586,79 @@ export const UnifiedEmployeeDashboard = ({
                       )}
 
                       {/* Milestones List */}
-                      {milestones.length === 0 ? (
-                        <p className="no-milestones-muted">No specific milestones tracked for this task.</p>
-                      ) : (
-                        <div className="milestones-list">
-                          {milestones.map((m) => {
-                            const isDone = Boolean(m.completed);
-                            return (
-                              <div
-                                key={m.id || m._id}
-                                className={`milestone-item-row ${isDone ? 'milestone-completed' : 'milestone-pending'}`}
-                              >
-                                <div className="milestone-left">
-                                  {isDone ? (
-                                    <CheckCircleIcon size={16} className="text-success" />
-                                  ) : (
-                                    <span className="milestone-pending-dot">○</span>
-                                  )}
-                                  <div className="milestone-details">
-                                    <span className={`milestone-title ${isDone ? 'line-through' : ''}`}>
-                                      {m.title}
-                                    </span>
-                                    {isDone && m.completedAt && (
-                                      <small className="milestone-completed-time">
-                                        Completed on {new Date(m.completedAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                        {m.completedByName && ` by ${m.completedByName}`}
-                                      </small>
-                                    )}
-                                  </div>
-                                </div>
+                      {(expandedMilestones[t._id || t.id] ?? (milestones.length > 0 && !isCompleted)) && (
+                        <>
+                          {milestones.length === 0 ? (
+                            <p className="no-milestones-muted">No specific milestones tracked for this task.</p>
+                          ) : (
+                            <div className="milestones-list">
+                              {milestones.map((m) => {
+                                const isDone = Boolean(m.completed);
+                                return (
+                                  <div
+                                    key={m.id || m._id}
+                                    className={`milestone-item-row ${isDone ? 'milestone-completed' : 'milestone-pending'}`}
+                                  >
+                                    <div className="milestone-left">
+                                      {isDone ? (
+                                        <CheckCircleIcon size={16} className="text-success" />
+                                      ) : (
+                                        <span className="milestone-pending-dot">○</span>
+                                      )}
+                                      <div className="milestone-details">
+                                        <span className={`milestone-title ${isDone ? 'line-through' : ''}`}>
+                                          {m.title}
+                                        </span>
+                                        {isDone && m.completedAt && (
+                                          <small className="milestone-completed-time">
+                                            Completed on {new Date(m.completedAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                            {m.completedByName && ` by ${m.completedByName}`}
+                                          </small>
+                                        )}
+                                      </div>
+                                    </div>
 
-                                <div className="milestone-right-action">
-                                  {isDone ? (
-                                    <span className="milestone-done-pill">✓ Done</span>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className="btn btn-success btn-sm btn-complete-milestone"
-                                      onClick={() => handleCompleteMilestone(t._id || t.id, m.id || m._id)}
-                                      title="Mark this milestone as completed"
-                                    >
-                                      <CheckIcon size={13} /> Complete
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                                    <div className="milestone-right-action">
+                                      {isDone ? (
+                                        <span className="milestone-done-pill">✓ Done</span>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          className="btn btn-success btn-sm btn-complete-milestone"
+                                          onClick={() => handleCompleteMilestone(t._id || t.id, m.id || m._id)}
+                                          title="Mark this milestone as completed"
+                                        >
+                                          <CheckIcon size={13} /> Complete
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
 
-                    {/* Progress Slider */}
+                    {/* Progress Control Block */}
                     <div className="progress-control-block">
                       <div className="progress-labels">
                         <span>Task Completion Progress</span>
                         <strong>{isCompleted ? 100 : t.progress || 0}%</strong>
+                      </div>
+                      <div className="quick-progress-pills-row">
+                        {[25, 50, 75, 100].map((step) => (
+                          <button
+                            key={step}
+                            type="button"
+                            className={`btn-step-progress ${(isCompleted ? 100 : t.progress || 0) >= step ? 'active' : ''}`}
+                            onClick={() => handleUpdateProgress(t._id || t.id, step)}
+                            disabled={isCompleted || isSubmitted}
+                          >
+                            {step}%
+                          </button>
+                        ))}
                       </div>
                       <input
                         type="range"

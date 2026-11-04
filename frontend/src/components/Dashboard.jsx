@@ -87,7 +87,9 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewMode, setViewMode] = useState('kanban'); // 'kanban' | 'list'
-  const [tasksTabMode, setTasksTabMode] = useState('projects'); // 'projects' (default) | 'kanban'
+  const [tasksTabMode, setTasksTabMode] = useState('board'); // 'board' (default) | 'list' | 'projects' | 'analytics'
+  const [sortBy, setSortBy] = useState('priority'); // 'priority' | 'deadline' | 'alphabetical' | 'newest'
+  const [showScheduleSection, setShowScheduleSection] = useState(false);
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const [isNotifDropdownOpen, setIsNotifDropdownOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -482,10 +484,31 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
     });
   }, [tasks, searchQuery, priorityFilter, statusFilter]);
 
+  // Sorted and filtered tasks for Board & List views
+  const sortedFilteredTasks = useMemo(() => {
+    const list = [...filteredTasks];
+    if (sortBy === 'priority') {
+      const pWeights = { urgent: 4, high: 3, medium: 2, low: 1 };
+      list.sort((a, b) => (pWeights[b.priority] || 2) - (pWeights[a.priority] || 2));
+    } else if (sortBy === 'deadline') {
+      list.sort((a, b) => {
+        const da = a.deadline || a.dueDate || '9999-99-99';
+        const db = b.deadline || b.dueDate || '9999-99-99';
+        return da.localeCompare(db);
+      });
+    } else if (sortBy === 'alphabetical') {
+      list.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    } else if (sortBy === 'newest') {
+      list.sort((a, b) => new Date(b.createdAt || b.updatedAt || 0) - new Date(a.createdAt || a.updatedAt || 0));
+    }
+    return list;
+  }, [filteredTasks, sortBy]);
+
   // Real Metric Computations (reflecting actual tasks in the workspace)
   const totalTasksCount = tasks.length;
   const inProgressTasksCount = tasks.filter((t) => t.status === 'in-progress').length;
   const completedTasksCount = tasks.filter((t) => t.status === 'completed').length;
+  const submittedTasksCount = tasks.filter((t) => t.status === 'submitted').length;
   const todoTasksCount = tasks.filter((t) => !t.status || t.status === 'not-started').length;
 
   // Real Tasks this week
@@ -1100,27 +1123,684 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           {/* MAIN ADMIN: TASKS TAB */}
           {isAdmin && activeTab === 'tasks' && (
             <div className="tasks-container-view animate-fade-in">
-              {/* Primary View Switcher: Projects & Milestones vs Kanban & Metrics */}
-              <div className="tasks-view-mode-switcher">
-                <button
-                  type="button"
-                  className={`tasks-mode-btn ${tasksTabMode === 'projects' ? 'active' : ''}`}
-                  onClick={() => setTasksTabMode('projects')}
-                >
-                  <SparklesIcon size={15} />
-                  <span>Projects & Milestones Structure</span>
-                </button>
-                <button
-                  type="button"
-                  className={`tasks-mode-btn ${tasksTabMode === 'kanban' ? 'active' : ''}`}
-                  onClick={() => setTasksTabMode('kanban')}
-                >
-                  <CalendarIcon size={15} />
-                  <span>Metrics & Kanban Overview</span>
-                </button>
+              {/* 1. Header Banner */}
+              <div className="tasks-top-header">
+                <div className="tasks-header-info">
+                  <h2 className="tasks-main-title">Tasks & Workflow</h2>
+                  <p className="tasks-subtitle">
+                    Organize daily tasks, track milestone progress across projects, and manage team deliverables.
+                  </p>
+                </div>
+
+                <div className="tasks-header-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setEditingProject(null);
+                      setIsProjectModalOpen(true);
+                    }}
+                    title="Create a new high-level project"
+                  >
+                    <FolderIcon size={16} />
+                    <span>New Project</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => handleOpenNewTask()}
+                    title="Create a new task"
+                  >
+                    <PlusIcon size={16} />
+                    <span>New Task</span>
+                  </button>
+                </div>
               </div>
 
-              {tasksTabMode === 'projects' ? (
+              {/* 2. Interactive Quick Stats Cards */}
+              <div className="tasks-quick-stats-grid">
+                <div
+                  className={`task-stat-card ${statusFilter === 'all' && (tasksTabMode === 'board' || tasksTabMode === 'list' || tasksTabMode === 'kanban') ? 'selected-filter' : ''}`}
+                  onClick={() => {
+                    setStatusFilter('all');
+                    if (tasksTabMode === 'analytics' || tasksTabMode === 'projects') setTasksTabMode('board');
+                  }}
+                  title="View all workspace tasks"
+                >
+                  <div className="stat-card-top">
+                    <span className="stat-card-label">Total Tasks</span>
+                    <div className="stat-card-icon icon-blue">
+                      <CheckSquareIcon size={18} />
+                    </div>
+                  </div>
+                  <div className="stat-card-value">{totalTasksCount}</div>
+                  <div className="stat-card-meta">
+                    <span>{tasksThisWeekCount} added this week</span>
+                  </div>
+                </div>
+
+                <div
+                  className={`task-stat-card ${statusFilter === 'in-progress' && (tasksTabMode === 'board' || tasksTabMode === 'list' || tasksTabMode === 'kanban') ? 'selected-filter' : ''}`}
+                  onClick={() => {
+                    setStatusFilter('in-progress');
+                    if (tasksTabMode === 'analytics' || tasksTabMode === 'projects') setTasksTabMode('board');
+                  }}
+                  title="Filter by In Progress"
+                >
+                  <div className="stat-card-top">
+                    <span className="stat-card-label">In Progress</span>
+                    <div className="stat-card-icon icon-green">
+                      <ActivityIcon size={18} />
+                    </div>
+                  </div>
+                  <div className="stat-card-value">{inProgressTasksCount}</div>
+                  <div className="stat-card-meta">
+                    <span>Currently being worked on</span>
+                  </div>
+                </div>
+
+                <div
+                  className={`task-stat-card ${statusFilter === 'submitted' && (tasksTabMode === 'board' || tasksTabMode === 'list' || tasksTabMode === 'kanban') ? 'selected-filter' : ''}`}
+                  onClick={() => {
+                    setStatusFilter('submitted');
+                    if (tasksTabMode === 'analytics' || tasksTabMode === 'projects') setTasksTabMode('board');
+                  }}
+                  title="Filter by In Review"
+                >
+                  <div className="stat-card-top">
+                    <span className="stat-card-label">In Review</span>
+                    <div className="stat-card-icon icon-purple">
+                      <ClockIcon size={18} />
+                    </div>
+                  </div>
+                  <div className="stat-card-value">{submittedTasksCount}</div>
+                  <div className="stat-card-meta">
+                    <span className={submittedTasksCount > 0 ? 'text-warning font-semibold' : ''}>
+                      {submittedTasksCount > 0 ? `${submittedTasksCount} pending review` : 'No pending reviews'}
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  className={`task-stat-card ${statusFilter === 'completed' && (tasksTabMode === 'board' || tasksTabMode === 'list' || tasksTabMode === 'kanban') ? 'selected-filter' : ''}`}
+                  onClick={() => {
+                    setStatusFilter('completed');
+                    if (tasksTabMode === 'analytics' || tasksTabMode === 'projects') setTasksTabMode('board');
+                  }}
+                  title="Filter by Completed"
+                >
+                  <div className="stat-card-top">
+                    <span className="stat-card-label">Completed</span>
+                    <div className="stat-card-icon icon-emerald">
+                      <CheckCircleIcon size={18} />
+                    </div>
+                  </div>
+                  <div className="stat-card-value">{completedTasksCount}</div>
+                  <div className="stat-card-meta">
+                    <span>{pctCompleted}% overall completion</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Sub-View Segmented Navigation */}
+              <div className="tasks-subnav-bar">
+                <div className="tasks-subnav-tabs">
+                  <button
+                    type="button"
+                    className={`subnav-tab-btn ${tasksTabMode === 'board' || tasksTabMode === 'kanban' ? 'active' : ''}`}
+                    onClick={() => {
+                      setTasksTabMode('board');
+                      setViewMode('kanban');
+                    }}
+                  >
+                    <LayersIcon size={16} />
+                    <span>Board View</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`subnav-tab-btn ${tasksTabMode === 'list' ? 'active' : ''}`}
+                    onClick={() => {
+                      setTasksTabMode('list');
+                      setViewMode('list');
+                    }}
+                  >
+                    <FileTextIcon size={16} />
+                    <span>List View</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`subnav-tab-btn ${tasksTabMode === 'projects' ? 'active' : ''}`}
+                    onClick={() => setTasksTabMode('projects')}
+                  >
+                    <SparklesIcon size={16} />
+                    <span>Projects & Milestones</span>
+                    <span className="subnav-pill">{projects.length}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`subnav-tab-btn ${tasksTabMode === 'analytics' ? 'active' : ''}`}
+                    onClick={() => setTasksTabMode('analytics')}
+                  >
+                    <ActivityIcon size={16} />
+                    <span>Overview & Metrics</span>
+                  </button>
+                </div>
+
+                <div className="tasks-subnav-summary">
+                  {(tasksTabMode === 'board' || tasksTabMode === 'list' || tasksTabMode === 'kanban') && (
+                    <span className="tasks-count-indicator">
+                      Showing <strong>{sortedFilteredTasks.length}</strong> of <strong>{totalTasksCount}</strong> tasks
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* ================= VIEW: BOARD OR LIST ================= */}
+              {(tasksTabMode === 'board' || tasksTabMode === 'list' || tasksTabMode === 'kanban') && (
+                <div className="tasks-workspace-body animate-fade-in">
+                  {/* Clean Toolbar */}
+                  <div className="tasks-clean-toolbar">
+                    <div className="toolbar-search-wrap">
+                      <SearchIcon size={15} className="toolbar-search-icon" />
+                      <input
+                        type="text"
+                        placeholder="Search tasks by title, description or assignee..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="toolbar-search-field"
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          className="toolbar-clear-btn"
+                          onClick={() => setSearchQuery('')}
+                          title="Clear search"
+                        >
+                          &times;
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="toolbar-filters-group">
+                      {/* Status Pills */}
+                      <div className="toolbar-pills-row">
+                        {['all', 'not-started', 'in-progress', 'submitted', 'completed'].map((st) => {
+                          const label =
+                            st === 'all'
+                              ? 'All'
+                              : st === 'not-started'
+                              ? 'To Do'
+                              : st === 'in-progress'
+                              ? 'In Progress'
+                              : st === 'submitted'
+                              ? 'In Review'
+                              : 'Done';
+                          return (
+                            <button
+                              key={st}
+                              type="button"
+                              className={`toolbar-pill-btn ${statusFilter === st ? 'active' : ''}`}
+                              onClick={() => setStatusFilter(st)}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Priority Filter */}
+                      <div className="toolbar-select-item">
+                        <label>Priority:</label>
+                        <select
+                          value={priorityFilter}
+                          onChange={(e) => setPriorityFilter(e.target.value)}
+                        >
+                          <option value="all">All Priorities</option>
+                          <option value="urgent">Urgent</option>
+                          <option value="high">High</option>
+                          <option value="medium">Medium</option>
+                          <option value="low">Low</option>
+                        </select>
+                      </div>
+
+                      {/* Sort Dropdown */}
+                      <div className="toolbar-select-item">
+                        <label>Sort:</label>
+                        <select
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value)}
+                        >
+                          <option value="priority">Priority (High to Low)</option>
+                          <option value="deadline">Upcoming Deadline</option>
+                          <option value="alphabetical">Alphabetical (A-Z)</option>
+                          <option value="newest">Recently Created</option>
+                        </select>
+                      </div>
+
+                      {/* Clear All Filters Button */}
+                      {(searchQuery || statusFilter !== 'all' || priorityFilter !== 'all') && (
+                        <button
+                          type="button"
+                          className="toolbar-reset-link"
+                          onClick={() => {
+                            setSearchQuery('');
+                            setStatusFilter('all');
+                            setPriorityFilter('all');
+                          }}
+                        >
+                          Reset Filters
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* --- SUBVIEW 1: KANBAN BOARD --- */}
+                  {(tasksTabMode === 'board' || tasksTabMode === 'kanban') && (
+                    <div className="kanban-board-container animate-fade-in">
+                      <div className="kanban-columns-grid">
+                        {kanbanColumns.map((col) => {
+                          const colTasks = sortedFilteredTasks.filter((t) => (t.status || 'not-started') === col.id);
+                          return (
+                            <div key={col.id} className={`kanban-column-card ${col.headerTint}`}>
+                              {/* Column Header */}
+                              <div className="kanban-column-header">
+                                <div className="col-title-wrap">
+                                  <span className="col-title-text">{col.title}</span>
+                                  <span className={`col-counter-chip ${col.accent}`}>
+                                    {colTasks.length}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="col-header-add-btn"
+                                  onClick={() => handleOpenNewTask('', null, col.id)}
+                                  title={`Add new task to ${col.title}`}
+                                >
+                                  <PlusIcon size={14} />
+                                </button>
+                              </div>
+
+                              {/* Column Cards List */}
+                              <div className="kanban-cards-stack">
+                                {colTasks.length === 0 ? (
+                                  <div className="kanban-column-empty">
+                                    <p>No tasks in {col.title}</p>
+                                    <button
+                                      type="button"
+                                      className="btn-link-xs"
+                                      onClick={() => handleOpenNewTask('', null, col.id)}
+                                    >
+                                      + Add Task
+                                    </button>
+                                  </div>
+                                ) : (
+                                  colTasks.map((t) => {
+                                    const cat = getTaskCategory(t);
+                                    const isOverdue =
+                                      (t.deadline || t.dueDate) &&
+                                      (t.deadline || t.dueDate) < new Date().toISOString().split('T')[0] &&
+                                      t.status !== 'completed';
+                                    const dotColor =
+                                      t.status === 'completed'
+                                        ? 'dot-done'
+                                        : t.priority === 'urgent' || t.priority === 'high'
+                                        ? 'dot-red'
+                                        : t.priority === 'medium'
+                                        ? 'dot-yellow'
+                                        : 'dot-blue';
+
+                                    return (
+                                      <div
+                                        key={t._id || t.id}
+                                        className="clean-task-card animate-scale-up"
+                                        onClick={() => {
+                                          if (t.status === 'submitted') {
+                                            setReviewingTask(t);
+                                            setIsReviewModalOpen(true);
+                                          } else {
+                                            setEditingTask(t);
+                                            setIsTaskModalOpen(true);
+                                          }
+                                        }}
+                                      >
+                                        <div className="card-top-header">
+                                          <div className="card-category-and-dot">
+                                            <span className={`priority-indicator-dot ${dotColor}`}></span>
+                                            <span className={`card-category-badge ${cat.color}`}>
+                                              {cat.label}
+                                            </span>
+                                            {t.priority && (
+                                              <span className={`card-priority-pill priority-${t.priority}`}>
+                                                {t.priority.toUpperCase()}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="card-actions-menu">
+                                            <button
+                                              type="button"
+                                              className="clean-card-icon-btn"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteTask(t._id || t.id);
+                                              }}
+                                              title="Delete task"
+                                            >
+                                              <TrashIcon size={13} />
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        <h4 className="clean-task-title">{t.title}</h4>
+                                        {t.description && (
+                                          <p className="clean-task-desc-snippet">{t.description}</p>
+                                        )}
+
+                                        {/* Card Meta Footer */}
+                                        <div className="clean-card-footer">
+                                          <div className={`card-deadline-tag ${isOverdue ? 'deadline-overdue' : ''}`}>
+                                            <CalendarIcon size={12} />
+                                            <span>
+                                              {t.deadline || t.dueDate
+                                                ? new Date(t.deadline || t.dueDate).toLocaleDateString([], { month: 'short', day: 'numeric' })
+                                                : 'No deadline'}
+                                              {isOverdue && ' (Overdue)'}
+                                            </span>
+                                          </div>
+
+                                          <div className="card-assignee-badge" title={t.assignedToName || 'Unassigned'}>
+                                            <span className="assignee-avatar-circle">
+                                              {t.assignedToName && t.assignedToName !== 'Unassigned'
+                                                ? t.assignedToName[0].toUpperCase()
+                                                : 'U'}
+                                            </span>
+                                            <span className="assignee-short-name">
+                                              {t.assignedToName && t.assignedToName !== 'Unassigned'
+                                                ? t.assignedToName.split(' ')[0]
+                                                : 'Unassigned'}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        {/* Review Button for Submitted tasks */}
+                                        {t.status === 'submitted' && (
+                                          <button
+                                            type="button"
+                                            className="btn btn-warning btn-xs btn-review-card-action"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setReviewingTask(t);
+                                              setIsReviewModalOpen(true);
+                                            }}
+                                          >
+                                            <CheckCircleIcon size={13} />
+                                            <span>Review Deliverable</span>
+                                          </button>
+                                        )}
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </div>
+
+                              {/* Bottom Add Task Button */}
+                              <button
+                                type="button"
+                                className="kanban-bottom-add-btn"
+                                onClick={() => handleOpenNewTask('', null, col.id)}
+                              >
+                                <PlusIcon size={13} />
+                                <span>Add Task</span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* --- SUBVIEW 2: LIST VIEW --- */}
+                  {tasksTabMode === 'list' && (
+                    <div className="tasks-list-view-container animate-fade-in">
+                      {sortedFilteredTasks.length === 0 ? (
+                        <div className="list-view-empty-card">
+                          <CheckSquareIcon size={40} className="text-muted" />
+                          <h3>No tasks match your filter</h3>
+                          <p>Try clearing filters or search query, or create a new task.</p>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => handleOpenNewTask()}
+                          >
+                            <PlusIcon size={15} /> Create New Task
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="tasks-table-wrapper">
+                          <table className="tasks-modern-table">
+                            <thead>
+                              <tr>
+                                <th style={{ width: '40px' }}>Done</th>
+                                <th>Task Title & Summary</th>
+                                <th>Category / Domain</th>
+                                <th>Assignee</th>
+                                <th>Priority</th>
+                                <th>Due Date</th>
+                                <th>Status</th>
+                                <th style={{ textAlign: 'right' }}>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sortedFilteredTasks.map((t) => {
+                                const isDone = t.status === 'completed';
+                                const isOverdue =
+                                  (t.deadline || t.dueDate) &&
+                                  (t.deadline || t.dueDate) < new Date().toISOString().split('T')[0] &&
+                                  !isDone;
+                                const cat = getTaskCategory(t);
+
+                                return (
+                                  <tr
+                                    key={t._id || t.id}
+                                    className={`task-table-row ${isDone ? 'row-done' : ''}`}
+                                    onClick={() => {
+                                      if (t.status === 'submitted') {
+                                        setReviewingTask(t);
+                                        setIsReviewModalOpen(true);
+                                      } else {
+                                        setEditingTask(t);
+                                        setIsTaskModalOpen(true);
+                                      }
+                                    }}
+                                  >
+                                    <td onClick={(e) => e.stopPropagation()}>
+                                      <button
+                                        type="button"
+                                        className={`checkbox-custom-btn ${isDone ? 'checked' : ''}`}
+                                        onClick={() => handleToggleTaskDone(t)}
+                                        title={isDone ? 'Mark as In Progress' : 'Mark as Completed'}
+                                      >
+                                        {isDone ? <CheckIcon size={12} className="check-mark-icon" /> : null}
+                                      </button>
+                                    </td>
+                                    <td>
+                                      <div className="table-task-info">
+                                        <span className={`table-task-title ${isDone ? 'strikethrough' : ''}`}>
+                                          {t.title}
+                                        </span>
+                                        {t.description && (
+                                          <p className="table-task-desc">{t.description}</p>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td>
+                                      <span className={`card-category-badge ${cat.color}`}>
+                                        {cat.label}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      <div className="table-assignee-cell">
+                                        <span className="assignee-avatar-circle">
+                                          {t.assignedToName && t.assignedToName !== 'Unassigned'
+                                            ? t.assignedToName[0].toUpperCase()
+                                            : 'U'}
+                                        </span>
+                                        <span>{t.assignedToName || 'Unassigned'}</span>
+                                      </div>
+                                    </td>
+                                    <td>
+                                      <span className={`card-priority-pill priority-${t.priority || 'medium'}`}>
+                                        {(t.priority || 'medium').toUpperCase()}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      <span className={`table-date-pill ${isOverdue ? 'text-danger font-semibold' : ''}`}>
+                                        {t.deadline || t.dueDate
+                                          ? new Date(t.deadline || t.dueDate).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+                                          : 'No date'}
+                                        {isOverdue && ' (Overdue)'}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      <span className={`table-status-pill status-${t.status || 'not-started'}`}>
+                                        {t.status === 'not-started'
+                                          ? 'To Do'
+                                          : t.status === 'in-progress'
+                                          ? 'In Progress'
+                                          : t.status === 'submitted'
+                                          ? 'In Review'
+                                          : 'Completed'}
+                                      </span>
+                                    </td>
+                                    <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
+                                      <div className="table-actions-cell">
+                                        {t.status === 'submitted' && (
+                                          <button
+                                            type="button"
+                                            className="btn btn-warning btn-xs"
+                                            onClick={() => {
+                                              setReviewingTask(t);
+                                              setIsReviewModalOpen(true);
+                                            }}
+                                            title="Review deliverable"
+                                          >
+                                            Review
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          className="btn-icon-table"
+                                          onClick={() => {
+                                            setEditingTask(t);
+                                            setIsTaskModalOpen(true);
+                                          }}
+                                          title="Edit task"
+                                        >
+                                          <EditIcon size={14} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn-icon-table text-danger"
+                                          onClick={() => handleDeleteTask(t._id || t.id)}
+                                          title="Delete task"
+                                        >
+                                          <TrashIcon size={14} />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Collapsible Today & Upcoming Accordion Below Board / List */}
+                  <div className="tasks-collapsible-schedule-card">
+                    <div
+                      className="schedule-toggle-header"
+                      onClick={() => setShowScheduleSection(!showScheduleSection)}
+                    >
+                      <div className="schedule-header-left">
+                        <CalendarIcon size={16} className="text-primary" />
+                        <strong>Today&apos;s Focus & Upcoming Deadlines</strong>
+                        <span className="schedule-count-badge">
+                          {todaysTasks.length} today · {upcomingItems.length} upcoming
+                        </span>
+                      </div>
+                      <button type="button" className="schedule-chevron-btn" aria-label="Toggle schedule">
+                        <ChevronDownIcon
+                          size={16}
+                          className={`transition-transform ${showScheduleSection ? 'rotate-180' : ''}`}
+                        />
+                      </button>
+                    </div>
+
+                    {showScheduleSection && (
+                      <div className="schedule-collapsible-body animate-fade-in">
+                        <div className="schedule-dual-columns">
+                          {/* Column 1: Today's Tasks */}
+                          <div className="schedule-subcol">
+                            <h5>Today&apos;s Scheduled Tasks ({todaysTasks.length})</h5>
+                            {todaysTasks.length === 0 ? (
+                              <p className="schedule-empty-text">No tasks specifically scheduled for today.</p>
+                            ) : (
+                              <div className="schedule-items-list">
+                                {todaysTasks.map((t) => {
+                                  const isDone = t.status === 'completed';
+                                  return (
+                                    <div key={t._id || t.id} className="schedule-task-item">
+                                      <button
+                                        type="button"
+                                        className={`checkbox-custom-btn ${isDone ? 'checked' : ''}`}
+                                        onClick={() => handleToggleTaskDone(t)}
+                                      >
+                                        {isDone ? <CheckIcon size={12} className="check-mark-icon" /> : null}
+                                      </button>
+                                      <span className={`schedule-item-title ${isDone ? 'strikethrough' : ''}`}>
+                                        {t.title}
+                                      </span>
+                                      <span className="schedule-item-assignee">{t.assignedToName || 'Unassigned'}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Column 2: Upcoming Deadlines & Meetings */}
+                          <div className="schedule-subcol">
+                            <h5>Upcoming Deadlines & Meetings ({upcomingItems.length})</h5>
+                            {upcomingItems.length === 0 ? (
+                              <p className="schedule-empty-text">No upcoming deadlines within this period.</p>
+                            ) : (
+                              <div className="schedule-items-list">
+                                {upcomingItems.map((item) => (
+                                  <div key={item.id} className="schedule-upcoming-item">
+                                    <span className="upcoming-item-date">{item.date}</span>
+                                    <span className="upcoming-item-name">{item.title}</span>
+                                    <span className={`upcoming-pill-badge tag-${item.priority || 'medium'}`}>
+                                      {item.isMeeting ? 'Meeting' : (item.priority || 'Medium').toUpperCase()}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ================= VIEW: PROJECTS & MILESTONES ================= */}
+              {tasksTabMode === 'projects' && (
                 <ProjectSectionView
                   user={user}
                   projects={projects}
@@ -1142,569 +1822,173 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                   }}
                   onProjectsUpdated={refreshAllData}
                 />
-              ) : (
-                <div className="ref-dashboard-view animate-fade-in">
-              {/* Row 1: 4 Metric Cards */}
-              <div className="ref-metrics-row">
-                {/* Metric 1: Total Task */}
-                <div className="ref-metric-card">
-                  <div className="metric-header-row">
-                    <span className="metric-title-label">Total Task</span>
-                    <div className="metric-icon-square icon-blue">
-                      <CalendarIcon size={18} />
-                    </div>
-                  </div>
-                  <div className="metric-stat-number">{totalTasksCount}</div>
-                  {totalTasksCount > 0 ? (
-                    <div className="metric-trend trend-green">
-                      <span className="trend-arrow">↑</span>
-                      <span>{tasksThisWeekCount} this week</span>
-                    </div>
-                  ) : (
-                    <div className="metric-trend trend-neutral">
-                      <span>No tasks yet</span>
-                    </div>
-                  )}
-                </div>
+              )}
 
-                {/* Metric 2: In Progress */}
-                <div className="ref-metric-card">
-                  <div className="metric-header-row">
-                    <span className="metric-title-label">In Progress</span>
-                    <div className="metric-icon-square icon-green">
-                      <ActivityIcon size={18} />
-                    </div>
-                  </div>
-                  <div className="metric-stat-number">{inProgressTasksCount}</div>
-                  {inProgressTasksCount > 0 ? (
-                    <div className="metric-trend trend-orange">
-                      <span className="trend-arrow">●</span>
-                      <span>{inProgressTasksCount} active</span>
-                    </div>
-                  ) : (
-                    <div className="metric-trend trend-neutral">
-                      <span>None in progress</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Metric 3: Completed */}
-                <div className="ref-metric-card">
-                  <div className="metric-header-row">
-                    <span className="metric-title-label">Completed</span>
-                    <div className="metric-icon-square icon-purple">
-                      <CheckCircleIcon size={18} />
-                    </div>
-                  </div>
-                  <div className="metric-stat-number">{completedTasksCount}</div>
-                  {completedTasksCount > 0 ? (
-                    <div className="metric-trend trend-green">
-                      <span className="trend-arrow">↑</span>
-                      <span>{completedTasksCount} completed</span>
-                    </div>
-                  ) : (
-                    <div className="metric-trend trend-neutral">
-                      <span>None completed</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Metric 4: Task Completion (Donut + Mini-bar) */}
-                <div className="ref-metric-card completion-metric-card">
-                  <span className="metric-title-label">Task Completion</span>
-                  <div className="completion-card-body">
-                    {/* SVG Donut Chart */}
-                    <div className="donut-chart-container">
-                      <svg width="80" height="80" viewBox="0 0 36 36" className="donut-svg">
-                        <path
-                          className="donut-ring"
-                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          fill="none"
-                          stroke="#e2e8f0"
-                          strokeWidth="4"
-                        />
-                        {pctCompleted > 0 && (
-                          <path
-                            className="donut-segment segment-completed"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none"
-                            stroke="#2563eb"
-                            strokeWidth="4"
-                            strokeDasharray={`${pctCompleted}, 100`}
-                          />
-                        )}
-                        {pctInProgress > 0 && (
-                          <path
-                            className="donut-segment segment-progress"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none"
-                            stroke="#f59e0b"
-                            strokeWidth="4"
-                            strokeDasharray={`${pctInProgress}, 100`}
-                            strokeDashoffset={`-${pctCompleted}`}
-                          />
-                        )}
-                      </svg>
-                    </div>
-
-                    {/* Donut Legend */}
-                    <div className="donut-legend">
-                      <div className="legend-row">
-                        <span className="legend-dot dot-blue"></span>
-                        <span className="legend-name">Completed</span>
-                        <strong className="legend-val">{pctCompleted}%</strong>
-                      </div>
-                      <div className="legend-row">
-                        <span className="legend-dot dot-orange"></span>
-                        <span className="legend-name">In Progress</span>
-                        <strong className="legend-val">{pctInProgress}%</strong>
-                      </div>
-                      <div className="legend-row">
-                        <span className="legend-dot dot-gray"></span>
-                        <span className="legend-name">To Do</span>
-                        <strong className="legend-val">{pctTodo}%</strong>
-                      </div>
-                    </div>
-
-                    {/* Mini Vertical Bar Chart */}
-                    <div className="mini-bar-chart">
-                      <div className="bar-col" style={{ height: totalTasksCount > 0 ? `${Math.max(15, pctTodo)}%` : '15%' }}></div>
-                      <div className="bar-col" style={{ height: totalTasksCount > 0 ? `${Math.max(15, pctInProgress)}%` : '15%' }}></div>
-                      <div className="bar-col" style={{ height: totalTasksCount > 0 ? `${Math.max(15, pctCompleted)}%` : '15%' }}></div>
-                      <div className="bar-col" style={{ height: totalTasksCount > 0 ? `${Math.max(15, Math.round((pctInProgress + pctCompleted) / 2))}%` : '15%' }}></div>
-                      <div className="bar-col" style={{ height: totalTasksCount > 0 ? `${Math.max(15, pctCompleted)}%` : '15%' }}></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 2: Kanban Board (Left 67%) + Today's Tasks & Upcoming (Right 33%) */}
-              <div className="ref-middle-row">
-                {/* Left: Kanban Board */}
-                <div className="ref-kanban-section">
-                  <div className="kanban-section-header">
-                    <h3>My Tasks (Kanban)</h3>
-                    <div className="kanban-header-controls">
-                      <div className="sort-select-box">
-                        <label>Sort:</label>
-                        <select defaultValue="Priority">
-                          <option value="Priority">Priority</option>
-                          <option value="Deadline">Deadline</option>
-                          <option value="Alphabetical">Alphabetical</option>
-                        </select>
-                      </div>
-
-                      <div className="kanban-view-icons">
-                        <button
-                          type="button"
-                          className={`view-icon-btn ${viewMode === 'list' ? 'active' : ''}`}
-                          onClick={() => setViewMode('list')}
-                          title="List View"
-                        >
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="8" y1="6" x2="21" y2="6" />
-                            <line x1="8" y1="12" x2="21" y2="12" />
-                            <line x1="8" y1="18" x2="21" y2="18" />
-                            <line x1="3" y1="6" x2="3.01" y2="6" />
-                            <line x1="3" y1="12" x2="3.01" y2="12" />
-                            <line x1="3" y1="18" x2="3.01" y2="18" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          className={`view-icon-btn ${viewMode === 'kanban' ? 'active' : ''}`}
-                          onClick={() => setViewMode('kanban')}
-                          title="Kanban View"
-                        >
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <rect x="3" y="3" width="7" height="18" rx="1" />
-                            <rect x="14" y="3" width="7" height="18" rx="1" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 4 Kanban Columns */}
-                  <div className="ref-kanban-columns-grid">
-                    {kanbanColumns.map((col) => {
-                      const colTasks = filteredTasks.filter((t) => (t.status || 'not-started') === col.id);
-                      return (
-                        <div key={col.id} className={`ref-kanban-column ${col.headerTint}`}>
-                          {/* Column Header */}
-                          <div className="ref-col-header">
-                            <span className="ref-col-title">{col.title}</span>
-                            <span className={`ref-col-count-badge ${col.accent}`}>
-                              {colTasks.length}
-                            </span>
-                          </div>
-
-                          {/* Cards List */}
-                          <div className="ref-col-cards-list">
-                            {colTasks.length === 0 ? (
-                              <div className="ref-col-empty-placeholder">
-                                <span>No tasks</span>
-                              </div>
-                            ) : (
-                              colTasks.map((t) => {
-                                const cat = getTaskCategory(t);
-                                const dotColor =
-                                  t.status === 'completed'
-                                    ? 'dot-done'
-                                    : t.priority === 'urgent' || t.priority === 'high'
-                                    ? 'dot-red'
-                                    : t.priority === 'medium'
-                                    ? 'dot-yellow'
-                                    : 'dot-blue';
-
-                                return (
-                                  <div
-                                    key={t._id || t.id}
-                                    className="ref-task-card animate-scale-up"
-                                    onClick={() => {
-                                      if (t.status === 'submitted') {
-                                        setReviewingTask(t);
-                                        setIsReviewModalOpen(true);
-                                      } else {
-                                        setEditingTask(t);
-                                        setIsTaskModalOpen(true);
-                                      }
-                                    }}
-                                    style={{ cursor: 'pointer' }}
-                                  >
-                                    <div className="card-row-top">
-                                      <div className="title-with-dot">
-                                        <span className={`priority-indicator-dot ${dotColor}`}></span>
-                                        <strong className="card-task-title">{t.title}</strong>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        className="three-dots-btn"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteTask(t._id || t.id);
-                                        }}
-                                        title="Delete task"
-                                      >
-                                        <MoreVerticalIcon size={14} />
-                                      </button>
-                                    </div>
-
-                                    <div className="card-tag-row">
-                                      <span className={`card-category-badge ${cat.color}`}>
-                                        {cat.label}
-                                      </span>
-                                    </div>
-
-                                    <div className="card-row-bottom">
-                                      <span className="card-date-text">
-                                        {t.deadline ? new Date(t.deadline).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'No date'}
-                                      </span>
-                                      <div className="card-assignee-avatar">
-                                        {t.assignedToName && t.assignedToName !== 'Unassigned' ? t.assignedToName[0].toUpperCase() : 'A'}
-                                      </div>
-                                    </div>
-
-                                    {t.status === 'submitted' && (
-                                      <button
-                                        type="button"
-                                        className="btn btn-outline-warning btn-xs kanban-review-btn"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setReviewingTask(t);
-                                          setIsReviewModalOpen(true);
-                                        }}
-                                        style={{ marginTop: '8px', width: '100%', fontSize: '11px', padding: '4px 8px' }}
-                                      >
-                                        <CheckCircleIcon size={12} /> Review Deliverable
-                                      </button>
-                                    )}
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-
-                          {/* + Add Task Button at bottom of Column */}
-                          <button
-                            type="button"
-                            className="ref-col-add-btn"
-                            onClick={() => handleOpenNewTask('', null, col.id)}
-                          >
-                            + Add Task
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Right: Today's Tasks & Upcoming */}
-                <div className="ref-right-cards-col">
-                  {/* Card 1: Today's Tasks */}
-                  <div className="ref-side-card">
-                    <div className="side-card-header">
-                      <h4>Today&apos;s Tasks</h4>
-                      <button type="button" className="view-all-link" onClick={() => setActiveTab('calendar')}>
-                        View All
-                      </button>
-                    </div>
-
-                    {todaysTasks.length === 0 ? (
-                      <div className="side-card-empty-state">
-                        <CheckSquareIcon size={24} className="empty-icon-muted" />
-                        <p>No tasks scheduled for today</p>
-                        <button
-                          type="button"
-                          className="btn-link-sm"
-                          onClick={() => handleOpenNewTask()}
-                        >
-                          + Create a task
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="todays-tasks-list">
-                        {todaysTasks.slice(0, 6).map((t) => {
-                          const isDone = t.status === 'completed';
-                          const cat = getTaskCategory(t);
-                          const timeStr = t.deadline
-                            ? new Date(t.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                            : 'All Day';
-
-                          return (
-                            <div key={t._id || t.id} className="today-task-row">
-                              <button
-                                type="button"
-                                className={`checkbox-custom-btn ${isDone ? 'checked' : ''}`}
-                                onClick={() => handleToggleTaskDone(t)}
-                              >
-                                {isDone ? <CheckIcon size={12} className="check-mark-icon" /> : null}
-                              </button>
-                              <span className={`today-task-title ${isDone ? 'strikethrough' : ''}`}>
-                                {t.title}
-                              </span>
-                              <span className={`card-category-badge ${cat.color} tag-sm`}>
-                                {cat.label}
-                              </span>
-                              <span className="today-task-time">{timeStr}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Card 2: Upcoming */}
-                  <div className="ref-side-card">
-                    <div className="side-card-header">
-                      <h4>Upcoming</h4>
-                      <button type="button" className="view-all-link" onClick={() => setActiveTab('calendar')}>
-                        View All
-                      </button>
-                    </div>
-
-                    {upcomingItems.length === 0 ? (
-                      <div className="side-card-empty-state">
-                        <CalendarIcon size={24} className="empty-icon-muted" />
-                        <p>No upcoming tasks or meetings</p>
-                        <button
-                          type="button"
-                          className="btn-link-sm"
-                          onClick={() => handleOpenNewTask()}
-                        >
-                          + Schedule upcoming task
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="upcoming-items-list">
-                        {upcomingItems.map((item) => {
-                          const dateFormatted = item.date
-                            ? new Date(item.date).toLocaleDateString([], { month: 'short', day: 'numeric' })
-                            : 'TBD';
-                          const tagClass =
-                            item.priority === 'urgent' || item.priority === 'high'
-                              ? 'tag-high'
-                              : item.priority === 'low'
-                              ? 'tag-low'
-                              : 'tag-medium';
-
-                          return (
-                            <div key={item.id} className="upcoming-item-row">
-                              <div className="upcoming-date-box">
-                                <CalendarIcon size={13} className="text-primary" />
-                                <span>{dateFormatted}</span>
-                              </div>
-                              <span className="upcoming-title" title={item.title}>{item.title}</span>
-                              <span className={`priority-pill-tag ${tagClass}`}>
-                                {item.isMeeting ? 'Meeting' : item.priority ? item.priority.charAt(0).toUpperCase() + item.priority.slice(1) : 'Medium'}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 3: Task Timeline (33%), Team Workload (38%), Priority Overview (29%) */}
-              <div className="ref-bottom-row">
-                {/* Card 1: Task Timeline (Recent Activity) */}
-                <div className="ref-bottom-card timeline-card">
-                  <div className="side-card-header">
-                    <h4>Task Timeline (Recent Activity)</h4>
-                    <button type="button" className="view-all-link" onClick={() => setActiveTab('overview')}>
-                      View All
-                    </button>
-                  </div>
-
-                  {recentActivities.length === 0 ? (
-                    <div className="side-card-empty-state">
-                      <ActivityIcon size={24} className="empty-icon-muted" />
-                      <p>No recent activity recorded yet</p>
-                    </div>
-                  ) : (
-                    <div className="timeline-items-list">
-                      {recentActivities.map((act) => (
-                        <div key={act.id} className="timeline-item">
-                          <span className="timeline-time">{act.time}</span>
-                          <div className="timeline-dot-line">
-                            <span className={`dot ${act.dotClass}`}></span>
-                            <span className="vert-line"></span>
-                          </div>
-                          <div className="timeline-user-avatar">{act.userInitial}</div>
-                          <div className="timeline-text">{act.text}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Card 2: Team Workload */}
-                <div className="ref-bottom-card workload-card">
-                  <div className="side-card-header">
-                    <h4>Team Workload</h4>
-                    <div className="workload-select-box">
-                      <select defaultValue="This Week">
-                        <option value="This Week">This Week</option>
-                        <option value="This Month">This Month</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="workload-card-body">
-                    {teamWorkloads.length === 0 ? (
-                      <div className="side-card-empty-state" style={{ flex: 1 }}>
-                        <UsersIcon size={24} className="empty-icon-muted" />
-                        <p>No team members assigned</p>
-                      </div>
-                    ) : (
-                      <div className="workload-members-list">
-                        {teamWorkloads.map((m) => (
-                          <div key={m.id} className="workload-member-row">
-                            <div className="member-avatar">{m.initials}</div>
-                            <span className="member-name">{m.name}</span>
-                            <div className="progress-bar-container">
-                              <div className="progress-fill" style={{ width: `${m.pct}%` }}></div>
-                            </div>
-                            <span className="member-pct">{m.pct}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Donut Capacity Gauge */}
-                    <div className="workload-gauge-container">
-                      <div className="gauge-circle-wrap">
-                        <svg width="74" height="74" viewBox="0 0 36 36" className="donut-svg">
-                          <path
-                            className="donut-ring"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                            fill="none"
-                            stroke="#e2e8f0"
-                            strokeWidth="4"
-                          />
-                          {overallCapacityPct > 0 && (
+              {/* ================= VIEW: OVERVIEW & ANALYTICS ================= */}
+              {tasksTabMode === 'analytics' && (
+                <div className="tasks-analytics-tab-view animate-fade-in">
+                  {/* Analytics Row 1: Task Completion Donut + Breakdown */}
+                  <div className="analytics-overview-grid">
+                    {/* Donut Card */}
+                    <div className="analytics-card">
+                      <h4>Task Completion Overview</h4>
+                      <div className="completion-card-body">
+                        <div className="donut-chart-container">
+                          <svg width="88" height="88" viewBox="0 0 36 36" className="donut-svg">
                             <path
-                              className="donut-segment segment-completed"
+                              className="donut-ring"
                               d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                               fill="none"
-                              stroke="#2563eb"
+                              stroke="#e2e8f0"
                               strokeWidth="4"
-                              strokeDasharray={`${overallCapacityPct}, 100`}
                             />
-                          )}
-                        </svg>
-                        <div className="gauge-center-text">
-                          <strong>{overallCapacityPct}%</strong>
-                          <span>Capacity</span>
+                            {pctCompleted > 0 && (
+                              <path
+                                className="donut-segment segment-completed"
+                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                fill="none"
+                                stroke="#10b981"
+                                strokeWidth="4"
+                                strokeDasharray={`${pctCompleted}, 100`}
+                              />
+                            )}
+                            {pctInProgress > 0 && (
+                              <path
+                                className="donut-segment segment-progress"
+                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                fill="none"
+                                stroke="#f59e0b"
+                                strokeWidth="4"
+                                strokeDasharray={`${pctInProgress}, 100`}
+                                strokeDashoffset={`-${pctCompleted}`}
+                              />
+                            )}
+                          </svg>
                         </div>
-                      </div>
 
-                      <div className="gauge-legend">
-                        <div className="gauge-legend-item">
-                          <span className="dot dot-gray"></span> Available {100 - overallCapacityPct}%
-                        </div>
-                        <div className="gauge-legend-item">
-                          <span className="dot dot-blue"></span> Utilized {overallCapacityPct}%
+                        <div className="donut-legend">
+                          <div className="legend-row">
+                            <span className="legend-dot" style={{ background: '#10b981' }}></span>
+                            <span className="legend-name">Completed</span>
+                            <strong className="legend-val">{pctCompleted}% ({completedTasksCount})</strong>
+                          </div>
+                          <div className="legend-row">
+                            <span className="legend-dot dot-orange"></span>
+                            <span className="legend-name">In Progress</span>
+                            <strong className="legend-val">{pctInProgress}% ({inProgressTasksCount})</strong>
+                          </div>
+                          <div className="legend-row">
+                            <span className="legend-dot dot-gray"></span>
+                            <span className="legend-name">To Do</span>
+                            <strong className="legend-val">{pctTodo}% ({todoTasksCount})</strong>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Card 3: Priority Overview */}
-                <div className="ref-bottom-card priority-card">
-                  <div className="side-card-header">
-                    <h4>Priority Overview</h4>
-                  </div>
+                    {/* Priority Breakdown */}
+                    <div className="analytics-card">
+                      <h4>Priority Distribution</h4>
+                      <div className="priority-boxes-grid" style={{ marginTop: '12px' }}>
+                        <div className="priority-box box-high">
+                          <span className="p-box-label">Urgent / High</span>
+                          <strong className="p-box-number">{highPriorityCount}</strong>
+                        </div>
+                        <div className="priority-box box-medium">
+                          <span className="p-box-label">Medium</span>
+                          <strong className="p-box-number">{medPriorityCount}</strong>
+                        </div>
+                        <div className="priority-box box-low">
+                          <span className="p-box-label">Low</span>
+                          <strong className="p-box-number">{lowPriorityCount}</strong>
+                        </div>
+                      </div>
 
-                  <div className="priority-overview-body">
-                    {/* 3 Stat Boxes */}
-                    <div className="priority-boxes-grid">
-                      <div className="priority-box box-high">
-                        <span className="p-box-label">High</span>
-                        <strong className="p-box-number">{highPriorityCount}</strong>
+                      <div className="priority-stacked-bar" style={{ marginTop: '16px' }}>
+                        {totalTasksCount === 0 ? (
+                          <div className="p-bar-seg" style={{ width: '100%', background: '#e2e8f0' }}></div>
+                        ) : (
+                          <>
+                            <div
+                              className="p-bar-seg seg-high"
+                              style={{ width: `${(highPriorityCount / totalTasksCount) * 100}%` }}
+                            ></div>
+                            <div
+                              className="p-bar-seg seg-medium"
+                              style={{ width: `${(medPriorityCount / totalTasksCount) * 100}%` }}
+                            ></div>
+                            <div
+                              className="p-bar-seg seg-low"
+                              style={{ width: `${(lowPriorityCount / totalTasksCount) * 100}%` }}
+                            ></div>
+                          </>
+                        )}
                       </div>
-                      <div className="priority-box box-medium">
-                        <span className="p-box-label">Medium</span>
-                        <strong className="p-box-number">{medPriorityCount}</strong>
-                      </div>
-                      <div className="priority-box box-low">
-                        <span className="p-box-label">Low</span>
-                        <strong className="p-box-number">{lowPriorityCount}</strong>
+                      <div className="priority-total-text" style={{ marginTop: '8px' }}>
+                        Total: {totalTasksCount} Workspace Tasks
                       </div>
                     </div>
+                  </div>
 
-                    {/* Stacked Distribution Bar */}
-                    <div className="priority-stacked-bar">
-                      {totalTasksCount === 0 ? (
-                        <div className="p-bar-seg" style={{ width: '100%', background: '#e2e8f0' }}></div>
+                  {/* Analytics Row 2: Team Workload & Activity Timeline */}
+                  <div className="analytics-bottom-grid">
+                    {/* Team Workload */}
+                    <div className="analytics-card">
+                      <div className="side-card-header">
+                        <h4>Team Member Workload</h4>
+                        <span className="text-muted" style={{ fontSize: '12px' }}>
+                          Capacity: {overallCapacityPct}% Utilized
+                        </span>
+                      </div>
+                      {teamWorkloads.length === 0 ? (
+                        <div className="side-card-empty-state">
+                          <UsersIcon size={24} className="empty-icon-muted" />
+                          <p>No team members assigned yet</p>
+                        </div>
                       ) : (
-                        <>
-                          <div
-                            className="p-bar-seg seg-high"
-                            style={{ width: `${(highPriorityCount / totalTasksCount) * 100}%` }}
-                          ></div>
-                          <div
-                            className="p-bar-seg seg-medium"
-                            style={{ width: `${(medPriorityCount / totalTasksCount) * 100}%` }}
-                          ></div>
-                          <div
-                            className="p-bar-seg seg-low"
-                            style={{ width: `${(lowPriorityCount / totalTasksCount) * 100}%` }}
-                          ></div>
-                        </>
+                        <div className="workload-members-list" style={{ marginTop: '10px' }}>
+                          {teamWorkloads.map((m) => (
+                            <div key={m.id} className="workload-member-row">
+                              <div className="member-avatar">{m.initials}</div>
+                              <span className="member-name">{m.name}</span>
+                              <div className="progress-bar-container">
+                                <div className="progress-fill" style={{ width: `${m.pct}%` }}></div>
+                              </div>
+                              <span className="member-pct">{m.taskCount} tasks ({m.pct}%)</span>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
 
-                    <div className="priority-total-text">
-                      Total: {totalTasksCount} Tasks
+                    {/* Activity Timeline */}
+                    <div className="analytics-card">
+                      <div className="side-card-header">
+                        <h4>Recent Task Activity</h4>
+                      </div>
+                      {recentActivities.length === 0 ? (
+                        <div className="side-card-empty-state">
+                          <ActivityIcon size={24} className="empty-icon-muted" />
+                          <p>No recent task activity recorded</p>
+                        </div>
+                      ) : (
+                        <div className="timeline-items-list" style={{ marginTop: '10px' }}>
+                          {recentActivities.map((act) => (
+                            <div key={act.id} className="timeline-item">
+                              <span className="timeline-time">{act.time}</span>
+                              <div className="timeline-dot-line">
+                                <span className={`dot ${act.dotClass}`}></span>
+                                <span className="vert-line"></span>
+                              </div>
+                              <div className="timeline-user-avatar">{act.userInitial}</div>
+                              <div className="timeline-text">{act.text}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
               )}
             </div>
           )}

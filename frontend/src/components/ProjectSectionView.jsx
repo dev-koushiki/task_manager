@@ -34,6 +34,20 @@ export const ProjectSectionView = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('All');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [expandedProjects, setExpandedProjects] = useState(() => {
+    const map = {};
+    if (initialProjectId) {
+      map[initialProjectId] = true;
+    }
+    return map;
+  });
+
+  const toggleProjectExpand = (pId) => {
+    setExpandedProjects((prev) => ({
+      ...prev,
+      [pId]: prev[pId] !== undefined ? !prev[pId] : false,
+    }));
+  };
 
   // Modals state
   const [isConceptModalOpen, setIsConceptModalOpen] = useState(false);
@@ -372,6 +386,7 @@ export const ProjectSectionView = ({
               milestones.length > 0 ? Math.round((completedCount / milestones.length) * 100) : proj.progress || 0;
             const assignedEmps = Array.isArray(proj.assignedEmployees) ? proj.assignedEmployees : [];
             const recordings = Array.isArray(proj.recordings) ? proj.recordings : [];
+            const isExpanded = expandedProjects[pId] !== undefined ? expandedProjects[pId] : true;
 
             const pStatus = proj.status || proj.metrics?.calculatedStatus || 'not-started';
             const statusClass =
@@ -560,151 +575,165 @@ export const ProjectSectionView = ({
                 {/* Milestones Breakdown Section Underneath the Project */}
                 <div className="proj-milestones-underneath">
                   <div className="milestones-underneath-header">
-                    <h4>
-                      Project Milestones ({milestones.length})
-                    </h4>
                     <button
                       type="button"
-                      className="btn btn-outline-primary btn-xs"
-                      onClick={() => handleOpenMilestoneModal(proj)}
+                      className="btn-toggle-milestones"
+                      onClick={() => toggleProjectExpand(pId)}
+                      title={isExpanded ? 'Collapse milestones' : 'Expand milestones'}
                     >
-                      <PlusIcon size={13} /> Add Milestone
+                      <span className="toggle-milestone-chevron">{isExpanded ? '▼' : '▶'}</span>
+                      <h4>
+                        Project Milestones ({completedCount} / {milestones.length} Completed)
+                      </h4>
                     </button>
-                  </div>
-
-                  {milestones.length === 0 ? (
-                    <div className="milestones-empty-box">
-                      <p>No milestones created underneath this project yet.</p>
+                    <div className="milestone-header-actions">
                       <button
                         type="button"
-                        className="btn-link-sm"
+                        className="btn btn-outline-primary btn-xs"
                         onClick={() => handleOpenMilestoneModal(proj)}
                       >
-                        + Create first milestone deliverable
+                        <PlusIcon size={13} /> Add Milestone
                       </button>
                     </div>
-                  ) : (
-                    <div className="milestones-list-table">
-                      {milestones.map((m, idx) => {
-                        const mId = m._id || m.id;
-                        const isDone = m.completed || m.status === 'completed';
-                        const mAssignees = Array.isArray(m.assignedTo) ? m.assignedTo : [];
+                  </div>
 
-                        return (
-                          <div
-                            key={mId || idx}
-                            id={mId ? `milestone-${mId}` : undefined}
-                            className={`milestone-item-row ${isDone ? 'milestone-done' : ''}`}
+                  {isExpanded && (
+                    <>
+                      {milestones.length === 0 ? (
+                        <div className="milestones-empty-box">
+                          <p>No milestones created underneath this project yet.</p>
+                          <button
+                            type="button"
+                            className="btn-link-sm"
+                            onClick={() => handleOpenMilestoneModal(proj)}
                           >
-                            {/* Checkbox for Completion Tracking */}
-                            <button
-                              type="button"
-                              className={`milestone-check-btn ${isDone ? 'checked' : ''}`}
-                              onClick={() => handleToggleMilestoneCompleted(proj, m)}
-                              title={isDone ? 'Mark as incomplete' : 'Mark milestone completed'}
-                            >
-                              {isDone ? <CheckIcon size={12} className="check-icon" /> : null}
-                            </button>
+                            + Create first milestone deliverable
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="milestones-list-table">
+                          {milestones.map((m, idx) => {
+                            const mId = m._id || m.id;
+                            const isDone = m.completed || m.status === 'completed';
+                            const mAssignees = Array.isArray(m.assignedTo) ? m.assignedTo : [];
 
-                            {/* Milestone Content */}
-                            <div className="milestone-content-block">
-                              <div className="milestone-title-line">
-                                <span className={`milestone-title ${isDone ? 'strikethrough' : ''}`}>
-                                  {m.title}
-                                </span>
-                                {m.phase && <span className="milestone-phase-badge">{m.phase}</span>}
-                                <span
-                                  className={`milestone-status-tag ${
-                                    isDone
-                                      ? 'tag-done'
-                                      : m.status === 'in-progress'
-                                      ? 'tag-progress'
-                                      : 'tag-todo'
-                                  }`}
+                            return (
+                              <div
+                                key={mId || idx}
+                                id={mId ? `milestone-${mId}` : undefined}
+                                className={`milestone-item-row ${isDone ? 'milestone-done' : ''}`}
+                              >
+                                {/* Checkbox for Completion Tracking */}
+                                <button
+                                  type="button"
+                                  className={`milestone-check-btn ${isDone ? 'checked' : ''}`}
+                                  onClick={() => handleToggleMilestoneCompleted(proj, m)}
+                                  title={isDone ? 'Mark as incomplete' : 'Mark milestone completed'}
                                 >
-                                  {m.status?.toUpperCase() || 'NOT-STARTED'}
-                                </span>
-                              </div>
+                                  {isDone ? <CheckIcon size={12} className="check-icon" /> : null}
+                                </button>
 
-                              {m.description && (
-                                <p className="milestone-desc-text">{m.description}</p>
-                              )}
+                                {/* Milestone Content */}
+                                <div className="milestone-content-block">
+                                  <div className="milestone-title-line">
+                                    <span className={`milestone-title ${isDone ? 'strikethrough' : ''}`}>
+                                      {m.title}
+                                    </span>
+                                    {m.phase && <span className="milestone-phase-badge">{m.phase}</span>}
+                                    <span
+                                      className={`milestone-status-tag ${
+                                        isDone
+                                          ? 'tag-done'
+                                          : m.status === 'in-progress'
+                                          ? 'tag-progress'
+                                          : 'tag-todo'
+                                      }`}
+                                    >
+                                      {m.status?.toUpperCase() || 'NOT-STARTED'}
+                                    </span>
+                                  </div>
 
-                              <div className="milestone-bottom-meta">
-                                <span className="milestone-deadline-pill">
-                                  <CalendarIcon size={12} /> Deadline: <strong>{m.deadline || m.dueDate || 'No date'}</strong>
-                                </span>
-
-                                {isDone && m.completedAt && (
-                                  <span className="milestone-completed-pill">
-                                    <CheckCircleIcon size={12} className="text-success" /> Completed: {new Date(m.completedAt).toLocaleDateString()} by {m.completedByName || 'Assignee'}
-                                  </span>
-                                )}
-
-                                {/* Assignee Pill & Assignment Action */}
-                                <div className="milestone-assignees-wrap">
-                                  {mAssignees.length > 0 ? (
-                                    mAssignees.map((emp) => (
-                                      <span key={emp.userId || emp.email} className="m-assignee-badge">
-                                        👤 {emp.name || 'Assignee'}
-                                      </span>
-                                    ))
-                                  ) : (
-                                    <span className="m-unassigned-tag">Unassigned</span>
+                                  {m.description && (
+                                    <p className="milestone-desc-text">{m.description}</p>
                                   )}
+
+                                  <div className="milestone-bottom-meta">
+                                    <span className="milestone-deadline-pill">
+                                      <CalendarIcon size={12} /> Deadline: <strong>{m.deadline || m.dueDate || 'No date'}</strong>
+                                    </span>
+
+                                    {isDone && m.completedAt && (
+                                      <span className="milestone-completed-pill">
+                                        <CheckCircleIcon size={12} className="text-success" /> Completed: {new Date(m.completedAt).toLocaleDateString()} by {m.completedByName || 'Assignee'}
+                                      </span>
+                                    )}
+
+                                    {/* Assignee Pill & Assignment Action */}
+                                    <div className="milestone-assignees-wrap">
+                                      {mAssignees.length > 0 ? (
+                                        mAssignees.map((emp) => (
+                                          <span key={emp.userId || emp.email} className="m-assignee-badge">
+                                            👤 {emp.name || 'Assignee'}
+                                          </span>
+                                        ))
+                                      ) : (
+                                        <span className="m-unassigned-tag">Unassigned</span>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="btn-assign-sub"
+                                        onClick={() =>
+                                          setAssignModalTarget({
+                                            type: 'milestone',
+                                            project: proj,
+                                            milestone: m,
+                                          })
+                                        }
+                                      >
+                                        Assign to Employee
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Row Action Controls */}
+                                <div className="milestone-row-controls">
                                   <button
                                     type="button"
-                                    className="btn-assign-sub"
+                                    className="btn-icon-action-sm"
                                     onClick={() =>
-                                      setAssignModalTarget({
-                                        type: 'milestone',
+                                      setVoiceModalTarget({
                                         project: proj,
                                         milestone: m,
                                       })
                                     }
+                                    title="Attach voice note to this milestone"
                                   >
-                                    Assign to Employee
+                                    <MicIcon size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-icon-action-sm"
+                                    onClick={() => handleOpenMilestoneModal(proj, m)}
+                                    title="Edit milestone"
+                                  >
+                                    <EditIcon size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-icon-action-sm text-danger"
+                                    onClick={() => handleDeleteMilestone(pId, mId)}
+                                    title="Delete milestone"
+                                  >
+                                    <TrashIcon size={12} />
                                   </button>
                                 </div>
                               </div>
-                            </div>
-
-                            {/* Row Action Controls */}
-                            <div className="milestone-row-controls">
-                              <button
-                                type="button"
-                                className="btn-icon-action-sm"
-                                onClick={() =>
-                                  setVoiceModalTarget({
-                                    project: proj,
-                                    milestone: m,
-                                  })
-                                }
-                                title="Attach voice note to this milestone"
-                              >
-                                <MicIcon size={12} />
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-icon-action-sm"
-                                onClick={() => handleOpenMilestoneModal(proj, m)}
-                                title="Edit milestone"
-                              >
-                                <EditIcon size={12} />
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-icon-action-sm text-danger"
-                                onClick={() => handleDeleteMilestone(pId, mId)}
-                                title="Delete milestone"
-                              >
-                                <TrashIcon size={12} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
