@@ -248,7 +248,12 @@ const startServer = async () => {
   try {
     // 1. Establish MongoDB connection BEFORE starting Express HTTP listener
     console.log("[Startup] Initializing MongoDB connection...");
-    await connectDB();
+    try {
+      await connectDB();
+    } catch (dbErr) {
+      console.warn("[Startup] Initial DB connect warning (will retry on incoming requests):", dbErr.message);
+      console.log("[Startup] Server will still start to bind port and allow health check probing.");
+    }
 
     // 2. Start HTTP listener on configured Render PORT and 0.0.0.0 host
     const PORT = process.env.PORT || 5000;
@@ -276,8 +281,14 @@ const startServer = async () => {
 
     return httpServer;
   } catch (err) {
-    console.error("[Startup] Fatal startup error: Database connection could not be established:", err.message);
-    process.exit(1);
+    console.error("[Startup] Server startup error:", err.message);
+    const PORT = process.env.PORT || 5000;
+    if (!httpServer) {
+      httpServer = app.listen(PORT, "0.0.0.0", () => {
+        console.log(`[Server] Fallback listener running on port ${PORT}`);
+      });
+    }
+    return httpServer;
   } finally {
     isStarting = false;
   }

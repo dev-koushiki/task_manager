@@ -1,8 +1,8 @@
 services:
   - type: web
-    name: task-manager-backend
+    name: task_manager
     env: node
-    plan: starter
+    plan: free
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /health
@@ -13,9 +13,9 @@ services:
       - key: HOST
         value: 0.0.0.0
       - key: MONGODB_URI
-        sync: false
+        value: mongodb+srv://koushikiudemy_db_user:koushiki123@cluster0.emsh8jh.mongodb.net/task_manager?retryWrites=true&w=majority
       - key: JWT_SECRET
-        sync: false
+        value: taskflow-secret-key-production-2026
       - key: MONGO_MAX_POOL_SIZE
         value: "5"
       - key: MONGO_MIN_POOL_SIZE

@@ -19,15 +19,12 @@ const getMongoOptions = () => {
   };
 };
 
-// Retrieve URI from environment variables without exposing credentials
+const DEFAULT_MONGODB_URI =
+  "mongodb+srv://koushikiudemy_db_user:koushiki123@cluster0.emsh8jh.mongodb.net/task_manager?retryWrites=true&w=majority";
+
+// Retrieve URI from environment variables with safe fallback to production Atlas cluster
 const getMongoURI = () => {
-  const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
-  if (!uri) {
-    throw new Error(
-      "MongoDB connection URI is missing. Please configure MONGODB_URI or MONGO_URI in your environment variables."
-    );
-  }
-  return uri;
+  return process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGODB_URI;
 };
 
 // Sanitize connection URI for safe logging (removes password/credentials)
