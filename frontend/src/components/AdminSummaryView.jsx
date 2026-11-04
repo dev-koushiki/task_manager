@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  SparklesIcon,
   PlusIcon,
   CalendarIcon,
   UserIcon,
@@ -55,35 +54,8 @@ export const AdminSummaryView = ({
 
   return (
     <div className="admin-summary-view animate-fade-in">
-      {/* Executive Welcome & Actions Header */}
-      <div className="summary-header-card">
-        <div className="summary-header-left">
-          <div className="admin-shield-badge">
-            <SparklesIcon size={22} className="text-accent" />
-          </div>
-          <div>
-            <h2>Head of Office · Executive Oversight</h2>
-            <p className="section-desc">
-              High-level strategic monitoring across all projects, director assignments, and
-              aggregated milestone completion rates.
-            </p>
-          </div>
-        </div>
-
-        <div className="summary-header-right">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onOpenNewProject}
-          >
-            <PlusIcon size={18} />
-            <span>Launch New Project</span>
-          </button>
-        </div>
-      </div>
-
       {/* Metric KPI Cards */}
-      <div className="metrics-grid" style={{ marginTop: '20px' }}>
+      <div className="metrics-grid">
         <div className="metric-card animate-scale-up">
           <div className="metric-info">
             <span className="metric-title">Active Projects</span>
@@ -150,15 +122,29 @@ export const AdminSummaryView = ({
           </button>
         </div>
 
-        <div className="overview-search-wrap">
-          <SearchIcon size={16} className="overview-search-icon" />
-          <input
-            type="text"
-            className="overview-search-input"
-            placeholder="Search projects, directors, departments..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+        <div className="flex items-center gap-3">
+          <div className="overview-search-wrap">
+            <SearchIcon size={16} className="overview-search-icon" />
+            <input
+              type="text"
+              className="overview-search-input"
+              placeholder="Search projects, directors, departments..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          {onOpenNewProject && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={onOpenNewProject}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              <PlusIcon size={16} />
+              <span>Launch Project</span>
+            </button>
+          )}
         </div>
       </div>
 
