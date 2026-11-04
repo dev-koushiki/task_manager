@@ -54,6 +54,11 @@ const projectMilestoneSchema = new mongoose.Schema(
       type: String,
       default: () => new mongoose.Types.ObjectId().toString(),
     },
+    projectId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Project",
+      default: null,
+    },
     title: {
       type: String,
       required: [true, "Milestone title is required"],
@@ -72,6 +77,17 @@ const projectMilestoneSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    weight: {
+      type: Number,
+      min: 1,
+      max: 5,
+      default: 1,
+    },
+    priority: {
+      type: String,
+      enum: ["low", "medium", "high", "critical", "urgent"],
+      default: "medium",
+    },
     status: {
       type: String,
       enum: ["not-started", "in-progress", "submitted", "completed", "delayed"],
@@ -86,6 +102,15 @@ const projectMilestoneSchema = new mongoose.Schema(
     assignedTo: {
       type: [assignedEmployeeSchema],
       default: () => [],
+    },
+    assignedToUser: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    assignedToName: {
+      type: String,
+      default: "",
     },
     completed: {
       type: Boolean,
@@ -108,6 +133,35 @@ const projectMilestoneSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    submittedAt: {
+      type: Date,
+      default: null,
+    },
+    submissionCount: {
+      type: Number,
+      default: 0,
+    },
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    approvedByName: {
+      type: String,
+      default: "",
+    },
+    approvalFeedback: {
+      type: String,
+      default: "",
+    },
+    reviewHistory: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: () => [],
+    },
     progressNotes: {
       type: [progressNoteSchema],
       default: () => [],
@@ -121,6 +175,10 @@ const projectMilestoneSchema = new mongoose.Schema(
       default: 0,
     },
     createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    updatedAt: {
       type: Date,
       default: Date.now,
     },

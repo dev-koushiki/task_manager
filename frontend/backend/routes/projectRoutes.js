@@ -14,48 +14,89 @@ const router = express.Router();
  * Helper to calculate metrics for a project
  * Factors in both project.milestones (underneath the project) and legacy Task records
  */
+/**
+ * Helper to calculate metrics for a project
+ * Factors in project.milestones (direct project deliverables) with weighted completion:
+ * Project Progress (%) = (Total Effort Weight of Completed Milestones / Total Effort Weight of All Milestones) * 100
+ * Falls back to legacy tasks if no project milestones exist (preserving compatibility).
+ */
 async function calculateProjectMetrics(project, orgId) {
   const pMilestones = Array.isArray(project.milestones) ? project.milestones : [];
   const tasks = await Task.find({ projectId: project._id, organizationId: orgId });
 
   const totalMilestones = pMilestones.length;
   let completedMilestones = 0;
-  let overdueMilestones = 0;
   let inProgressMilestones = 0;
+  let pendingMilestones = 0;
+  let overdueMilestones = 0;
+  let totalEffortWeight = 0;
+  let completedEffortWeight = 0;
   const today = new Date().toISOString().split("T")[0];
 
   for (const m of pMilestones) {
-    if (m.completed || m.status === "completed") {
+    const weight = Number(m.weight) || 1;
+    totalEffortWeight += weight;
+
+    const isCompleted = Boolean(m.completed) || m.status === "completed";
+    if (isCompleted) {
       completedMilestones++;
+      completedEffortWeight += weight;
     } else if (m.status === "in-progress" || m.status === "submitted") {
       inProgressMilestones++;
+    } else {
+      pendingMilestones++;
     }
 
-    if (m.deadline && m.deadline < today && !m.completed && m.status !== "completed") {
+    if (m.deadline && m.deadline < today && !isCompleted) {
       overdueMilestones++;
     }
   }
 
-  // Also count tasks if any
+  // Also count tasks if any (for historical compatibility)
   let totalTasks = tasks.length;
   let completedTasks = 0;
+  let taskTotalWeight = 0;
+  let taskCompletedWeight = 0;
   for (const t of tasks) {
-    if (t.status === "completed") completedTasks++;
+    const tw = Number(t.weight) || 1;
+    taskTotalWeight += tw;
+    if (t.status === "completed") {
+      completedTasks++;
+      taskCompletedWeight += tw;
+    }
   }
 
-  const combinedTotal = totalMilestones + totalTasks;
-  const combinedCompleted = completedMilestones + completedTasks;
+  let progressPercentage = 0;
+  if (totalMilestones > 0) {
+    // Direct milestone weighted calculation from Section 7
+    progressPercentage = totalEffortWeight > 0
+      ? Math.round((completedEffortWeight / totalEffortWeight) * 100)
+      : Math.round((completedMilestones / totalMilestones) * 100);
+  } else if (totalTasks > 0) {
+    progressPercentage = taskTotalWeight > 0
+      ? Math.round((taskCompletedWeight / taskTotalWeight) * 100)
+      : Math.round((completedTasks / totalTasks) * 100);
+  }
 
-  const progressPercentage =
-    combinedTotal > 0 ? Math.round((combinedCompleted / combinedTotal) * 100) : 0;
+  const milestoneCompletionRate = totalMilestones > 0
+    ? Math.round((completedMilestones / totalMilestones) * 100)
+    : 0;
 
   let calculatedStatus = project.status || "not-started";
-  if (combinedTotal > 0) {
-    if (combinedCompleted === combinedTotal) {
+  if (totalMilestones > 0) {
+    if (completedMilestones === totalMilestones && totalMilestones > 0) {
       calculatedStatus = "completed";
     } else if (overdueMilestones > 0) {
       calculatedStatus = "delayed";
-    } else if (inProgressMilestones > 0 || progressPercentage > 0) {
+    } else if (inProgressMilestones > 0 || completedMilestones > 0 || progressPercentage > 0) {
+      calculatedStatus = "in-progress";
+    } else {
+      calculatedStatus = "not-started";
+    }
+  } else if (totalTasks > 0) {
+    if (completedTasks === totalTasks && totalTasks > 0) {
+      calculatedStatus = "completed";
+    } else if (completedTasks > 0 || progressPercentage > 0) {
       calculatedStatus = "in-progress";
     } else {
       calculatedStatus = "not-started";
@@ -65,10 +106,16 @@ async function calculateProjectMetrics(project, orgId) {
   return {
     totalMilestones,
     completedMilestones,
+    inProgressMilestones,
+    pendingMilestones,
     overdueMilestones,
+    totalEffortWeight,
+    completedEffortWeight,
+    milestoneCompletionRate,
     totalTasks,
-    combinedTotal,
-    combinedCompleted,
+    completedTasks,
+    combinedTotal: totalMilestones || totalTasks,
+    combinedCompleted: completedMilestones || completedTasks,
     progressPercentage,
     calculatedStatus,
   };
@@ -446,9 +493,287 @@ router.post("/", authMiddleware, async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// POST /api/projects/create-with-tasks - Unified creation of Project + Team + Tasks with Milestones
+// POST /api/projects/create-with-milestones - Create Project with Direct Milestones / Deliverables
+// -------------------------------------------------------------
+async function handleCreateProjectWithMilestones(req, res) {
+  try {
+    const user = req.user;
+    const orgId = user.organizationId;
+    const orgCondition = orgId
+      ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
+      : { companyName: user.companyName };
+
+    const {
+      name,
+      department,
+      priority,
+      targetOutcome,
+      startDate,
+      targetCompletionDate,
+      deadline,
+      directorId,
+      description,
+      assignedEmployeeIds = [],
+      milestones = [],
+    } = req.body;
+
+    // 1. Validation
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: "Project name is required." });
+    }
+
+    const finalCompletionDate = targetCompletionDate || deadline;
+    if (!finalCompletionDate) {
+      return res.status(400).json({ message: "Target completion date is required." });
+    }
+
+    if (startDate && finalCompletionDate && startDate > finalCompletionDate) {
+      return res.status(400).json({
+        message: "Target completion date cannot be earlier than project start date.",
+      });
+    }
+
+    if (!targetOutcome || !targetOutcome.trim()) {
+      return res.status(400).json({ message: "Target outcome / objective is required." });
+    }
+
+    if (!Array.isArray(milestones) || milestones.length === 0) {
+      return res.status(400).json({ message: "At least one milestone deliverable must be created with the project." });
+    }
+
+    for (let i = 0; i < milestones.length; i++) {
+      const m = milestones[i];
+      if (!m.title || !m.title.trim()) {
+        return res.status(400).json({ message: `Milestone #${i + 1} requires a title.` });
+      }
+      if (!m.deadline && !m.dueDate && !finalCompletionDate) {
+        return res.status(400).json({ message: `Milestone #${i + 1} ("${m.title}") requires a completion deadline.` });
+      }
+    }
+
+    // 2. Resolve Director
+    let assignedDirectorId = directorId || user.id;
+    let directorUser = null;
+    if (assignedDirectorId) {
+      directorUser = await User.findOne({ _id: assignedDirectorId, ...orgCondition });
+    }
+
+    // 3. Collect all unique user IDs involved (selected team + milestone assignees + director)
+    const allUserIds = new Set();
+    if (Array.isArray(assignedEmployeeIds)) {
+      assignedEmployeeIds.forEach((id) => id && allUserIds.add(String(id)));
+    }
+    milestones.forEach((m) => {
+      if (m.assignedTo) allUserIds.add(String(m.assignedTo));
+      if (m.assignedToUser) allUserIds.add(String(m.assignedToUser));
+    });
+    if (directorUser) {
+      allUserIds.add(String(directorUser._id));
+    }
+
+    const users = await User.find({
+      _id: { $in: Array.from(allUserIds) },
+      ...orgCondition,
+    }).select("firstName lastName email role designation team department");
+
+    const userMap = new Map();
+    users.forEach((u) => userMap.set(String(u._id), u));
+
+    // Build assignedEmployees array for the Project
+    const assignedEmployeesList = users.map((emp) => ({
+      userId: emp._id,
+      name: `${emp.firstName} ${emp.lastName}`.trim(),
+      email: emp.email,
+      role: emp.role || "employee",
+      designation: emp.designation || "",
+      team: emp.team || "",
+      assignedAt: new Date(),
+    }));
+
+    // 4. Construct direct Project Milestones
+    const processedMilestones = [];
+    const assignedByName = `${user.firstName || "Admin"} ${user.lastName || ""}`.trim();
+
+    for (let i = 0; i < milestones.length; i++) {
+      const m = milestones[i];
+      const milestoneId = m.id || new mongoose.Types.ObjectId().toString();
+      const assigneeId = m.assignedTo || m.assignedToUser || null;
+      let assignedUser = assigneeId ? userMap.get(String(assigneeId)) : null;
+
+      const assignedEmpSubdocs = assignedUser ? [{
+        userId: assignedUser._id,
+        name: `${assignedUser.firstName} ${assignedUser.lastName}`.trim(),
+        email: assignedUser.email,
+        role: assignedUser.role || "employee",
+        designation: assignedUser.designation || "",
+        team: assignedUser.team || "",
+        assignedAt: new Date(),
+      }] : [];
+
+      const mDeadline = m.deadline || m.dueDate || finalCompletionDate;
+      const mWeight = Math.max(1, Math.min(5, Number(m.weight) || 1));
+      const mStatus = m.status || "not-started";
+      const mPriority = (m.priority || "medium").toLowerCase();
+      const isCompleted = mStatus === "completed" || Boolean(m.completed);
+
+      processedMilestones.push({
+        id: milestoneId,
+        title: m.title.trim(),
+        description: (m.description || "").trim(),
+        assignedTo: assignedEmpSubdocs,
+        assignedToUser: assignedUser ? assignedUser._id : null,
+        assignedToName: assignedUser ? `${assignedUser.firstName} ${assignedUser.lastName}`.trim() : "Unassigned",
+        deadline: mDeadline,
+        dueDate: mDeadline,
+        weight: mWeight,
+        priority: mPriority,
+        status: mStatus,
+        progress: isCompleted ? 100 : 0,
+        completed: isCompleted,
+        completedAt: isCompleted ? new Date() : null,
+        completedBy: isCompleted ? user.id : null,
+        completedByName: isCompleted ? assignedByName : "",
+        order: i,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+
+    // 5. Create Project document
+    let project = null;
+    try {
+      project = await Project.create({
+        name: name.trim(),
+        description: description ? description.trim() : "",
+        targetOutcome: targetOutcome ? targetOutcome.trim() : "",
+        organizationId: orgId,
+        companyName: user.companyName || "",
+        department: department ? department.trim() : (directorUser?.department || user.department || "General"),
+        team: user.team || "",
+        directorId: directorUser ? directorUser._id : user.id,
+        directorName: directorUser ? `${directorUser.firstName} ${directorUser.lastName}`.trim() : "Unassigned",
+        createdBy: user.id,
+        startDate: startDate || "",
+        targetCompletionDate: finalCompletionDate,
+        deadline: finalCompletionDate,
+        priority: (priority || "medium").toLowerCase(),
+        status: "not-started",
+        progress: 0,
+        assignedEmployees: assignedEmployeesList,
+        milestones: processedMilestones,
+      });
+    } catch (projErr) {
+      console.error("Error creating project:", projErr);
+      return res.status(400).json({ message: "Failed to create project: " + projErr.message });
+    }
+
+    // 6. Create synchronized adapter deliverable in Task collection
+    // (Preserves employee workload, performance calculation engine, and existing task view compatibility)
+    const createdTasks = [];
+    try {
+      for (const m of processedMilestones) {
+        const assignedUser = m.assignedToUser ? userMap.get(String(m.assignedToUser)) : null;
+        const createdTask = await Task.create({
+          title: m.title,
+          description: m.description,
+          organizationId: orgId,
+          department: project.department,
+          team: assignedUser?.team || project.team || "",
+          projectId: project._id,
+          assignedTo: assignedUser ? assignedUser._id : null,
+          assignedToName: m.assignedToName,
+          assignedBy: user.id,
+          assignedByName,
+          deadline: m.deadline,
+          dueDate: m.deadline,
+          priority: m.priority,
+          weight: m.weight,
+          status: m.status,
+          progress: m.progress,
+          user: user.id,
+          milestones: [
+            {
+              id: m.id,
+              title: m.title,
+              completed: m.completed,
+              completedAt: m.completedAt,
+              completedBy: m.completedBy,
+              completedByName: m.completedByName,
+            },
+          ],
+        });
+
+        // Notify milestone assignee
+        if (assignedUser && assignedUser._id.toString() !== user.id.toString()) {
+          await sendProjectNotification({
+            userId: assignedUser._id,
+            organizationId: orgId,
+            type: "milestone_assigned",
+            title: `Milestone Deliverable Assigned: ${m.title}`,
+            message: `${user.firstName || "Admin"} assigned you milestone deliverable "${m.title}" in project "${project.name}". Completion deadline: ${m.deadline}.`,
+            link: `/dashboard?tab=tasks&projectId=${project._id}`,
+            projectId: project._id,
+            milestoneId: m.id,
+          });
+        }
+
+        createdTasks.push(createdTask);
+      }
+    } catch (taskErr) {
+      console.warn("Could not create adapter deliverable task:", taskErr.message);
+    }
+
+    // 7. Notify all project team members
+    if (assignedEmployeesList.length > 0) {
+      for (const emp of assignedEmployeesList) {
+        if (emp.userId.toString() !== user.id.toString()) {
+          await sendProjectNotification({
+            userId: emp.userId,
+            organizationId: orgId,
+            type: "project_assigned",
+            title: `Assigned to Project: ${project.name}`,
+            message: `${user.firstName || "Admin"} assigned you to project "${project.name}". Target completion: ${finalCompletionDate}.`,
+            link: `/dashboard?tab=tasks&projectId=${project._id}`,
+            projectId: project._id,
+          });
+        }
+      }
+    }
+
+    // 8. Calculate weighted project metrics
+    const populatedProject = await Project.findById(project._id).populate(
+      "directorId",
+      "firstName lastName email designation department"
+    );
+    const metrics = await calculateProjectMetrics(populatedProject, orgId);
+
+    res.status(201).json({
+      success: true,
+      message: "Project and milestones created and assigned successfully",
+      project: {
+        ...populatedProject.toObject(),
+        metrics,
+      },
+      milestones: populatedProject.milestones,
+      tasks: createdTasks,
+    });
+  } catch (error) {
+    console.error("Create project with milestones error:", error);
+    res.status(500).json({ message: error.message || "Failed to create project with milestones" });
+  }
+}
+
+router.post("/create-with-milestones", authMiddleware, handleCreateProjectWithMilestones);
+
+// -------------------------------------------------------------
+// POST /api/projects/create-with-tasks - Unified creation of Project + Team + Deliverables
 // -------------------------------------------------------------
 router.post("/create-with-tasks", authMiddleware, async (req, res) => {
+  // If milestones array is passed directly (new format), delegate to handleCreateProjectWithMilestones
+  if (Array.isArray(req.body.milestones) && req.body.milestones.length > 0 && (!req.body.tasks || req.body.tasks.length === 0)) {
+    return handleCreateProjectWithMilestones(req, res);
+  }
+
   try {
     const user = req.user;
     const orgId = user.organizationId;
@@ -997,7 +1322,20 @@ router.put("/:id/milestones/:milestoneId", authMiddleware, async (req, res) => {
     const orgCondition = orgId
       ? { $or: [{ organizationId: orgId }, { companyName: user.companyName }] }
       : { companyName: user.companyName };
-    const { title, description, deadline, dueDate, status, progress, completed, submissionNotes, phase } = req.body;
+    const {
+      title,
+      description,
+      deadline,
+      dueDate,
+      status,
+      progress,
+      completed,
+      submissionNotes,
+      phase,
+      weight,
+      priority,
+      approvalFeedback,
+    } = req.body;
 
     const project = await Project.findOne({ _id: req.params.id, ...orgCondition });
     if (!project) {
@@ -1015,6 +1353,9 @@ router.put("/:id/milestones/:milestoneId", authMiddleware, async (req, res) => {
     if (dueDate !== undefined) milestone.dueDate = dueDate;
     if (submissionNotes !== undefined) milestone.submissionNotes = submissionNotes.trim();
     if (phase !== undefined) milestone.phase = phase;
+    if (weight !== undefined) milestone.weight = Math.max(1, Math.min(5, Number(weight) || 1));
+    if (priority !== undefined) milestone.priority = priority.toLowerCase();
+    if (approvalFeedback !== undefined) milestone.approvalFeedback = approvalFeedback.trim();
 
     if (progress !== undefined) {
       milestone.progress = Math.max(0, Math.min(100, Number(progress)));
@@ -1028,6 +1369,9 @@ router.put("/:id/milestones/:milestoneId", authMiddleware, async (req, res) => {
         if (!milestone.completedAt) milestone.completedAt = new Date();
         milestone.completedBy = user.id;
         milestone.completedByName = `${user.firstName} ${user.lastName}`.trim();
+      } else if (status === "submitted") {
+        milestone.submittedAt = new Date();
+        milestone.submissionCount = (milestone.submissionCount || 0) + 1;
       }
     }
 
@@ -1049,7 +1393,37 @@ router.put("/:id/milestones/:milestoneId", authMiddleware, async (req, res) => {
       }
     }
 
+    milestone.updatedAt = new Date();
     await project.save();
+
+    // Synchronize mirror task deliverable if exists
+    try {
+      const linkedTask = await Task.findOne({
+        projectId: project._id,
+        $or: [
+          { "milestones.id": milestone.id || milestone._id },
+          { title: milestone.title },
+        ],
+      });
+      if (linkedTask) {
+        if (title) linkedTask.title = title.trim();
+        if (description !== undefined) linkedTask.description = description.trim();
+        if (deadline !== undefined) linkedTask.deadline = deadline;
+        if (status !== undefined) linkedTask.status = milestone.status;
+        if (progress !== undefined || completed !== undefined) linkedTask.progress = milestone.progress;
+        if (weight !== undefined) linkedTask.weight = milestone.weight;
+        if (priority !== undefined) linkedTask.priority = milestone.priority;
+        if (milestone.completed) {
+          linkedTask.status = "completed";
+          linkedTask.progress = 100;
+          linkedTask.approvedAt = milestone.completedAt;
+          linkedTask.approvedBy = user.id;
+        }
+        await linkedTask.save();
+      }
+    } catch (syncErr) {
+      console.warn("Could not sync mirror task deliverable:", syncErr.message);
+    }
 
     const metrics = await calculateProjectMetrics(project, orgId);
 

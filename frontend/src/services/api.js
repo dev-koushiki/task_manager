@@ -644,7 +644,17 @@ export const api = {
     }
   },
 
-  // POST /api/projects/create-with-tasks - Admin creates project with team & initial tasks
+  // POST /api/projects/create-with-milestones - Admin creates project with direct milestones / deliverables
+  async createProjectWithMilestones(payload) {
+    const data = await safeFetchJson(`${API_BASE_URL}/projects/create-with-milestones`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return data;
+  },
+
+  // POST /api/projects/create-with-tasks - Admin creates project with team & initial tasks/milestones
   async createProjectWithTasks(payload) {
     const data = await safeFetchJson(`${API_BASE_URL}/projects/create-with-tasks`, {
       method: 'POST',

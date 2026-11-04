@@ -24,17 +24,15 @@ const DEPARTMENTS = [
   'Human Resources',
 ];
 
-const createEmptyTask = (defaultDeadline = '', defaultAssignee = '') => ({
-  id: `task_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+const createEmptyMilestone = (defaultDeadline = '', defaultAssignee = '') => ({
+  id: `ms_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
   title: '',
   assignedTo: defaultAssignee,
-  description: '',
   deadline: defaultDeadline,
   weight: 1,
   priority: 'medium',
   status: 'not-started',
-  milestones: [],
-  milestoneInput: '',
+  description: '',
 });
 
 export const CreateProjectTaskModal = ({
@@ -57,7 +55,7 @@ export const CreateProjectTaskModal = ({
     assignedEmployeeIds: [],
   });
 
-  const [tasks, setTasks] = useState([createEmptyTask('', '')]);
+  const [milestones, setMilestones] = useState([createEmptyMilestone('', '')]);
   const [eligibleDirectors, setEligibleDirectors] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [employeeSearch, setEmployeeSearch] = useState('');
@@ -83,11 +81,11 @@ export const CreateProjectTaskModal = ({
         }
         if (Array.isArray(emps)) {
           setEmployees(emps);
-          // Set default assignee for task #1 if empty
+          // Set default assignee for milestone #1 if empty
           if (emps.length > 0) {
-            setTasks((prevTasks) =>
-              prevTasks.map((t) =>
-                t.assignedTo ? t : { ...t, assignedTo: emps[0]._id || emps[0].id }
+            setMilestones((prevMs) =>
+              prevMs.map((m) =>
+                m.assignedTo ? m : { ...m, assignedTo: emps[0]._id || emps[0].id }
               )
             );
           }
@@ -108,10 +106,10 @@ export const CreateProjectTaskModal = ({
     setProjectData((prev) => ({ ...prev, [name]: value }));
     if (error) setError('');
 
-    // If target completion date is updated, default task deadlines to it if not set
+    // If target completion date is updated, default milestone deadlines to it if not set
     if (name === 'targetCompletionDate') {
-      setTasks((prevTasks) =>
-        prevTasks.map((t) => (!t.deadline ? { ...t, deadline: value } : t))
+      setMilestones((prevMs) =>
+        prevMs.map((m) => (!m.deadline ? { ...m, deadline: value } : m))
       );
     }
   };
@@ -140,13 +138,13 @@ export const CreateProjectTaskModal = ({
     }));
   };
 
-  // Task field changes
-  const handleTaskChange = (index, field, value) => {
-    setTasks((prevTasks) => {
-      const updated = [...prevTasks];
+  // Milestone field changes
+  const handleMilestoneChange = (index, field, value) => {
+    setMilestones((prevMs) => {
+      const updated = [...prevMs];
       updated[index] = { ...updated[index], [field]: value };
 
-      // Auto-add employee to project team if assigned to a task
+      // Auto-add employee to project team if assigned to a milestone
       if (field === 'assignedTo' && value) {
         setProjectData((prevProj) => {
           const strVal = String(value);
@@ -164,48 +162,8 @@ export const CreateProjectTaskModal = ({
     if (error) setError('');
   };
 
-  // Milestone management per task
-  const handleAddMilestone = (taskIndex) => {
-    const currentTask = tasks[taskIndex];
-    const text = (currentTask.milestoneInput || '').trim();
-    if (!text) return;
-
-    // Check duplicate milestone in this task
-    if (currentTask.milestones.some((m) => m.title.toLowerCase() === text.toLowerCase())) {
-      setError(`Milestone "${text}" is already added to Task #${taskIndex + 1}.`);
-      return;
-    }
-
-    setTasks((prevTasks) => {
-      const updated = [...prevTasks];
-      const newMilestone = {
-        id: `ms_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-        title: text,
-        completed: false,
-      };
-      updated[taskIndex] = {
-        ...updated[taskIndex],
-        milestones: [...updated[taskIndex].milestones, newMilestone],
-        milestoneInput: '',
-      };
-      return updated;
-    });
-    if (error) setError('');
-  };
-
-  const handleRemoveMilestone = (taskIndex, milestoneIndex) => {
-    setTasks((prevTasks) => {
-      const updated = [...prevTasks];
-      updated[taskIndex] = {
-        ...updated[taskIndex],
-        milestones: updated[taskIndex].milestones.filter((_, idx) => idx !== milestoneIndex),
-      };
-      return updated;
-    });
-  };
-
-  // Append new task
-  const handleAddNewTask = () => {
+  // Append new milestone
+  const handleAddNewMilestone = () => {
     const defaultAssignee =
       projectData.assignedEmployeeIds.length > 0
         ? projectData.assignedEmployeeIds[0]
@@ -213,16 +171,16 @@ export const CreateProjectTaskModal = ({
         ? employees[0]._id || employees[0].id
         : '';
 
-    setTasks((prev) => [
+    setMilestones((prev) => [
       ...prev,
-      createEmptyTask(projectData.targetCompletionDate || today, defaultAssignee),
+      createEmptyMilestone(projectData.targetCompletionDate || today, defaultAssignee),
     ]);
   };
 
-  // Remove additional task
-  const handleRemoveTask = (index) => {
-    if (tasks.length <= 1) return; // Keep at least one task
-    setTasks((prev) => prev.filter((_, idx) => idx !== index));
+  // Remove milestone
+  const handleRemoveMilestone = (index) => {
+    if (milestones.length <= 1) return; // Keep at least one milestone
+    setMilestones((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   // Submit Handler
@@ -256,20 +214,24 @@ export const CreateProjectTaskModal = ({
       return;
     }
 
-    // 2. Validate Tasks
-    if (tasks.length === 0) {
-      setError('At least one task must be created for the project.');
+    // 2. Validate Milestones
+    if (milestones.length === 0) {
+      setError('At least one milestone deliverable must be created for the project.');
       return;
     }
 
-    for (let i = 0; i < tasks.length; i++) {
-      const t = tasks[i];
-      if (!t.title.trim()) {
-        setError(`Task #${i + 1} requires a task title.`);
+    for (let i = 0; i < milestones.length; i++) {
+      const m = milestones[i];
+      if (!m.title.trim()) {
+        setError(`Milestone #${i + 1} requires a milestone title.`);
         return;
       }
-      if (!t.deadline) {
-        setError(`Task #${i + 1} ("${t.title}") requires a completion deadline.`);
+      if (!m.assignedTo) {
+        setError(`Milestone #${i + 1} ("${m.title}") requires an assigned employee.`);
+        return;
+      }
+      if (!m.deadline) {
+        setError(`Milestone #${i + 1} ("${m.title}") requires a completion deadline.`);
         return;
       }
     }
@@ -278,30 +240,17 @@ export const CreateProjectTaskModal = ({
       setIsSubmitting(true);
       setError('');
 
-      // Auto-flush any unsubmitted milestone input
-      const finalTasks = tasks.map((t) => {
-        let ms = [...t.milestones];
-        if (t.milestoneInput && t.milestoneInput.trim()) {
-          const trimmed = t.milestoneInput.trim();
-          if (!ms.some((m) => m.title.toLowerCase() === trimmed.toLowerCase())) {
-            ms.push({
-              id: `ms_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-              title: trimmed,
-              completed: false,
-            });
-          }
-        }
-        return {
-          title: t.title.trim(),
-          assignedTo: t.assignedTo || null,
-          description: t.description.trim(),
-          deadline: t.deadline,
-          weight: Number(t.weight) || 1,
-          priority: t.priority || 'medium',
-          status: t.status || 'not-started',
-          milestones: ms,
-        };
-      });
+      const sanitizedMilestones = milestones.map((m) => ({
+        id: m.id,
+        title: m.title.trim(),
+        assignedTo: m.assignedTo || null,
+        deadline: m.deadline || projectData.targetCompletionDate,
+        dueDate: m.deadline || projectData.targetCompletionDate,
+        weight: Math.max(1, Math.min(5, Number(m.weight) || 1)),
+        priority: m.priority || 'medium',
+        status: m.status || 'not-started',
+        description: (m.description || '').trim(),
+      }));
 
       const payload = {
         name: projectData.name.trim(),
@@ -314,18 +263,18 @@ export const CreateProjectTaskModal = ({
         directorId: projectData.directorId,
         description: projectData.description.trim(),
         assignedEmployeeIds: projectData.assignedEmployeeIds,
-        tasks: finalTasks,
+        milestones: sanitizedMilestones,
       };
 
-      const result = await api.createProjectWithTasks(payload);
+      const result = await api.createProjectWithMilestones(payload);
 
       if (onSuccess) {
         onSuccess(result);
       }
       onClose();
     } catch (err) {
-      console.error('Unified project/task creation failed:', err);
-      setError(err.message || 'Failed to create project and tasks. Please try again.');
+      console.error('Unified project/milestones creation failed:', err);
+      setError(err.message || 'Failed to create project and milestones. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -357,10 +306,10 @@ export const CreateProjectTaskModal = ({
             </div>
             <div>
               <h2 style={{ fontSize: '18px', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>
-                Create Project & Assign Tasks
+                Create Project & Assign Milestones
               </h2>
               <p style={{ margin: '3px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Define project objectives, build your team and assign deliverables in one place.
+                Define project objectives, build your team and assign individual deliverables in one place.
               </p>
             </div>
           </div>
@@ -540,7 +489,7 @@ export const CreateProjectTaskModal = ({
                     </span>
                   </h3>
                   <p className="unified-section-subtitle">
-                    Select team members assigned to collaborate on this project. They can be assigned project tasks below.
+                    Select team members assigned to collaborate on this project. All selected employees become project members.
                   </p>
                 </div>
               </div>
@@ -636,57 +585,57 @@ export const CreateProjectTaskModal = ({
             </div>
 
             {/* ========================================================
-                SECTION 3 & 4: Task Information & Milestones
+                SECTION 3: Project Milestones & Deliverables
                 ======================================================== */}
             <div className="unified-form-section">
               <div className="unified-section-header">
                 <div className="section-num-pill">3</div>
                 <div>
                   <h3 className="unified-section-title">
-                    Task Deliverables & Milestones{' '}
-                    <span className="unified-team-counter">
-                      ({tasks.length} task{tasks.length > 1 ? 's' : ''})
+                    Project Milestones & Deliverables{' '}
+                    <span className="milestone-counter">
+                      ({milestones.length} Milestone{milestones.length !== 1 ? 's' : ''} Added)
                     </span>
                   </h3>
                   <p className="unified-section-subtitle">
-                    Define project tasks, assign them to team members, and add independent completion milestones.
+                    Break your project into individual deliverables, assign responsibilities and track their completion.
                   </p>
                 </div>
               </div>
 
               <div className="unified-section-content" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {tasks.map((task, tIndex) => {
+                {milestones.map((milestone, mIndex) => {
                   return (
-                    <div key={task.id} className="unified-task-card animate-scale-up">
-                      {/* Task Card Header */}
-                      <div className="unified-task-header">
-                        <div className="task-header-left">
-                          <span className="task-number-badge">Task #{tIndex + 1}</span>
-                          <span className="task-card-title-preview">
-                            {task.title.trim() ? task.title : 'Untitled Deliverable'}
+                    <div key={milestone.id} className="unified-milestone-card animate-scale-up">
+                      {/* Milestone Card Header */}
+                      <div className="unified-milestone-header">
+                        <div className="milestone-header-left">
+                          <span className="milestone-number-badge">Milestone #{mIndex + 1}</span>
+                          <span className="milestone-card-title-preview">
+                            {milestone.title.trim() ? milestone.title : 'Untitled Deliverable'}
                           </span>
                         </div>
-                        {tasks.length > 1 && (
+                        {milestones.length > 1 && (
                           <button
                             type="button"
-                            className="btn-remove-task"
-                            onClick={() => handleRemoveTask(tIndex)}
-                            title="Remove this task"
+                            className="btn-remove-milestone"
+                            onClick={() => handleRemoveMilestone(mIndex)}
+                            title="Remove this milestone"
                           >
                             <TrashIcon size={14} />
-                            <span>Remove Task</span>
+                            <span>Remove Milestone</span>
                           </button>
                         )}
                       </div>
 
-                      {/* 1. Task Title */}
+                      {/* 1. Milestone Title */}
                       <div className="form-group" style={{ marginBottom: '12px' }}>
-                        <label>Task Title *</label>
+                        <label>Milestone Title *</label>
                         <input
                           type="text"
-                          placeholder="e.g. Design responsive UI components & interactive states"
-                          value={task.title}
-                          onChange={(e) => handleTaskChange(tIndex, 'title', e.target.value)}
+                          placeholder="e.g. Design Dashboard UI"
+                          value={milestone.title}
+                          onChange={(e) => handleMilestoneChange(mIndex, 'title', e.target.value)}
                           required
                         />
                       </div>
@@ -696,14 +645,14 @@ export const CreateProjectTaskModal = ({
                         <div className="form-group" style={{ flex: 1 }}>
                           <label>Assign to Employee *</label>
                           <select
-                            value={task.assignedTo}
-                            onChange={(e) => handleTaskChange(tIndex, 'assignedTo', e.target.value)}
+                            value={milestone.assignedTo}
+                            onChange={(e) => handleMilestoneChange(mIndex, 'assignedTo', e.target.value)}
                             required
                           >
                             <option value="">-- Select Assignee --</option>
                             {/* Prioritize selected project team members */}
                             {projectData.assignedEmployeeIds.length > 0 && (
-                              <optgroup label="Project Team Members">
+                              <optgroup label="⭐ Project Team Members">
                                 {projectData.assignedEmployeeIds.map((id) => {
                                   const emp = employees.find(
                                     (e) => String(e._id || e.id) === String(id)
@@ -717,7 +666,7 @@ export const CreateProjectTaskModal = ({
                                 })}
                               </optgroup>
                             )}
-                            {/* Other available employees */}
+                            {/* All organization employees */}
                             <optgroup label="All Organization Employees">
                               {employees.map((emp) => {
                                 const empId = emp._id || emp.id;
@@ -735,8 +684,8 @@ export const CreateProjectTaskModal = ({
                           <label>Completion Deadline *</label>
                           <input
                             type="date"
-                            value={task.deadline}
-                            onChange={(e) => handleTaskChange(tIndex, 'deadline', e.target.value)}
+                            value={milestone.deadline}
+                            onChange={(e) => handleMilestoneChange(mIndex, 'deadline', e.target.value)}
                             required
                           />
                         </div>
@@ -745,24 +694,24 @@ export const CreateProjectTaskModal = ({
                       {/* 3. Effort Weight, Priority & Initial Status */}
                       <div className="form-row" style={{ marginBottom: '12px' }}>
                         <div className="form-group" style={{ flex: 1 }}>
-                          <label>Task Effort Weight</label>
+                          <label>Milestone Effort Weight</label>
                           <select
-                            value={task.weight}
-                            onChange={(e) => handleTaskChange(tIndex, 'weight', e.target.value)}
+                            value={milestone.weight}
+                            onChange={(e) => handleMilestoneChange(mIndex, 'weight', e.target.value)}
                           >
-                            <option value={1}>1x — Standard Task</option>
-                            <option value={2}>2x — Moderate Task</option>
-                            <option value={3}>3x — Complex Task</option>
+                            <option value={1}>1x — Standard</option>
+                            <option value={2}>2x — Moderate</option>
+                            <option value={3}>3x — Complex</option>
                             <option value={4}>4x — High Complexity</option>
-                            <option value={5}>5x — Critical / Highly Complex Task</option>
+                            <option value={5}>5x — Critical / Highly Complex</option>
                           </select>
                         </div>
 
                         <div className="form-group" style={{ flex: 1 }}>
                           <label>Priority</label>
                           <select
-                            value={task.priority}
-                            onChange={(e) => handleTaskChange(tIndex, 'priority', e.target.value)}
+                            value={milestone.priority}
+                            onChange={(e) => handleMilestoneChange(mIndex, 'priority', e.target.value)}
                           >
                             <option value="low">Low</option>
                             <option value="medium">Medium</option>
@@ -774,8 +723,8 @@ export const CreateProjectTaskModal = ({
                         <div className="form-group" style={{ flex: 1 }}>
                           <label>Initial Status</label>
                           <select
-                            value={task.status}
-                            onChange={(e) => handleTaskChange(tIndex, 'status', e.target.value)}
+                            value={milestone.status}
+                            onChange={(e) => handleMilestoneChange(mIndex, 'status', e.target.value)}
                           >
                             <option value="not-started">Not Started</option>
                             <option value="in-progress">In Progress</option>
@@ -783,77 +732,28 @@ export const CreateProjectTaskModal = ({
                         </div>
                       </div>
 
-                      {/* 4. Work Instructions */}
-                      <div className="form-group" style={{ marginBottom: '14px' }}>
-                        <label>Work Instructions & Deliverable Scope</label>
+                      {/* 4. Description / Work Instructions */}
+                      <div className="form-group">
+                        <label>Description / Work Instructions</label>
                         <textarea
                           rows={2}
-                          placeholder="Detailed instructions, acceptance criteria, or technical guidance..."
-                          value={task.description}
-                          onChange={(e) => handleTaskChange(tIndex, 'description', e.target.value)}
+                          placeholder="Detailed instructions, acceptance criteria, or technical guidance for this deliverable..."
+                          value={milestone.description}
+                          onChange={(e) => handleMilestoneChange(mIndex, 'description', e.target.value)}
                         />
-                      </div>
-
-                      {/* SECTION 4: Independent Milestones */}
-                      <div className="task-milestones-box">
-                        <label className="milestones-box-label">
-                          Milestones (Independent completion deliverables)
-                        </label>
-
-                        <div className="milestone-add-row">
-                          <input
-                            type="text"
-                            placeholder="e.g. Draft initial mockups & wireframes"
-                            value={task.milestoneInput || ''}
-                            onChange={(e) => handleTaskChange(tIndex, 'milestoneInput', e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                handleAddMilestone(tIndex);
-                              }
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => handleAddMilestone(tIndex)}
-                          >
-                            <PlusIcon size={13} />
-                            <span>Add</span>
-                          </button>
-                        </div>
-
-                        {task.milestones && task.milestones.length > 0 && (
-                          <div className="milestones-items-list">
-                            {task.milestones.map((m, mIdx) => (
-                              <div key={m.id || mIdx} className="milestone-item-row">
-                                <span className="ms-status-indicator">○</span>
-                                <span className="ms-item-title">{m.title}</span>
-                                <button
-                                  type="button"
-                                  className="btn-trash-ms"
-                                  onClick={() => handleRemoveMilestone(tIndex, mIdx)}
-                                  title="Remove milestone"
-                                >
-                                  <TrashIcon size={12} />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     </div>
                   );
                 })}
 
-                {/* SECTION 5: Additional Task Creation Button */}
+                {/* + Add Another Milestone Button */}
                 <button
                   type="button"
-                  className="btn-add-another-task"
-                  onClick={handleAddNewTask}
+                  className="btn-add-another-milestone"
+                  onClick={handleAddNewMilestone}
                 >
                   <PlusIcon size={16} />
-                  <span>+ Add Another Task</span>
+                  <span>+ Add Another Milestone</span>
                 </button>
               </div>
             </div>
@@ -883,17 +783,17 @@ export const CreateProjectTaskModal = ({
               type="submit"
               className="btn btn-primary"
               disabled={isSubmitting}
-              style={{ minWidth: '220px' }}
+              style={{ minWidth: '240px' }}
             >
               {isSubmitting ? (
                 <>
                   <div className="spinner-border spinner-border-sm" role="status" style={{ marginRight: '6px' }} />
-                  <span>Creating Project & Tasks...</span>
+                  <span>Creating Project & Milestones...</span>
                 </>
               ) : (
                 <>
                   <SparklesIcon size={16} style={{ marginRight: '6px' }} />
-                  <span>Create Project & Assign Tasks</span>
+                  <span>Create Project & Assign Milestones</span>
                 </>
               )}
             </button>
@@ -903,3 +803,5 @@ export const CreateProjectTaskModal = ({
     </div>
   );
 };
+
+export const CreateProjectMilestoneModal = CreateProjectTaskModal;
