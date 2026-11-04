@@ -37,6 +37,7 @@ import {
   MonitorIcon,
   LifeBuoyIcon,
 } from './Icons';
+import { UnifiedPerformanceView } from './UnifiedPerformanceView';
 import { PerformanceDashboardView } from './PerformanceDashboardView';
 import { EmployeeDirectoryModal } from './EmployeeDirectoryModal';
 import { GroupingChatView } from './GroupingChatView';
@@ -787,26 +788,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>Help Desk</span>
               </button>
 
-              {/* 7. My Progress */}
+              {/* Performance (Unified Progress & Performance Intelligence) */}
               <button
                 type="button"
-                className={`sidebar-nav-item ${activeTab === 'my_progress' ? 'active' : ''}`}
-                onClick={() => setActiveTab('my_progress')}
-              >
-                <TrendingUpIcon size={18} className="nav-icon" />
-                <span>My Progress</span>
-              </button>
-
-              {/* 8. Performance */}
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'analytics' ? 'active' : ''}`}
+                className={`sidebar-nav-item ${activeTab === 'performance' || activeTab === 'analytics' || activeTab === 'my_progress' ? 'active' : ''}`}
                 onClick={() => {
                   setSelectedEmployeeForEval(user?._id);
-                  setActiveTab('analytics');
+                  setActiveTab('performance');
                 }}
               >
-                <AwardIcon size={18} className="nav-icon" />
+                <TrendingUpIcon size={18} className="nav-icon" />
                 <span>Performance</span>
               </button>
 
@@ -893,26 +884,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>Help Desk</span>
               </button>
 
-              {/* My Progress */}
+              {/* Performance (Unified Progress & Performance Intelligence) */}
               <button
                 type="button"
-                className={`sidebar-nav-item ${activeTab === 'my_progress' ? 'active' : ''}`}
-                onClick={() => setActiveTab('my_progress')}
-              >
-                <TrendingUpIcon size={18} className="nav-icon" />
-                <span>My Progress</span>
-              </button>
-
-              {/* Performance */}
-              <button
-                type="button"
-                className={`sidebar-nav-item ${activeTab === 'analytics' ? 'active' : ''}`}
+                className={`sidebar-nav-item ${activeTab === 'performance' || activeTab === 'analytics' || activeTab === 'my_progress' ? 'active' : ''}`}
                 onClick={() => {
                   setSelectedEmployeeForEval(user?._id);
-                  setActiveTab('analytics');
+                  setActiveTab('performance');
                 }}
               >
-                <AwardIcon size={18} className="nav-icon" />
+                <TrendingUpIcon size={18} className="nav-icon" />
                 <span>Performance</span>
               </button>
 
@@ -989,7 +970,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'helpdesk' && 'AI Help Desk & Smart Ticket Management'}
               {activeTab === 'overview' && 'Executive Administration Overview'}
               {activeTab === 'projects' && 'Projects'}
-              {activeTab === 'analytics' && 'Automated Performance Evaluation & Periodic Analytics'}
+              {(activeTab === 'performance' || activeTab === 'analytics' || activeTab === 'my_progress') && 'Performance & Progress Intelligence'}
               {activeTab === 'documents' && 'Documents'}
               {activeTab === 'messages' && 'Messages & Notifications'}
               {activeTab === 'team' && 'Team & Personnel Management'}
@@ -1005,7 +986,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'helpdesk' && 'AI-powered issue analysis, automated categorization, department routing, SLA monitoring, and resolution tracking'}
               {activeTab === 'overview' && 'Executive summary, progress health, and organization KPIs'}
               {activeTab === 'projects' && 'Project deliverables, milestone tracks, and inspection'}
-              {activeTab === 'analytics' && 'Dynamic task delivery scoring, on-time telemetry, quality audits, and organization leaderboard'}
+              {(activeTab === 'performance' || activeTab === 'analytics' || activeTab === 'my_progress') && 'Unified employee scorecard, work progress, supervisor evaluations, recognition honors, and organization analytics'}
               {activeTab === 'documents' && 'Review submissions, project attachments, and files'}
               {activeTab === 'messages' && 'Taskflow communications and meeting invitations'}
               {activeTab === 'team' && 'Department structure, personnel, and secure invitations'}
@@ -2135,9 +2116,14 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             <GroupingChatView user={user} />
           )}
 
-          {/* TAB: MY PROGRESS (Employee Dashboard: Assigned & Approved Projects, Ratings & Analytics) */}
-          {activeTab === 'my_progress' && (
-            <MyProgressView user={user} />
+          {/* TAB: UNIFIED PERFORMANCE (Progress, Scorecard, Reviews, Recognition, Team & Analytics) */}
+          {(activeTab === 'performance' || activeTab === 'analytics' || activeTab === 'my_progress') && (
+            <UnifiedPerformanceView
+              user={user}
+              isAdmin={isAdmin}
+              selectedEmployeeId={selectedEmployeeForEval}
+              onOpenDirectory={() => setIsDirectoryModalOpen(true)}
+            />
           )}
 
           {/* TAB: INVITES (Admin Employee Panel with Invitations & Account Activation) */}
@@ -2288,15 +2274,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             </div>
           )}
 
-          {/* TAB: AUTOMATED PERFORMANCE EVALUATION & ANALYTICS */}
-          {activeTab === 'analytics' && (
-            <PerformanceDashboardView
-              user={user}
-              isAdmin={isAdmin}
-              selectedEmployeeId={selectedEmployeeForEval}
-              onOpenDirectory={() => setIsDirectoryModalOpen(true)}
-            />
-          )}
 
           {/* TAB: PROFILE (LINKEDIN-INSPIRED ENHANCED EMPLOYEE PROFILE) */}
           {activeTab === 'profile' && (
