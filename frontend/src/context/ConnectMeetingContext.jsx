@@ -32,6 +32,9 @@ export const ConnectMeetingProvider = ({ children, user }) => {
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [localStream, setLocalStream] = useState(null);
   const [screenStream, setScreenStream] = useState(null);
+
+  // Reactive Remote Streams Map (peerId -> MediaStream)
+  const [remoteStreams, setRemoteStreams] = useState(new Map());
   const [remoteStreamsTick, setRemoteStreamsTick] = useState(0);
 
   // References
@@ -39,7 +42,7 @@ export const ConnectMeetingProvider = ({ children, user }) => {
   const screenStreamRef = useRef(null);
   const peerConnectionsRef = useRef(new Map()); // peerId -> RTCPeerConnection
   const remoteStreamsRef = useRef(new Map()); // peerId -> MediaStream
-  const remoteAudioElementsRef = useRef(new Map()); // peerId -> HTMLAudioElement
+  const remoteAudioElementsRef = useRef(new Map()); // peerId -> HTMLAudioElement in DOM
   const pendingCandidatesRef = useRef(new Map()); // peerId -> Array of candidate data
   const pollingIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
@@ -48,9 +51,16 @@ export const ConnectMeetingProvider = ({ children, user }) => {
 
   // Global user interaction listener to unlock audio autoplay across all browsers
   const unlockAudio = useCallback(() => {
+    // 1. Play background audio elements
     remoteAudioElementsRef.current.forEach((audioEl) => {
       if (audioEl && audioEl.paused && audioEl.srcObject) {
         audioEl.play().catch(() => {});
+      }
+    });
+    // 2. Play any media elements on page
+    document.querySelectorAll('audio, video').forEach((el) => {
+      if (el && el.paused && el.srcObject && !el.muted) {
+        el.play().catch(() => {});
       }
     });
   }, []);
@@ -75,18 +85,24 @@ export const ConnectMeetingProvider = ({ children, user }) => {
       try {
         audioEl.pause();
         audioEl.srcObject = null;
+        if (audioEl.parentNode) {
+          audioEl.parentNode.removeChild(audioEl);
+        }
       } catch (_) {}
       remoteAudioElementsRef.current.delete(peerId);
     }
   };
 
-  // Attach an incoming audio track to a dedicated HTML5 Audio element
+  // Attach an incoming audio track to a dedicated HTML5 Audio element in the DOM
   const attachRemoteAudio = useCallback((peerId, track, stream) => {
     let audioEl = remoteAudioElementsRef.current.get(peerId);
     if (!audioEl) {
-      audioEl = new Audio();
+      audioEl = document.createElement('audio');
       audioEl.autoplay = true;
       audioEl.playsInline = true;
+      audioEl.style.display = 'none';
+      audioEl.setAttribute('data-peer-audio', peerId);
+      document.body.appendChild(audioEl);
       remoteAudioElementsRef.current.set(peerId, audioEl);
     }
 
@@ -156,6 +172,18 @@ export const ConnectMeetingProvider = ({ children, user }) => {
     setIsCameraOn(cameraAvailable && stream.getVideoTracks().length > 0);
     setIsMicOn(stream.getAudioTracks().length > 0 && stream.getAudioTracks()[0].enabled);
 
+    // Attach local media to any existing peer connections
+    peerConnectionsRef.current.forEach((pc) => {
+      stream.getTracks().forEach((track) => {
+        const sender = pc.getSenders().find((s) => s.track && s.track.kind === track.kind);
+        if (sender) {
+          sender.replaceTrack(track).catch(() => {});
+        } else {
+          try { pc.addTrack(track, stream); } catch (_) {}
+        }
+      });
+    });
+
     return stream;
   };
 
@@ -198,10 +226,17 @@ export const ConnectMeetingProvider = ({ children, user }) => {
       try { pc.addTrack(activeVideoTrack, activeVideoStream); } catch (_) {}
     }
 
-    // ICE candidate discovery
+    // ICE candidate discovery - serialize properly with toJSON
     pc.onicecandidate = (event) => {
-      if (event.candidate && event.candidate.candidate) {
-        api.sendConnectSignal(code, remoteUserId, event.candidate, 'candidate').catch(() => {});
+      if (event.candidate) {
+        const candidatePayload = event.candidate.toJSON
+          ? event.candidate.toJSON()
+          : {
+              candidate: event.candidate.candidate,
+              sdpMid: event.candidate.sdpMid,
+              sdpMLineIndex: event.candidate.sdpMLineIndex,
+            };
+        api.sendConnectSignal(code, remoteUserId, candidatePayload, 'candidate').catch(() => {});
       }
     };
 
@@ -224,11 +259,13 @@ export const ConnectMeetingProvider = ({ children, user }) => {
         stream.addTrack(event.track);
       }
 
-      // If audio track, attach to persistent HTML5 audio element immediately!
+      // If audio track, attach to persistent HTML5 audio element immediately
       if (event.track.kind === 'audio') {
         attachRemoteAudio(remoteUserId, event.track, stream);
       }
 
+      // Update reactive state map for immediate UI re-rendering
+      setRemoteStreams(new Map(remoteStreamsRef.current));
       setRemoteStreamsTick((t) => t + 1);
     };
 
@@ -236,6 +273,7 @@ export const ConnectMeetingProvider = ({ children, user }) => {
       if (pc.connectionState === 'failed') {
         try { pc.restartIce(); } catch (_) {}
       }
+      setRemoteStreams(new Map(remoteStreamsRef.current));
       setRemoteStreamsTick((t) => t + 1);
     };
 
@@ -254,10 +292,23 @@ export const ConnectMeetingProvider = ({ children, user }) => {
         const signalType = type || signal?.type;
 
         if (signalType === 'offer') {
-          if (!pc || pc.signalingState !== 'stable') {
+          // Polite Peer / Offer collision handling
+          const isPolite = myId < sId;
+          const offerCollision = pc && pc.signalingState !== 'stable';
+
+          if (offerCollision && !isPolite) {
+            // Impolite peer drops colliding offer; polite peer will roll back
+            continue;
+          }
+
+          if (offerCollision && isPolite) {
             if (pc) {
               try { pc.close(); } catch (_) {}
             }
+            pc = null;
+          }
+
+          if (!pc || pc.connectionState === 'closed' || pc.connectionState === 'failed') {
             pc = createPeerConnection(sId, code);
           }
 
@@ -273,7 +324,9 @@ export const ConnectMeetingProvider = ({ children, user }) => {
 
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          await api.sendConnectSignal(code, sId, answer, 'answer');
+
+          const answerPayload = answer.toJSON ? answer.toJSON() : { type: answer.type, sdp: answer.sdp };
+          await api.sendConnectSignal(code, sId, answerPayload, 'answer');
         } else if (signalType === 'answer') {
           if (pc && pc.signalingState === 'have-local-offer') {
             const sdpData = signal.sdp ? signal : (signal.signal || signal);
@@ -288,7 +341,7 @@ export const ConnectMeetingProvider = ({ children, user }) => {
           }
         } else if (signalType === 'candidate' || signal?.candidate) {
           const candidateData = signal.candidate || signal;
-          if (candidateData && candidateData.candidate) {
+          if (candidateData && (candidateData.candidate || candidateData.sdpMid !== undefined)) {
             if (pc && pc.remoteDescription && pc.remoteDescription.type) {
               await pc.addIceCandidate(new RTCIceCandidate(candidateData)).catch(() => {});
             } else {
@@ -342,7 +395,8 @@ export const ConnectMeetingProvider = ({ children, user }) => {
                   offerToReceiveVideo: true,
                 });
                 await pc.setLocalDescription(offer);
-                await api.sendConnectSignal(code, peerId, offer, 'offer');
+                const offerPayload = offer.toJSON ? offer.toJSON() : { type: offer.type, sdp: offer.sdp };
+                await api.sendConnectSignal(code, peerId, offerPayload, 'offer');
               } catch (err) {
                 console.warn('[ConnectWebRTC] Offer initiation error:', peerId, err.message);
               }
@@ -351,6 +405,7 @@ export const ConnectMeetingProvider = ({ children, user }) => {
 
           // Clean up disconnected peers
           const activePeerIdSet = new Set(signalData.activePeers.map((p) => String(p.userId)));
+          let hasPruned = false;
           for (const [rId, pc] of peerConnectionsRef.current.entries()) {
             if (!activePeerIdSet.has(rId)) {
               try { pc.close(); } catch (_) {}
@@ -358,8 +413,12 @@ export const ConnectMeetingProvider = ({ children, user }) => {
               remoteStreamsRef.current.delete(rId);
               cleanupPeerAudio(rId);
               pendingCandidatesRef.current.delete(rId);
-              setRemoteStreamsTick((t) => t + 1);
+              hasPruned = true;
             }
+          }
+          if (hasPruned) {
+            setRemoteStreams(new Map(remoteStreamsRef.current));
+            setRemoteStreamsTick((t) => t + 1);
           }
         }
 
@@ -436,11 +495,14 @@ export const ConnectMeetingProvider = ({ children, user }) => {
     peerConnectionsRef.current.clear();
     remoteStreamsRef.current.clear();
 
-    // Clean up all remote audio elements
+    // Clean up all remote audio elements from DOM
     remoteAudioElementsRef.current.forEach((audioEl) => {
       try {
         audioEl.pause();
         audioEl.srcObject = null;
+        if (audioEl.parentNode) {
+          audioEl.parentNode.removeChild(audioEl);
+        }
       } catch (_) {}
     });
     remoteAudioElementsRef.current.clear();
@@ -461,6 +523,7 @@ export const ConnectMeetingProvider = ({ children, user }) => {
     setIsHandRaised(false);
     setLocalStream(null);
     setScreenStream(null);
+    setRemoteStreams(new Map());
     setRemoteStreamsTick(0);
   };
 
@@ -563,7 +626,7 @@ export const ConnectMeetingProvider = ({ children, user }) => {
   };
 
   // Toggle Camera (On / Off)
-  const toggleCamera = () => {
+  const toggleCamera = async () => {
     if (localStreamRef.current) {
       const videoTracks = localStreamRef.current.getVideoTracks();
       if (videoTracks.length > 0) {
@@ -573,6 +636,29 @@ export const ConnectMeetingProvider = ({ children, user }) => {
         const code = currentRoomCode || roomCodeRef.current;
         if (code) {
           api.sendConnectPeerState(code, { cameraOn: nextState }).catch(() => {});
+        }
+      } else {
+        // If camera track was not present, try acquiring one
+        try {
+          const camStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          const newVideoTrack = camStream.getVideoTracks()[0];
+          localStreamRef.current.addTrack(newVideoTrack);
+          setIsCameraOn(true);
+          setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+          peerConnectionsRef.current.forEach((pc) => {
+            const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+            if (sender) {
+              sender.replaceTrack(newVideoTrack).catch(() => {});
+            } else {
+              try { pc.addTrack(newVideoTrack, localStreamRef.current); } catch (_) {}
+            }
+          });
+          const code = currentRoomCode || roomCodeRef.current;
+          if (code) {
+            api.sendConnectPeerState(code, { cameraOn: true }).catch(() => {});
+          }
+        } catch (e) {
+          console.warn('[ConnectWebRTC] Failed to activate camera track:', e.message);
         }
       }
     }
@@ -616,7 +702,7 @@ export const ConnectMeetingProvider = ({ children, user }) => {
         const screenTrack = displayStream.getVideoTracks()[0];
         screenTrack.onended = () => stopScreenSharing();
 
-        // Replace outgoing video track on all peer connections (preserving audio!)
+        // Replace outgoing video track on all peer connections (preserving audio)
         peerConnectionsRef.current.forEach((pc) => {
           const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
           if (sender) {
@@ -638,7 +724,12 @@ export const ConnectMeetingProvider = ({ children, user }) => {
 
   // Toggle Hand Raised
   const toggleHandRaised = () => {
-    setIsHandRaised((prev) => !prev);
+    const nextState = !isHandRaised;
+    setIsHandRaised(nextState);
+    const code = currentRoomCode || roomCodeRef.current;
+    if (code) {
+      api.sendConnectPeerState(code, { handRaised: nextState }).catch(() => {});
+    }
   };
 
   // Send In-Call Chat Message
@@ -697,7 +788,7 @@ export const ConnectMeetingProvider = ({ children, user }) => {
         isHandRaised,
         localStream,
         screenStream,
-        remoteStreams: remoteStreamsRef.current,
+        remoteStreams,
         remoteStreamsTick,
         joinMeeting,
         createInstantMeeting,

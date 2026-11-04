@@ -4,26 +4,18 @@ import {
   VideoOffIcon,
   MicIcon,
   MicOffIcon,
-  ScreenShareIcon,
-  HandIcon,
   PhoneOffIcon,
+  ScreenShareIcon,
   UsersIcon,
   MessageSquareIcon,
-  LockIcon,
-  ShieldIcon,
-  PlusIcon,
-  CopyIcon,
-  CheckCircleIcon,
-  CalendarIcon,
-  ClockIcon,
-  SparklesIcon,
-  SearchIcon,
-  ExternalLinkIcon,
-  SettingsIcon,
-  AlertTriangleIcon,
-  UserIcon,
+  HandIcon,
   RecordIcon,
   StopCircleIcon,
+  CopyIcon,
+  SparklesIcon,
+  ShieldIcon,
+  CalendarIcon,
+  CheckCircleIcon,
   DownloadIcon,
 } from './Icons';
 import { api } from '../services/api';
@@ -31,7 +23,7 @@ import { useConnectMeeting } from '../context/ConnectMeetingContext';
 
 export const ConnectView = ({
   user,
-  initialRoomCode = '',
+  initialRoomCode,
   onScheduleInCalendar,
   onBackToCalendar,
 }) => {
@@ -52,6 +44,7 @@ export const ConnectView = ({
     localStream,
     screenStream,
     remoteStreams,
+    remoteStreamsTick,
     joinMeeting,
     createInstantMeeting,
     leaveMeeting,
@@ -76,13 +69,15 @@ export const ConnectView = ({
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [recordedVideoUrl, setRecordedVideoUrl] = useState(null);
+  const [recordedBlobSize, setRecordedBlobSize] = useState(0);
   const [showRecordModal, setShowRecordModal] = useState(false);
-
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
   const recordingIntervalRef = useRef(null);
+  const recordingStreamRef = useRef(null);
+  const audioContextRef = useRef(null);
 
-  // Modal for displaying newly created room details (Phase 2 requirement: host explicitly enters room)
+  // Modal for displaying newly created room details (host explicitly enters room)
   const [createdRoomModal, setCreatedRoomModal] = useState({
     isOpen: false,
     roomCode: '',
@@ -90,71 +85,55 @@ export const ConnectView = ({
     title: '',
   });
 
-  // Custom Website Popup Dialog State
+  // Custom Website Popup Dialog State (replaces native window.alert and window.confirm)
   const [dialogState, setDialogState] = useState({
     isOpen: false,
-    type: 'alert',
-    variant: 'info',
+    type: 'alert', // 'alert' | 'confirm'
+    variant: 'info', // 'info' | 'danger' | 'warning' | 'success'
     title: '',
     message: '',
     confirmText: 'OK',
     cancelText: 'Cancel',
     onConfirm: null,
-    onCancel: null,
   });
 
-  const showCustomAlert = (message, title = 'Notice', variant = 'info', onOk = null) => {
+  const showCustomAlert = (message, title = 'Notification', variant = 'info') => {
     setDialogState({
       isOpen: true,
       type: 'alert',
       variant,
       title,
       message,
-      confirmText: 'OK',
-      cancelText: 'Cancel',
-      onConfirm: () => {
-        setDialogState((prev) => ({ ...prev, isOpen: false }));
-        if (onOk) onOk();
-      },
-      onCancel: () => {
-        setDialogState((prev) => ({ ...prev, isOpen: false }));
-        if (onOk) onOk();
-      },
+      confirmText: 'Got It',
+      cancelText: '',
+      onConfirm: () => setDialogState((prev) => ({ ...prev, isOpen: false })),
     });
   };
 
-  const showCustomConfirm = ({
-    title = 'Confirm Action',
-    message,
-    confirmText = 'Confirm',
-    cancelText = 'Cancel',
-    variant = 'danger',
-    onConfirm,
-    onCancel,
-  }) => {
+  const showCustomConfirm = (message, onConfirmAction, title = 'Please Confirm', variant = 'warning') => {
     setDialogState({
       isOpen: true,
       type: 'confirm',
       variant,
       title,
       message,
-      confirmText,
-      cancelText,
+      confirmText: 'Confirm',
+      cancelText: 'Cancel',
       onConfirm: () => {
         setDialogState((prev) => ({ ...prev, isOpen: false }));
-        if (onConfirm) onConfirm();
-      },
-      onCancel: () => {
-        setDialogState((prev) => ({ ...prev, isOpen: false }));
-        if (onCancel) onCancel();
+        if (typeof onConfirmAction === 'function') onConfirmAction();
       },
     });
   };
 
-  // Out-of-Call Hub Data
+  const closeDialog = () => {
+    setDialogState((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  // Hub Meeting Data
   const [upcomingMeetings, setUpcomingMeetings] = useState([]);
   const [meetingHistory, setMeetingHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   // Google Integration State
   const [googleStatus, setGoogleStatus] = useState({ connected: false, email: '', hasClientId: false });
@@ -176,13 +155,6 @@ export const ConnectView = ({
     }
   }, [isInCall]);
 
-  // Auto-scroll chat container to the latest message
-  useEffect(() => {
-    if (activeSidePanel === 'chat') {
-      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [chatMessages, activeSidePanel]);
-
   // Wire local video element when camera is active in room
   useEffect(() => {
     if (activeTab === 'room' && localVideoRef.current && localStream) {
@@ -193,48 +165,38 @@ export const ConnectView = ({
     }
   }, [activeTab, localStream, isCameraOn]);
 
-  // Initialize Hub data without automatic joining (Phase 2 Fix)
+  // Load Hub data without automatic joining
   useEffect(() => {
     loadHubData();
-    checkGoogleStatus();
-
-    // Check URL parameters for OAuth or prefilled room code
-    const params = new URLSearchParams(window.location.search);
-    const roomParam = params.get('room');
-    const googleAuthCode = params.get('code');
-
-    if (googleAuthCode) {
-      handleGoogleAuthCallback(googleAuthCode);
-    } else if (roomParam) {
-      // Prefill the room input field so the user can review and explicitly click Join
-      setRoomCodeInput(roomParam);
-    } else if (initialRoomCode) {
-      setRoomCodeInput(initialRoomCode);
-    }
-
-    return () => {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        try { mediaRecorderRef.current.stop(); } catch (_) {}
-      }
-      if (recordingIntervalRef.current) {
-        clearInterval(recordingIntervalRef.current);
-      }
-    };
+    checkGoogleConnection();
   }, []);
+
+  // Display connection errors cleanly via popup dialog
+  useEffect(() => {
+    if (connectionError) {
+      showCustomAlert(connectionError, 'Meeting Notice', 'warning');
+    }
+  }, [connectionError]);
+
+  // Auto-scroll chat container to bottom on new message
+  useEffect(() => {
+    if (activeSidePanel === 'chat') {
+      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages, activeSidePanel]);
 
   const loadHubData = async () => {
     try {
       setLoading(true);
-      const [meetingsData, historyData] = await Promise.all([
-        api.getMeetings().catch(() => []),
-        api.getMeetingHistory().catch(() => []),
+      const [meetings, history] = await Promise.all([
+        api.getMeetings ? api.getMeetings() : Promise.resolve([]),
+        api.getConnectHistory ? api.getConnectHistory() : Promise.resolve([]),
       ]);
-
-      const onlineOnly = (meetingsData || []).filter(
-        (m) => (m.mode === 'online' || m.roomCode) && m.status !== 'cancelled'
+      const onlineUpcoming = (Array.isArray(meetings) ? meetings : []).filter(
+        (m) => m.mode === 'online' && m.status !== 'completed' && m.status !== 'cancelled'
       );
-      setUpcomingMeetings(onlineOnly);
-      setMeetingHistory(historyData || []);
+      setUpcomingMeetings(onlineUpcoming);
+      setMeetingHistory(Array.isArray(history) ? history : []);
     } catch (err) {
       console.warn('Failed to load Connect hub data:', err);
     } finally {
@@ -242,93 +204,74 @@ export const ConnectView = ({
     }
   };
 
-  const checkGoogleStatus = async () => {
+  const checkGoogleConnection = async () => {
     try {
-      const st = await api.getGoogleStatus();
-      setGoogleStatus(st || { connected: false, email: '' });
-    } catch (err) {
-      console.warn('Google status check failed:', err);
-    }
-  };
-
-  const handleGoogleAuthCallback = async (code) => {
-    try {
-      setGoogleLoading(true);
-      const origin = window.location.origin;
-      const redirectUri = `${origin}/connect`;
-      const res = await api.connectGoogleCallback(code, redirectUri);
-      setGoogleNotice(res.message || 'Google Account successfully connected!');
-      checkGoogleStatus();
-      window.history.replaceState({}, document.title, window.location.pathname);
-    } catch (err) {
-      setGoogleNotice(err.message || 'Google authorization failed.');
-    } finally {
-      setGoogleLoading(false);
-    }
+      if (api.getGoogleAuthStatus) {
+        const status = await api.getGoogleAuthStatus();
+        setGoogleStatus(status);
+      }
+    } catch (_) {}
   };
 
   const handleConnectGoogle = async () => {
     try {
       setGoogleLoading(true);
-      const authInfo = await api.getGoogleAuthUrl();
-      if (authInfo.configured && authInfo.authUrl) {
-        window.location.href = authInfo.authUrl;
-      } else {
-        await api.connectGoogleCallback(null, null, true);
-        setGoogleNotice('Connected in Developer Test Mode (Simulation).');
-        checkGoogleStatus();
+      setGoogleNotice('');
+      if (api.getGoogleOAuthUrl) {
+        const res = await api.getGoogleOAuthUrl();
+        if (res && res.url) {
+          window.location.href = res.url;
+        } else {
+          setGoogleNotice('Google OAuth Client ID is not configured on server.');
+        }
       }
     } catch (err) {
-      showCustomAlert(err.message || 'Failed to initialize Google authorization.', 'Google Authorization', 'danger');
+      setGoogleNotice(err.message || 'Failed to initiate Google Calendar connection.');
     } finally {
       setGoogleLoading(false);
     }
   };
 
-  const handleDisconnectGoogle = async () => {
-    showCustomConfirm({
-      title: 'Disconnect Google Account?',
-      message: 'Are you sure you want to disconnect your Google account from TaskFlow? Calendar sync will be disabled.',
-      confirmText: 'Disconnect',
-      cancelText: 'Cancel',
-      variant: 'danger',
-      onConfirm: async () => {
-        try {
-          await api.disconnectGoogle();
-          checkGoogleStatus();
-          setGoogleNotice('Google account disconnected.');
-          showCustomAlert('Google account disconnected successfully.', 'Disconnected', 'info');
-        } catch (err) {
-          showCustomAlert(err.message || 'Failed to disconnect Google account.', 'Disconnect Error', 'danger');
+  const handleDisconnectGoogle = () => {
+    showCustomConfirm('Are you sure you want to disconnect Google Calendar integration?', async () => {
+      try {
+        if (api.disconnectGoogleAccount) {
+          await api.disconnectGoogleAccount();
         }
-      },
+        setGoogleStatus({ connected: false, email: '', hasClientId: false });
+        showCustomAlert('Google account disconnected successfully.', 'Disconnected', 'success');
+      } catch (err) {
+        showCustomAlert(err.message || 'Failed to disconnect Google account.', 'Disconnect Error', 'danger');
+      }
     });
   };
 
   const handleSyncMeeting = async (meetingId) => {
     try {
-      const res = await api.syncMeetingToGoogle(meetingId);
-      showCustomAlert(res.message || 'Meeting synced to Google Calendar & Meet!', 'Google Sync', 'success');
+      const res = await api.syncMeetingWithGoogle(meetingId);
+      showCustomAlert(res.message || 'Meeting synchronized with Google Calendar.', 'Google Calendar', 'success');
       loadHubData();
     } catch (err) {
-      showCustomAlert(err.message || 'Failed to sync meeting to Google Calendar.', 'Sync Error', 'danger');
+      showCustomAlert(err.message || 'Google sync failed. Please connect Google account first.', 'Sync Failed', 'danger');
     }
   };
 
-  // Phase 2: Host clicks Create Instant Meeting -> Creates Room and shows details without auto-joining
+  // ----------------------------------------------------
+  // CALL LIFECYCLE & BUTTON CLICK HANDLERS
+  // ----------------------------------------------------
+
   const handleStartInstantMeeting = async () => {
     try {
       setLoading(true);
       const res = await createInstantMeeting('Instant Connect Meeting');
       if (res && res.roomCode) {
-        const fullLink = `${window.location.origin}/connect?room=${res.roomCode}`;
+        const meetingLink = `${window.location.origin}/connect?room=${encodeURIComponent(res.roomCode)}`;
         setCreatedRoomModal({
           isOpen: true,
           roomCode: res.roomCode,
-          meetingLink: fullLink,
+          meetingLink,
           title: res.meeting?.title || 'Instant Connect Meeting',
         });
-        loadHubData();
       }
     } catch (err) {
       showCustomAlert(err.message || 'Failed to create meeting room.', 'Meeting Creation Failed', 'danger');
@@ -337,7 +280,6 @@ export const ConnectView = ({
     }
   };
 
-  // Phase 2: Explicit Join Meeting action
   const handleJoinRoom = async (codeToJoin) => {
     const code = (codeToJoin || roomCodeInput || '').trim();
     if (!code) {
@@ -347,174 +289,265 @@ export const ConnectView = ({
 
     try {
       setLoading(true);
-      await joinMeeting(code);
       setCreatedRoomModal((prev) => ({ ...prev, isOpen: false }));
+      await joinMeeting(code);
       setActiveTab('room');
     } catch (err) {
-      showCustomAlert(err.message || 'Unable to join meeting room. Please check the room code.', 'Unable to Join', 'danger');
+      showCustomAlert(err.message || 'Unable to join meeting room.', 'Unable to Join', 'danger');
     } finally {
       setLoading(false);
     }
   };
 
-  // Explicit Leave Meeting action
   const handleLeaveMeeting = () => {
-    showCustomConfirm({
-      title: 'Leave Meeting?',
-      message: 'Are you sure you want to leave this meeting? Your attendance time will be recorded.',
-      confirmText: 'Leave',
-      cancelText: 'Stay',
-      variant: 'danger',
-      onConfirm: async () => {
+    showCustomConfirm(
+      'Are you sure you want to leave this meeting? You can rejoin anytime with the meeting room code.',
+      async () => {
+        stopRecordingSafely();
         await leaveMeeting();
         setActiveTab('hub');
         loadHubData();
       },
-    });
+      'Leave Meeting',
+      'warning'
+    );
   };
 
-  // Host ends meeting for everyone
   const handleEndMeetingForAll = () => {
-    showCustomConfirm({
-      title: 'End Meeting for Everyone?',
-      message: 'This will disconnect all active participants and conclude the meeting session. Attendance records will be permanently saved.',
-      confirmText: 'End Meeting',
-      cancelText: 'Cancel',
-      variant: 'danger',
-      onConfirm: async () => {
+    showCustomConfirm(
+      'Are you sure you want to end this meeting for all participants? All active connections will terminate and final attendance records will be saved.',
+      async () => {
+        stopRecordingSafely();
         await endMeetingForEveryone();
         setActiveTab('hub');
         loadHubData();
       },
-    });
+      'End Meeting for Everyone',
+      'danger'
+    );
   };
 
-  // In-call chat submit
-  const handleSendChat = async (e) => {
-    e?.preventDefault();
+  const handleSendChat = (e) => {
+    e.preventDefault();
     if (!chatInput.trim()) return;
-    const text = chatInput;
+    sendChatMessage(chatInput);
     setChatInput('');
-    await sendChatMessage(text);
   };
 
-  // Host Action (Mute All / Lock Meeting)
-  const handleHostAction = async (action, value) => {
-    await sendHostAction(action, value);
+  const handleHostAction = (action, value) => {
+    sendHostAction(action, value);
   };
 
-  // Copy Room Link to Clipboard
   const copyRoomLink = () => {
-    const link = `${window.location.origin}/connect?room=${currentRoomCode}`;
+    const code = currentRoomCode || roomCodeInput;
+    if (!code) return;
+    const link = `${window.location.origin}/connect?room=${encodeURIComponent(code)}`;
     navigator.clipboard.writeText(link);
     setCopiedNotice(true);
     setTimeout(() => setCopiedNotice(false), 2500);
   };
 
-  // Meeting Screen & Audio Recording
-  const toggleRecording = async () => {
-    if (isRecording) {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-      setIsRecording(false);
-      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
-    } else {
+  const formatTimer = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // ----------------------------------------------------
+  // MEETING RECORDING ENGINE
+  // ----------------------------------------------------
+
+  const stopRecordingSafely = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
-        const streamToRecord = screenStream || localStream;
-        if (!streamToRecord) {
-          showCustomAlert('No active media stream found to record.', 'Recording Error', 'warning');
+        mediaRecorderRef.current.stop();
+      } catch (_) {}
+    }
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+    if (recordingStreamRef.current) {
+      recordingStreamRef.current.getTracks().forEach((t) => t.stop());
+      recordingStreamRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try {
+        audioContextRef.current.close();
+      } catch (_) {}
+      audioContextRef.current = null;
+    }
+    setIsRecording(false);
+  };
+
+  const startMeetingRecording = async () => {
+    try {
+      recordedChunksRef.current = [];
+      let captureStream = null;
+
+      try {
+        captureStream = await navigator.mediaDevices.getDisplayMedia({
+          video: { displaySurface: 'browser' },
+          audio: true,
+        });
+      } catch (dispErr) {
+        if (localStream && localStream.getVideoTracks().length > 0) {
+          captureStream = localStream.clone();
+        } else {
+          showCustomAlert(
+            'Screen capture permission was cancelled. Meeting recording could not be started.',
+            'Recording Cancelled',
+            'warning'
+          );
           return;
         }
+      }
 
-        recordedChunksRef.current = [];
-        const options = { mimeType: 'video/webm;codecs=vp9,opus' };
-        let recorder;
-        try {
-          recorder = new MediaRecorder(streamToRecord, options);
-        } catch {
-          recorder = new MediaRecorder(streamToRecord);
+      recordingStreamRef.current = captureStream;
+
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        const audioCtx = new AudioCtx();
+        audioContextRef.current = audioCtx;
+        const dest = audioCtx.createMediaStreamDestination();
+
+        if (captureStream.getAudioTracks().length > 0) {
+          try {
+            const dispAudioSource = audioCtx.createMediaStreamSource(new MediaStream(captureStream.getAudioTracks()));
+            dispAudioSource.connect(dest);
+          } catch (_) {}
         }
 
-        recorder.ondataavailable = (event) => {
-          if (event.data && event.data.size > 0) {
-            recordedChunksRef.current.push(event.data);
+        if (localStream && localStream.getAudioTracks().length > 0) {
+          try {
+            const micSource = audioCtx.createMediaStreamSource(new MediaStream(localStream.getAudioTracks()));
+            micSource.connect(dest);
+          } catch (_) {}
+        }
+
+        remoteStreams.forEach((stream) => {
+          if (stream && stream.getAudioTracks().length > 0) {
+            try {
+              const remoteSource = audioCtx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+              remoteSource.connect(dest);
+            } catch (_) {}
           }
-        };
+        });
 
-        recorder.onstop = () => {
-          const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-          const url = URL.createObjectURL(blob);
-          setRecordedVideoUrl(url);
-          setShowRecordModal(true);
-
-          const a = document.createElement('a');
-          a.style.display = 'none';
-          a.href = url;
-          a.download = `TaskFlow_Meeting_${currentRoomCode}_${new Date().toISOString().slice(0, 10)}.webm`;
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(() => document.body.removeChild(a), 100);
-        };
-
-        recorder.start(1000);
-        mediaRecorderRef.current = recorder;
-        setIsRecording(true);
-        setRecordingDuration(0);
-
-        recordingIntervalRef.current = setInterval(() => {
-          setRecordingDuration((prev) => prev + 1);
-        }, 1000);
-      } catch (err) {
-        showCustomAlert(err.message || 'Failed to start meeting recording.', 'Recording Error', 'danger');
+        const mixedAudioTrack = dest.stream.getAudioTracks()[0];
+        if (mixedAudioTrack) {
+          captureStream.getAudioTracks().forEach((t) => captureStream.removeTrack(t));
+          captureStream.addTrack(mixedAudioTrack);
+        }
       }
+
+      let mimeType = 'video/webm;codecs=vp9,opus';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm;codecs=vp8,opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'video/webm';
+        }
+      }
+
+      const recorder = new MediaRecorder(captureStream, { mimeType });
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: mimeType });
+        const videoUrl = URL.createObjectURL(blob);
+        setRecordedVideoUrl(videoUrl);
+        setRecordedBlobSize(blob.size);
+        setShowRecordModal(true);
+        stopRecordingSafely();
+      };
+
+      captureStream.getVideoTracks()[0].onended = () => {
+        stopMeetingRecording();
+      };
+
+      recorder.start(1000);
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      showCustomAlert(err.message || 'Failed to start meeting recording.', 'Recording Error', 'danger');
+      stopRecordingSafely();
     }
   };
 
-  // Format MM:SS for display
-  const formatTimer = (secs) => {
-    const mins = Math.floor(secs / 60);
-    const remainingSecs = secs % 60;
-    return `${mins.toString().padStart(2, '0')}:${remainingSecs.toString().padStart(2, '0')}`;
+  const stopMeetingRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (_) {}
+    }
   };
 
-  // Presentation check
-  const remotePresenter = activePeers.find((p) => p.screenSharing && String(p.userId) !== myId);
+  const toggleRecording = () => {
+    if (isRecording) {
+      showCustomConfirm(
+        'Do you want to stop recording and prepare the downloadable video file?',
+        stopMeetingRecording,
+        'Stop Recording',
+        'info'
+      );
+    } else {
+      startMeetingRecording();
+    }
+  };
+
+  const remotePresenter = activePeers.find((p) => String(p.userId) !== myId && p.screenSharing);
   const isAnyonePresenting = isScreenSharing || Boolean(remotePresenter);
 
   return (
-    <div className="connect-module-root animate-fade-in">
+    <div className="connect-module-container animate-fade-in">
       {/* ----------------------------------------------------
-          VIEW 1: IN-CALL EXPERIENCE (ROOM VIEW)
+          VIEW 1: IN-CALL VIDEO MEETING ROOM (GOOGLE MEET-LIKE)
       ---------------------------------------------------- */}
       {activeTab === 'room' && (
         <div className="in-call-experience-wrapper" onClick={unlockAudio}>
           {/* Top Meeting Header Bar */}
           <div className="call-top-bar">
             <div className="call-top-left">
-              <span className="live-pulse-dot" />
+              <div className="call-live-indicator">
+                <span className="live-dot animate-pulse"></span>
+                <strong>LIVE</strong>
+                <span className="call-timer-badge">{formatTimer(callDuration)}</span>
+              </div>
+              {isRecording && (
+                <div className="recording-status-pill" title="Meeting is currently being recorded">
+                  <span className="rec-dot"></span>
+                  <strong>REC</strong>
+                  <span>{formatTimer(recordingDuration)}</span>
+                </div>
+              )}
               <h3 className="call-meeting-title">{activeMeeting?.title || 'Connect Video Meeting'}</h3>
               <div className="call-room-code-badge" onClick={copyRoomLink} title="Click to copy join link">
                 <CopyIcon size={13} />
                 <span>{currentRoomCode}</span>
-                {copiedNotice && <span className="copied-pill">Link Copied!</span>}
+                {copiedNotice && <span className="copied-pill">Copied!</span>}
               </div>
             </div>
 
             <div className="call-top-right">
-              <div className="call-timer-chip">
-                <ClockIcon size={14} />
-                <span>{formatTimer(callDuration)}</span>
-              </div>
-              <div className="peers-count-chip">
-                <UsersIcon size={14} />
-                <span>{activePeers.length || 1} in call</span>
-              </div>
-              {hostControls.lockMeeting && (
-                <div className="call-locked-chip" title="Meeting locked by host">
-                  <LockIcon size={13} />
-                  <span>Locked</span>
-                </div>
+              {activeMeeting?.googleSynced && (
+                <span className="badge-google-synced" title="Synchronized with Google Calendar">
+                  Google Synced
+                </span>
+              )}
+              {isHost && (
+                <span className="badge-host-crown">
+                  <ShieldIcon size={12} /> Host Controls Active
+                </span>
               )}
             </div>
           </div>
@@ -601,19 +634,33 @@ export const ConnectView = ({
                 .map((peer) => {
                   const pId = String(peer.userId);
                   const remoteStream = remoteStreams.get(pId);
-                  const hasVideoTrack = remoteStream && remoteStream.getVideoTracks().some((t) => t.readyState === 'live');
+                  const hasVideoTrack = remoteStream && remoteStream.getVideoTracks().length > 0 && remoteStream.getVideoTracks().some((t) => t.enabled);
                   const isCameraActive = peer.cameraOn !== false && hasVideoTrack;
 
                   return (
                     <div key={pId} className="video-tile remote-tile">
+                      {/* Audio playback element */}
+                      {remoteStream && (
+                        <audio
+                          autoPlay
+                          playsInline
+                          ref={(el) => {
+                            if (el && el.srcObject !== remoteStream) {
+                              el.srcObject = remoteStream;
+                              el.play().catch((err) => console.warn('Audio playback error:', err));
+                            }
+                          }}
+                        />
+                      )}
+
                       {isCameraActive ? (
                         <video
                           autoPlay
                           playsInline
                           ref={(el) => {
-                            if (el && remoteStream && el.srcObject !== remoteStream) {
+                            if (el && el.srcObject !== remoteStream) {
                               el.srcObject = remoteStream;
-                              el.play?.().catch((err) => console.warn('Video playback error:', err));
+                              el.play().catch((err) => console.warn('Video playback error:', err));
                             }
                           }}
                           className="camera-video-element"
@@ -629,6 +676,7 @@ export const ConnectView = ({
                       <div className="tile-user-tag">
                         <span>{peer.name || 'Participant'}</span>
                         {peer.isHost && <span className="host-tag-pill">Host</span>}
+                        {peer.handRaised && <span className="hand-tag-pill">✋</span>}
                         {peer.screenSharing && (
                           <span className="host-tag-pill" style={{ background: '#2563eb' }}>
                             <ScreenShareIcon size={12} /> Presenting
@@ -642,12 +690,10 @@ export const ConnectView = ({
                   );
                 })}
 
-              {/* Empty peer notice when alone in room */}
+              {/* Empty peer notice when alone */}
               {activePeers.filter((p) => String(p.userId) !== myId).length === 0 && (
-                <div className="waiting-peer-card">
-                  <div className="pulse-avatar-ring">
-                    <UsersIcon size={32} />
-                  </div>
+                <div className="waiting-peers-tile animate-fade-in">
+                  <UsersIcon size={32} className="text-muted" />
                   <h4>You are the only person in this meeting</h4>
                   <p>Share the room code or invitation link with team members to collaborate.</p>
                   <button type="button" className="btn btn-secondary btn-sm" onClick={copyRoomLink}>
@@ -657,53 +703,48 @@ export const ConnectView = ({
               )}
             </div>
 
-            {/* In-Call Collapsible Side Panel (Participants / Chat / Info) */}
+            {/* In-Call Sliding Sidebar (Participants / Chat / Info) */}
             {activeSidePanel && (
-              <div className="call-side-panel animate-scale-up">
-                <div className="side-panel-header">
+              <div className="call-side-drawer animate-fade-in">
+                <div className="drawer-header">
                   <h4>
                     {activeSidePanel === 'participants' && `Participants (${activePeers.length || 1})`}
-                    {activeSidePanel === 'chat' && 'In-Call Chat'}
-                    {activeSidePanel === 'info' && 'Meeting Information'}
+                    {activeSidePanel === 'chat' && 'Meeting Messages'}
+                    {activeSidePanel === 'info' && 'Joining Information'}
                   </h4>
                   <button type="button" className="close-btn" onClick={() => setActiveSidePanel('')}>
                     &times;
                   </button>
                 </div>
 
-                {/* Panel 1: Participants List with Host Controls */}
+                {/* 1. Participants List */}
                 {activeSidePanel === 'participants' && (
-                  <div className="side-panel-body">
+                  <div className="drawer-body">
                     {isHost && (
-                      <div className="host-controls-box">
-                        <span className="host-box-title">Host Controls</span>
-                        <div className="host-actions-grid">
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-xs"
-                            onClick={() => handleHostAction('muteAll', !hostControls.muteAll)}
-                          >
-                            {hostControls.muteAll ? 'Unmute All Participants' : 'Mute All Participants'}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-xs"
-                            onClick={() => handleHostAction('lockMeeting', !hostControls.lockMeeting)}
-                          >
-                            {hostControls.lockMeeting ? 'Unlock Meeting Room' : 'Lock Meeting Room'}
-                          </button>
-                        </div>
+                      <div className="host-quick-actions">
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-xs"
+                          onClick={() => handleHostAction('muteAll', !hostControls.muteAll)}
+                        >
+                          {hostControls.muteAll ? 'Unmute All Participants' : 'Mute All Participants'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-xs"
+                          onClick={() => handleHostAction('lockMeeting', !hostControls.lockMeeting)}
+                        >
+                          {hostControls.lockMeeting ? 'Unlock Meeting Room' : 'Lock Meeting Room'}
+                        </button>
                       </div>
                     )}
 
-                    <div className="participants-stack-list">
-                      <div className="peer-row me-row">
-                        <div className="peer-avatar">
-                          {user?.firstName?.[0] || 'U'}
-                        </div>
+                    <div className="drawer-participants-list">
+                      <div className="drawer-peer-item me">
+                        <div className="peer-avatar">{user?.firstName?.[0] || 'U'}</div>
                         <div className="peer-info">
-                          <strong>{user?.firstName || 'You'} {user?.lastName || ''} (You)</strong>
-                          <small>{user?.email}</small>
+                          <strong>{user?.firstName} {user?.lastName} (You)</strong>
+                          <span className="peer-role">{isHost ? 'Meeting Host' : 'Participant'}</span>
                         </div>
                         <div className="peer-status-icons">
                           {isMicOn ? <MicIcon size={14} className="text-success" /> : <MicOffIcon size={14} className="text-danger" />}
@@ -713,18 +754,16 @@ export const ConnectView = ({
 
                       {activePeers
                         .filter((p) => String(p.userId) !== myId)
-                        .map((peer, i) => (
-                          <div key={peer.userId || i} className="peer-row">
-                            <div className="peer-avatar">
-                              {peer.name?.[0] || 'P'}
-                            </div>
+                        .map((p) => (
+                          <div key={p.userId} className="drawer-peer-item">
+                            <div className="peer-avatar">{p.name?.[0] || 'P'}</div>
                             <div className="peer-info">
-                              <strong>{peer.name || 'Participant'}</strong>
-                              <small>{peer.email}</small>
+                              <strong>{p.name}</strong>
+                              <span className="peer-role">{p.isHost ? 'Meeting Host' : 'Participant'}</span>
                             </div>
                             <div className="peer-status-icons">
-                              {peer.micOn !== false ? <MicIcon size={14} className="text-success" /> : <MicOffIcon size={14} className="text-danger" />}
-                              {peer.cameraOn !== false ? <VideoIcon size={14} className="text-success" /> : <VideoOffIcon size={14} className="text-muted" />}
+                              {p.micOn !== false ? <MicIcon size={14} className="text-success" /> : <MicOffIcon size={14} className="text-danger" />}
+                              {p.cameraOn !== false ? <VideoIcon size={14} className="text-success" /> : <VideoOffIcon size={14} className="text-muted" />}
                             </div>
                           </div>
                         ))}
@@ -732,24 +771,27 @@ export const ConnectView = ({
                   </div>
                 )}
 
-                {/* Panel 2: In-Call Real-Time Chat */}
+                {/* 2. In-Call Chat */}
                 {activeSidePanel === 'chat' && (
-                  <div className="side-panel-body chat-panel-body">
+                  <div className="drawer-body chat-drawer-body">
                     <div className="chat-messages-container">
                       {chatMessages.length === 0 ? (
-                        <p className="empty-chat-text">No messages yet. Send a message to start chatting with participants.</p>
+                        <p className="no-chat-yet">Messages sent here are visible to everyone in this call.</p>
                       ) : (
-                        chatMessages.map((msg, i) => {
-                          const isMine = String(msg.senderId) === myId;
+                        chatMessages.map((m, idx) => {
+                          const isMine =
+                            String(m.senderId) === myId ||
+                            (m.senderId && (m.senderId === user?.id || m.senderId === user?._id)) ||
+                            (m.senderName &&
+                              m.senderName.toLowerCase() ===
+                                `${user?.firstName || ''} ${user?.lastName || ''}`.trim().toLowerCase());
                           return (
-                            <div key={msg.id || i} className={`chat-bubble-wrap ${isMine ? 'mine' : 'theirs'}`}>
-                              <span className="chat-sender-name">{isMine ? 'You' : msg.senderName}</span>
-                              <div className="chat-bubble-content">
-                                <p>{msg.text}</p>
-                                <span className="chat-time-tag">
-                                  {new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </span>
+                            <div key={m.id || idx} className={`chat-bubble-row ${isMine ? 'mine' : ''}`}>
+                              <div className="chat-meta">
+                                <strong>{isMine ? 'You' : m.senderName}</strong>
+                                <span>{m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
                               </div>
+                              <div className="chat-text-bubble">{m.text}</div>
                             </div>
                           );
                         })
@@ -757,13 +799,13 @@ export const ConnectView = ({
                       <div ref={chatBottomRef} />
                     </div>
 
-                    <form onSubmit={handleSendChat} className="chat-composer-form">
+                    <form className="chat-input-form" onSubmit={handleSendChat}>
                       <input
                         type="text"
-                        placeholder="Type a message to participants..."
+                        placeholder="Send a message to everyone..."
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
-                        className="chat-input-field"
+                        className="chat-field"
                       />
                       <button type="submit" className="btn btn-primary btn-sm" disabled={!chatInput.trim()}>
                         Send
@@ -772,30 +814,19 @@ export const ConnectView = ({
                   </div>
                 )}
 
-                {/* Panel 3: Meeting Information */}
+                {/* 3. Joining Info */}
                 {activeSidePanel === 'info' && (
-                  <div className="side-panel-body info-panel-body">
-                    <div className="info-item">
+                  <div className="drawer-body">
+                    <div className="joining-info-box">
                       <label>Meeting Title</label>
-                      <p>{activeMeeting?.title || 'Connect Meeting'}</p>
+                      <p>{activeMeeting?.title}</p>
                     </div>
-                    {activeMeeting?.agenda && (
-                      <div className="info-item">
-                        <label>Agenda</label>
-                        <p>{activeMeeting.agenda}</p>
-                      </div>
-                    )}
-                    <div className="info-item">
+                    <div className="joining-info-box">
                       <label>Room Code</label>
-                      <div className="code-box-row">
-                        <code>{currentRoomCode}</code>
-                        <button type="button" className="btn btn-secondary btn-xs" onClick={copyRoomLink}>
-                          Copy
-                        </button>
-                      </div>
+                      <p><strong>{currentRoomCode}</strong></p>
                     </div>
-                    <div className="info-item">
-                      <label>Join Link</label>
+                    <div className="joining-info-box">
+                      <label>Direct Join URL</label>
                       <p className="url-text">{`${window.location.origin}/connect?room=${currentRoomCode}`}</p>
                       <button type="button" className="btn btn-secondary btn-sm" onClick={copyRoomLink}>
                         <CopyIcon size={14} /> <span>Copy Joining Info</span>
@@ -807,9 +838,9 @@ export const ConnectView = ({
             )}
           </div>
 
-          {/* Bottom Dock Control Bar */}
-          <div className="call-bottom-dock">
-            {/* Microphone Toggle */}
+          {/* Floating Bottom Control Dock - Restored original centered layout */}
+          <div className="call-controls-dock">
+            {/* Mic Toggle */}
             <button
               type="button"
               className={`control-circle-btn ${isMicOn ? 'btn-active' : 'btn-danger'}`}
@@ -945,7 +976,7 @@ export const ConnectView = ({
                     type="button"
                     className="btn btn-secondary"
                     onClick={() => handleJoinRoom(roomCodeInput)}
-                    disabled={!roomCodeInput.trim() || loading}
+                    disabled={!roomCodeInput.trim()}
                   >
                     Join
                   </button>
@@ -962,7 +993,7 @@ export const ConnectView = ({
               </div>
             </div>
 
-            {/* Google Calendar Status Card */}
+            {/* Google Calendar Status Pill Card */}
             <div className="google-status-sidebar-card">
               <div className="google-card-header">
                 <SparklesIcon size={18} className="text-accent" />
@@ -1030,7 +1061,7 @@ export const ConnectView = ({
               ) : upcomingMeetings.length === 0 ? (
                 <div className="empty-state animate-fade-in">
                   <VideoIcon size={40} className="text-muted" />
-                  <h3>Select a meeting or create a new meeting to get started</h3>
+                  <h3>No upcoming video meetings</h3>
                   <p>Start an instant meeting above or schedule a new meeting with the Calendar.</p>
                   <button type="button" className="btn btn-primary" onClick={handleStartInstantMeeting} style={{ marginTop: '12px' }}>
                     <VideoIcon size={16} /> <span>Start Instant Meeting</span>
@@ -1067,23 +1098,23 @@ export const ConnectView = ({
                             <td>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <span className={`meeting-day-pill ${isToday ? 'today' : ''}`} style={{ width: 'fit-content' }}>
-                                  {isToday ? 'TODAY' : m.date}
+                                  {m.date}
                                 </span>
-                                <span className="meta-item" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                                  <ClockIcon size={13} /> {m.startTime} - {m.endTime}
-                                </span>
+                                <small className="text-muted">{m.startTime} - {m.endTime}</small>
                               </div>
                             </td>
                             <td>
-                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                <UserIcon size={14} className="text-muted" />
-                                <span style={{ fontWeight: 500, color: 'var(--text-main)' }}>{m.organizerName}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div className="peer-avatar" style={{ width: '26px', height: '26px', fontSize: '11px' }}>
+                                  {m.organizerName?.[0] || 'O'}
+                                </div>
+                                <span>{m.organizerName}</span>
                               </div>
                             </td>
                             <td>
-                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <UsersIcon size={14} className="text-muted" />
-                                <span style={{ color: 'var(--text-muted)' }}>{m.participants?.length || 0} participants</span>
+                                <span>{(m.participants || []).length} invited</span>
                               </div>
                             </td>
                             <td style={{ textAlign: 'right' }}>
@@ -1093,7 +1124,6 @@ export const ConnectView = ({
                                   className="btn btn-primary btn-sm"
                                   onClick={() => handleJoinRoom(m.roomCode || m._id)}
                                   style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                                  disabled={loading}
                                 >
                                   <VideoIcon size={14} />
                                   <span>Join Meeting</span>
@@ -1181,23 +1211,15 @@ export const ConnectView = ({
                             <td>
                               <div className="attendance-cell">
                                 <strong>{attendees.length} logged attendees</strong>
-                                {attendees.length > 0 && (
-                                  <div className="attendees-compact-list">
-                                    {attendees.slice(0, 3).map((a, i) => (
-                                      <span key={i} className="attendee-pill" title={`Joined: ${new Date(a.joinedAt).toLocaleTimeString()}`}>
-                                        {a.name} ({Math.round((a.durationSeconds || 60) / 60)}m)
-                                      </span>
-                                    ))}
-                                    {attendees.length > 3 && (
-                                      <span className="attendee-pill text-muted">+{attendees.length - 3} more</span>
-                                    )}
-                                  </div>
-                                )}
+                                <small className="text-muted">
+                                  {attendees.map((a) => a.name).filter(Boolean).slice(0, 3).join(', ')}
+                                  {attendees.length > 3 ? ` +${attendees.length - 3} more` : ''}
+                                </small>
                               </div>
                             </td>
                             <td>
-                              <span className={`status-pill status-${m.status || 'completed'}`}>
-                                {(m.status || 'completed').toUpperCase()}
+                              <span className={`status-pill status-${m.status === 'completed' ? 'completed' : 'in-progress'}`}>
+                                {m.status || 'completed'}
                               </span>
                             </td>
                           </tr>
@@ -1212,7 +1234,11 @@ export const ConnectView = ({
         </div>
       )}
 
-      {/* Phase 2: Host Created Room Modal (Room created, presents link, host explicitly enters) */}
+      {/* ----------------------------------------------------
+          MODALS & CUSTOM POPUP DIALOGS
+      ---------------------------------------------------- */}
+
+      {/* Created Room Modal (Phase 2 requirement: host explicitly enters room) */}
       {createdRoomModal.isOpen && (
         <div className="modal-backdrop" onClick={() => setCreatedRoomModal((prev) => ({ ...prev, isOpen: false }))}>
           <div className="meeting-record-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
@@ -1303,7 +1329,7 @@ export const ConnectView = ({
             <div className="record-modal-header">
               <div className="record-modal-title">
                 <CheckCircleIcon size={20} className="text-success" />
-                <h3>Meeting Recording Saved</h3>
+                <h3>Meeting Recording Ready</h3>
               </div>
               <button
                 type="button"
@@ -1316,18 +1342,15 @@ export const ConnectView = ({
             </div>
 
             <div className="record-modal-body">
-              <p className="record-modal-subtext">
-                Your meeting recording is complete and has been downloaded to your computer. You can play it below or download another copy anytime.
+              <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                Your meeting has been recorded successfully ({formatTimer(recordingDuration)} —{' '}
+                {(recordedBlobSize / (1024 * 1024)).toFixed(2)} MB). You can preview the recording below
+                and download the video file to your local computer.
               </p>
 
               {recordedVideoUrl && (
-                <div className="record-video-preview-wrapper">
-                  <video
-                    src={recordedVideoUrl}
-                    controls
-                    playsInline
-                    className="record-preview-video"
-                  />
+                <div className="recorded-video-preview-wrapper">
+                  <video src={recordedVideoUrl} controls playsInline className="recorded-video-player" />
                 </div>
               )}
             </div>
@@ -1343,12 +1366,12 @@ export const ConnectView = ({
               {recordedVideoUrl && (
                 <a
                   href={recordedVideoUrl}
-                  download={`TaskFlow_Meeting_${new Date().toISOString().slice(0, 10)}.webm`}
+                  download={`TaskFlow-Meeting-${currentRoomCode || 'Connekt'}-${new Date().toISOString().slice(0, 10)}.webm`}
                   className="btn btn-primary btn-sm"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                 >
                   <DownloadIcon size={16} />
-                  <span>Download Again</span>
+                  <span>Download Recording</span>
                 </a>
               )}
             </div>
@@ -1356,53 +1379,61 @@ export const ConnectView = ({
         </div>
       )}
 
-      {/* Custom TaskFlow In-Website Dialog / Popup Modal */}
+      {/* Custom Themed Popup Dialog Modal */}
       {dialogState.isOpen && (
-        <div
-          className="taskflow-dialog-overlay"
-          onClick={() => {
-            if (dialogState.type === 'alert') {
-              dialogState.onConfirm?.();
-            } else {
-              dialogState.onCancel?.();
-            }
-          }}
-        >
+        <div className="custom-dialog-backdrop" onClick={closeDialog}>
           <div
-            className="taskflow-dialog-card"
+            className={`custom-dialog-card variant-${dialogState.variant} animate-scale-up`}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
           >
-            <div className={`taskflow-dialog-icon-wrapper variant-${dialogState.variant}`}>
-              {dialogState.variant === 'danger' && <PhoneOffIcon size={24} />}
-              {dialogState.variant === 'warning' && <AlertTriangleIcon size={24} />}
-              {dialogState.variant === 'success' && <CheckCircleIcon size={24} />}
-              {dialogState.variant === 'info' && <SparklesIcon size={24} />}
+            <div className="custom-dialog-header">
+              <div className="custom-dialog-title-group">
+                <span className={`custom-dialog-icon-circle variant-${dialogState.variant}`}>
+                  {dialogState.variant === 'danger' && <PhoneOffIcon size={18} />}
+                  {dialogState.variant === 'warning' && <ShieldIcon size={18} />}
+                  {dialogState.variant === 'success' && <CheckCircleIcon size={18} />}
+                  {dialogState.variant === 'info' && <SparklesIcon size={18} />}
+                </span>
+                <h3 className="custom-dialog-title">{dialogState.title}</h3>
+              </div>
+              <button
+                type="button"
+                className="custom-dialog-close-btn"
+                onClick={closeDialog}
+                aria-label="Close dialog"
+              >
+                &times;
+              </button>
             </div>
 
-            <h3 className="taskflow-dialog-title">{dialogState.title}</h3>
-            <p className="taskflow-dialog-message">{dialogState.message}</p>
+            <div className="custom-dialog-body">
+              <p className="custom-dialog-message">{dialogState.message}</p>
+            </div>
 
-            <div className="taskflow-dialog-actions">
+            <div className="custom-dialog-footer">
               {dialogState.type === 'confirm' && (
                 <button
                   type="button"
-                  className="taskflow-dialog-btn-cancel"
-                  onClick={dialogState.onCancel}
+                  className="btn btn-secondary btn-sm"
+                  onClick={closeDialog}
                 >
-                  {dialogState.cancelText}
+                  {dialogState.cancelText || 'Cancel'}
                 </button>
               )}
               <button
                 type="button"
-                className={`taskflow-dialog-btn-confirm ${
-                  dialogState.variant === 'danger' ? 'variant-danger' : ''
-                }`}
-                onClick={dialogState.onConfirm}
-                autoFocus
+                className={`btn btn-${dialogState.variant === 'danger' ? 'danger' : 'primary'} btn-sm`}
+                onClick={() => {
+                  if (typeof dialogState.onConfirm === 'function') {
+                    dialogState.onConfirm();
+                  } else {
+                    closeDialog();
+                  }
+                }}
               >
-                {dialogState.confirmText}
+                {dialogState.confirmText || 'OK'}
               </button>
             </div>
           </div>
