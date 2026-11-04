@@ -1065,7 +1065,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               )}
             </div>
 
-            {/* Add Task Button (Visible to authorized assigners) */}
+            {/* New Task Button (Visible to authorized assigners) */}
             {(isAdmin || perms.canAssignTasks || perms.canCreateTasks) && (
               <button
                 type="button"
@@ -1073,7 +1073,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 onClick={() => handleOpenNewTask()}
               >
                 <PlusIcon size={16} />
-                <span>Add Task</span>
+                <span>New Task</span>
               </button>
             )}
 
@@ -1210,18 +1210,6 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 </div>
 
                 <div className="tasks-header-actions">
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => {
-                      setEditingProject(null);
-                      setIsProjectModalOpen(true);
-                    }}
-                    title="Create a new high-level project"
-                  >
-                    <FolderIcon size={16} />
-                    <span>New Project</span>
-                  </button>
                   <button
                     type="button"
                     className="btn btn-primary"
@@ -2349,6 +2337,11 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
         defaultProjectId={taskModalProjectId}
         parentTaskId={taskModalParentId}
         onConnectForAssistance={handleOpenWorkConnectForTask}
+        onOpenNewProject={() => {
+          setIsTaskModalOpen(false);
+          setEditingProject(null);
+          setIsProjectModalOpen(true);
+        }}
       />
 
       <TaskReviewModal
