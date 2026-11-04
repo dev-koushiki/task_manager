@@ -3011,13 +3011,36 @@ export const api = {
   },
 
   async requestWorkConnectConnection(payload) {
-    const targetUserId =
+    const rawTarget =
       payload.targetUserId ||
       payload.receiverId ||
       payload.recipientId ||
       payload.targetId ||
       payload.userId ||
+      payload.employeeId ||
+      payload.receiver ||
+      payload.target ||
       '';
+
+    let targetUserId = '';
+    if (rawTarget) {
+      if (typeof rawTarget === 'string') {
+        targetUserId = rawTarget.trim();
+      } else if (typeof rawTarget === 'object') {
+        targetUserId = (
+          rawTarget._id ||
+          rawTarget.id ||
+          rawTarget.userId ||
+          rawTarget.targetUserId ||
+          rawTarget.$oid ||
+          rawTarget.employeeId ||
+          ''
+        ).toString().trim();
+      } else {
+        targetUserId = rawTarget.toString().trim();
+      }
+    }
+
     const reason = (payload.reason || payload.requestReason || '').trim();
     const taskId = payload.taskId || payload.attachedTaskId || null;
 
@@ -3025,6 +3048,9 @@ export const api = {
       ...payload,
       targetUserId,
       receiverId: targetUserId,
+      recipientId: targetUserId,
+      targetId: targetUserId,
+      userId: targetUserId,
       reason,
       requestReason: reason,
       taskId,

@@ -35,6 +35,11 @@ let isShuttingDown = false;
 // Middlewares
 app.use(cors());
 app.use((req, res, next) => {
+  if (typeof req.body === "string" && req.body.trim()) {
+    try {
+      req.body = JSON.parse(req.body);
+    } catch (_) {}
+  }
   if (req.body !== undefined && typeof req.body === "object" && Object.keys(req.body).length > 0) {
     return next();
   }

@@ -175,13 +175,38 @@ router.post("/status", authMiddleware, workConnectAuth, async (req, res) => {
 router.post("/request", authMiddleware, workConnectAuth, async (req, res) => {
   try {
     const requesterId = req.user.id.toString();
-    const targetUserId = (
+    const rawTarget =
       req.body.targetUserId ||
       req.body.receiverId ||
       req.body.recipientId ||
       req.body.targetId ||
-      ""
-    ).toString();
+      req.body.userId ||
+      req.body.employeeId ||
+      req.body.receiver ||
+      req.body.target ||
+      req.body.toUserId ||
+      req.body.colleagueId ||
+      null;
+
+    let targetUserId = "";
+    if (rawTarget) {
+      if (typeof rawTarget === "string") {
+        targetUserId = rawTarget.trim();
+      } else if (typeof rawTarget === "object") {
+        targetUserId = (
+          rawTarget._id ||
+          rawTarget.id ||
+          rawTarget.userId ||
+          rawTarget.targetUserId ||
+          rawTarget.$oid ||
+          rawTarget.employeeId ||
+          ""
+        ).toString().trim();
+      } else {
+        targetUserId = rawTarget.toString().trim();
+      }
+    }
+
     const reason = (req.body.reason || req.body.requestReason || "").trim();
     const taskId = req.body.taskId || req.body.attachedTaskId || null;
 
@@ -189,17 +214,33 @@ router.post("/request", authMiddleware, workConnectAuth, async (req, res) => {
       return res.status(400).json({ message: "targetUserId is required." });
     }
 
-    if (targetUserId === requesterId) {
-      return res.status(400).json({ message: "Cannot initiate connection with yourself." });
+    const requester = await User.findById(requesterId);
+    if (!requester) {
+      return res.status(404).json({ message: "Requester account not found." });
     }
 
-    const [requester, targetUser] = await Promise.all([
-      User.findById(requesterId),
-      User.findById(targetUserId),
-    ]);
+    // Support lookup by MongoDB _id, employeeId, or email
+    let targetUser = null;
+    if (/^[0-9a-fA-F]{24}$/.test(targetUserId)) {
+      targetUser = await User.findById(targetUserId);
+    }
+    if (!targetUser) {
+      targetUser = await User.findOne({
+        $or: [
+          { employeeId: targetUserId },
+          { email: targetUserId },
+          { username: targetUserId },
+        ],
+      });
+    }
 
     if (!targetUser || targetUser.status === "disabled") {
       return res.status(404).json({ message: "Target employee not found or account disabled." });
+    }
+
+    const resolvedTargetId = targetUser._id.toString();
+    if (resolvedTargetId === requesterId) {
+      return res.status(400).json({ message: "Cannot initiate connection with yourself." });
     }
 
     // Attach task if specified
@@ -251,7 +292,7 @@ router.post("/request", authMiddleware, workConnectAuth, async (req, res) => {
 
     // Realtime Socket broadcast
     if (ioInstance) {
-      ioInstance.to(targetUserId).emit("workconnect_incoming_request", {
+      ioInstance.to(resolvedTargetId).emit("workconnect_incoming_request", {
         sessionId,
         requester: {
           id: requester._id,

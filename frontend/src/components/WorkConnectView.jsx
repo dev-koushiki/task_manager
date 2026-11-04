@@ -263,7 +263,8 @@ export const WorkConnectView = ({
 
   // Open Request Modal for employee
   const handleOpenRequestModal = (emp) => {
-    setSelectedTargetEmployee(emp);
+    const unwrapped = emp?.user || emp?.employee || emp?.partner || emp;
+    setSelectedTargetEmployee(unwrapped);
     setRequestReason('');
     setRequestModalOpen(true);
   };
@@ -275,14 +276,27 @@ export const WorkConnectView = ({
 
     setIsSubmittingRequest(true);
     try {
-      const targetId = selectedTargetEmployee._id || selectedTargetEmployee.id;
-      if (!targetId) {
+      const emp = selectedTargetEmployee;
+      const unwrapped = emp?.user || emp?.employee || emp?.partner || emp;
+      const targetId =
+        (unwrapped?._id && typeof unwrapped._id === 'object' && (unwrapped._id.$oid || unwrapped._id._id || unwrapped._id.toString?.())) ||
+        (unwrapped?._id ? unwrapped._id.toString() : '') ||
+        (unwrapped?.id ? unwrapped.id.toString() : '') ||
+        (unwrapped?.userId ? unwrapped.userId.toString() : '') ||
+        (unwrapped?.targetUserId ? unwrapped.targetUserId.toString() : '') ||
+        (unwrapped?.employeeId ? unwrapped.employeeId.toString() : '') ||
+        '';
+
+      if (!targetId || targetId === '[object Object]') {
         throw new Error('Please select a valid colleague to connect with.');
       }
 
       const res = await api.requestWorkConnectConnection({
         targetUserId: targetId,
         receiverId: targetId,
+        recipientId: targetId,
+        targetId: targetId,
+        userId: targetId,
         reason: requestReason,
         requestReason: requestReason,
         taskId: attachedTaskId || null,
@@ -1074,14 +1088,14 @@ export const WorkConnectView = ({
                 {/* Target Colleague Card */}
                 <div className="p-3 bg-card-subtle rounded-lg flex items-center gap-3">
                   <div className="avatar-circle">
-                    {selectedTargetEmployee.firstName?.charAt(0) || 'U'}
+                    {selectedTargetEmployee.firstName?.charAt(0) || selectedTargetEmployee.name?.charAt(0) || 'U'}
                   </div>
                   <div>
                     <div className="font-semibold text-sm">
-                      {selectedTargetEmployee.firstName} {selectedTargetEmployee.lastName}
+                      {selectedTargetEmployee.name || `${selectedTargetEmployee.firstName || ''} ${selectedTargetEmployee.lastName || ''}`.trim() || 'Colleague'}
                     </div>
                     <div className="text-xs text-muted">
-                      {selectedTargetEmployee.designation || selectedTargetEmployee.role} &bull; {selectedTargetEmployee.department}
+                      {selectedTargetEmployee.designation || selectedTargetEmployee.role || 'Colleague'} &bull; {selectedTargetEmployee.department || 'General'}
                     </div>
                   </div>
                 </div>
