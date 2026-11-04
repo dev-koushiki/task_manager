@@ -104,18 +104,55 @@ export const WorkConnectView = ({
   // Load All Tab Data
   const loadEmployees = useCallback(async () => {
     try {
+      let list = [];
       const res = await api.getWorkConnectEmployees({
+        q: searchQuery,
         search: searchQuery,
         department: departmentFilter !== 'all' ? departmentFilter : '',
         status: statusFilter !== 'all' ? statusFilter : '',
       });
-      if (res && res.success) {
-        setEmployees(res.employees || []);
+
+      if (res && Array.isArray(res.employees) && res.employees.length > 0) {
+        list = res.employees;
+      } else if (Array.isArray(res) && res.length > 0) {
+        list = res;
+      } else {
+        // Fallback to general organization employee directory if WorkConnect returns empty
+        const fallback = await api.getEmployees().catch(() => []);
+        const rawList = Array.isArray(fallback) ? fallback : fallback?.employees || [];
+        list = rawList
+          .filter((e) => (e._id || e.id) !== user?._id)
+          .map((e) => ({
+            ...e,
+            _id: e._id || e.id,
+            id: e._id || e.id,
+            name: `${e.firstName || ''} ${e.lastName || ''}`.trim() || e.name,
+            workConnectStatus: e.workConnectStatus || 'online',
+          }));
       }
+
+      setEmployees(list);
     } catch (err) {
       console.warn('Error loading employees:', err);
+      try {
+        const fallback = await api.getEmployees().catch(() => []);
+        const rawList = Array.isArray(fallback) ? fallback : fallback?.employees || [];
+        setEmployees(
+          rawList
+            .filter((e) => (e._id || e.id) !== user?._id)
+            .map((e) => ({
+              ...e,
+              _id: e._id || e.id,
+              id: e._id || e.id,
+              name: `${e.firstName || ''} ${e.lastName || ''}`.trim() || e.name,
+              workConnectStatus: e.workConnectStatus || 'online',
+            }))
+        );
+      } catch {
+        // ignore
+      }
     }
-  }, [searchQuery, departmentFilter, statusFilter]);
+  }, [searchQuery, departmentFilter, statusFilter, user?._id]);
 
   const loadIncoming = useCallback(async () => {
     try {
@@ -300,6 +337,34 @@ export const WorkConnectView = ({
     }
   };
 
+  // Instant client-side and server-synchronized search filtering
+  const displayedEmployees = useMemo(() => {
+    return employees.filter((emp) => {
+      if (searchQuery && searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.toLowerCase();
+        const email = (emp.email || '').toLowerCase();
+        const dept = (emp.department || '').toLowerCase();
+        const role = (emp.designation || emp.role || '').toLowerCase();
+        const empId = (emp.employeeId || '').toLowerCase();
+        if (
+          !fullName.includes(q) &&
+          !email.includes(q) &&
+          !dept.includes(q) &&
+          !role.includes(q) &&
+          !empId.includes(q)
+        ) {
+          return false;
+        }
+      }
+      if (statusFilter !== 'all') {
+        const st = emp.workConnectStatus || emp.status || 'offline';
+        if (st !== statusFilter) return false;
+      }
+      return true;
+    });
+  }, [employees, searchQuery, statusFilter]);
+
   // If inside a live session workspace, render full-screen workspace
   if (currentLiveSession) {
     return (
@@ -467,14 +532,14 @@ export const WorkConnectView = ({
 
           {/* Employee Directory Cards Grid */}
           <div className="employee-cards-grid">
-            {employees.length === 0 ? (
+            {displayedEmployees.length === 0 ? (
               <div className="wc-empty-card col-span-full">
                 <UsersIcon size={40} className="text-muted mb-2" />
                 <h4 className="font-semibold text-sm">No Colleagues Found</h4>
                 <p className="text-xs text-muted">Try adjusting your search query or status filter.</p>
               </div>
             ) : (
-              employees.map((emp) => {
+              displayedEmployees.map((emp) => {
                 const isOnline = emp.workConnectStatus === 'online';
                 const isBusy = emp.workConnectStatus === 'busy' || emp.workConnectStatus === 'in-session';
                 return (
@@ -484,7 +549,7 @@ export const WorkConnectView = ({
                         <div className="avatar-circle">
                           {emp.firstName?.charAt(0) || 'E'}
                         </div>
-                        <span className={`avatar-status-dot dot-${emp.workConnectStatus || 'offline'}`} />
+                        <span className={`avatar-status-dot dot-${emp.workConnectStatus || emp.status || 'offline'}`} />
                       </div>
                       <div className="emp-info">
                         <h4 className="emp-name">{emp.firstName} {emp.lastName}</h4>
@@ -496,7 +561,7 @@ export const WorkConnectView = ({
                     <div className="card-middle">
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-muted">Status:</span>
-                        {renderStatusBadge(emp.workConnectStatus)}
+                        {renderStatusBadge(emp.workConnectStatus || emp.status || 'offline')}
                       </div>
                       {emp.relationship && (
                         <div className="relationship-tag">
@@ -511,7 +576,7 @@ export const WorkConnectView = ({
                         type="button"
                         className="btn btn-primary btn-sm w-full"
                         onClick={() => handleOpenRequestModal(emp)}
-                        disabled={emp.workConnectStatus === 'dnd'}
+                        disabled={emp.workConnectStatus === 'dnd' || emp.status === 'dnd'}
                       >
                         <PhoneCallIcon size={14} />
                         <span>Request Connection</span>

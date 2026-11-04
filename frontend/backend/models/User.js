@@ -35,6 +35,7 @@ const permissionsSchema = new mongoose.Schema(
     canViewProjects: { type: Boolean, default: true },
     canManageStructure: { type: Boolean, default: false },
     canViewExecutiveSummary: { type: Boolean, default: false },
+    canUseWorkConnect: { type: Boolean, default: true },
     // Legacy compatibility aliases
     canApproveWork: { type: Boolean, default: false },
     canViewTeamTasks: { type: Boolean, default: false },
@@ -167,6 +168,19 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["active", "disabled"],
       default: "active",
+    },
+    workConnectStatus: {
+      type: String,
+      enum: ["online", "offline", "busy", "in-session", "dnd"],
+      default: "offline",
+    },
+    workConnectLastSeen: {
+      type: Date,
+      default: Date.now,
+    },
+    currentWorkConnectSessionId: {
+      type: String,
+      default: "",
     },
     mfaEnabled: {
       type: Boolean,

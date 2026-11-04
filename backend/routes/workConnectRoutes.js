@@ -38,13 +38,20 @@ router.get("/employees", authMiddleware, workConnectAuth, async (req, res) => {
       status: { $ne: "disabled" },
     };
 
-    if (currentUser.organizationId) {
-      queryFilter.organizationId = currentUser.organizationId;
-    } else if (currentUser.companyName) {
-      queryFilter.companyName = currentUser.companyName;
+    const orgId = currentUser.organizationId;
+    const company = currentUser.companyName;
+
+    if (orgId && company) {
+      queryFilter.$or = [{ organizationId: orgId }, { companyName: company }];
+    } else if (orgId) {
+      queryFilter.organizationId = orgId;
+    } else if (company) {
+      queryFilter.companyName = company;
     }
 
-    const { q, department, status } = req.query;
+    const q = req.query.q || req.query.search || req.query.query || "";
+    const department = req.query.department;
+    const status = req.query.status;
 
     if (department && department !== "all") {
       queryFilter.department = department;
@@ -84,6 +91,7 @@ router.get("/employees", authMiddleware, workConnectAuth, async (req, res) => {
         employeeId: colleague.employeeId || "",
         role: colleague.role || "employee",
         profilePhoto: colleague.profilePhoto || "",
+        workConnectStatus: effectiveStatus,
         status: effectiveStatus,
         isMyManager: Boolean(isMyManager),
         isMySubordinate: Boolean(isMySubordinate),
@@ -107,7 +115,7 @@ router.get("/employees", authMiddleware, workConnectAuth, async (req, res) => {
       mapped = mapped.filter((emp) => emp.status === status);
     }
 
-    res.json({ employees: mapped, total: mapped.length });
+    res.json({ success: true, employees: mapped, total: mapped.length });
   } catch (err) {
     console.error("WorkConnect employees query error:", err);
     res.status(500).json({ message: err.message });
@@ -265,7 +273,7 @@ router.get("/requests/incoming", authMiddleware, workConnectAuth, async (req, re
       .sort({ createdAt: -1 })
       .lean();
 
-    res.json({ requests, count: requests.length });
+    res.json({ success: true, incomingRequests: requests, requests, count: requests.length });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -285,7 +293,7 @@ router.get("/requests/outgoing", authMiddleware, workConnectAuth, async (req, re
       .sort({ createdAt: -1 })
       .lean();
 
-    res.json({ requests, count: requests.length });
+    res.json({ success: true, outgoingRequests: requests, requests, count: requests.length });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -437,7 +445,9 @@ router.get("/sessions/active", authMiddleware, workConnectAuth, async (req, res)
     }
 
     res.json({
+      success: true,
       hasActiveSession: Boolean(active),
+      activeSessions: active ? [active] : [],
       session: active || null,
       orgActiveCount,
     });
@@ -691,6 +701,7 @@ router.get("/sessions/:sessionId/signals", authMiddleware, workConnectAuth, asyn
       .lean();
 
     res.json({
+      success: true,
       signals: queuedSignals.map((s) => ({
         senderId: s.senderId,
         senderName: s.senderName,
@@ -775,6 +786,7 @@ router.get("/history", authMiddleware, workConnectAuth, async (req, res) => {
     const videoCount = completedSessions.filter((s) => s.videoUsed).length;
 
     res.json({
+      success: true,
       history: filtered,
       analytics: {
         totalSessions,
@@ -836,9 +848,12 @@ router.get("/connections/frequent", authMiddleware, workConnectAuth, async (req,
       }));
 
     res.json({
+      success: true,
       supervisor: currentUser.reportsTo || null,
       subordinates,
+      reportingPeers: subordinates,
       frequent: frequentList,
+      frequentConnections: frequentList,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
