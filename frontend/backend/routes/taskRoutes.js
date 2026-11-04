@@ -806,7 +806,7 @@ const handleCompleteMilestone = async (req, res) => {
     task.markModified("milestones");
     await task.save();
 
-    // Create activity update (milestones track progress within the task without firing separate notifications)
+    // Create activity update (milestones track progress within the task)
     await TaskUpdate.create({
       taskId: task._id,
       updatedBy: req.user.id,
@@ -816,6 +816,24 @@ const handleCompleteMilestone = async (req, res) => {
       progress: task.progress,
       comment: `Completed milestone: "${milestone.title}"`,
     });
+
+    // Notify task assigner / supervisor of milestone completion
+    const recipientId = task.assignedBy || task.createdBy;
+    if (recipientId && recipientId.toString() !== req.user.id.toString()) {
+      try {
+        await Notification.create({
+          userId: recipientId,
+          organizationId: orgId,
+          type: "milestone_completed",
+          title: `Milestone Completed: ${milestone.title}`,
+          message: `${employeeName} completed milestone "${milestone.title}" on task "${task.title}".`,
+          link: `/tasks/${task._id}`,
+          metadata: { taskId: task._id, milestoneId: milestone.id || milestone._id },
+        });
+      } catch (notifErr) {
+        console.warn("Could not dispatch milestone notification:", notifErr.message);
+      }
+    }
 
     res.json({
       message: `Milestone "${milestone.title}" marked as completed.`,

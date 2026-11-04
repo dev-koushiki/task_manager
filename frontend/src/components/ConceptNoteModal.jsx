@@ -251,7 +251,15 @@ export const ConceptNoteModal = ({ isOpen, onClose, onProjectCreated }) => {
                     <small>({(file.size / 1024).toFixed(1)} KB)</small>
                   </div>
                 ) : (
-                  <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: '8px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ marginTop: '8px' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
+                  >
                     Choose Document
                   </button>
                 )}

@@ -463,7 +463,14 @@ export const WorkConnectView = ({
               You have {incomingRequests.length} pending remote connection request{incomingRequests.length > 1 ? 's' : ''}!
             </span>
           </div>
-          <button type="button" className="btn btn-xs btn-primary">
+          <button
+            type="button"
+            className="btn btn-xs btn-primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveTab('incoming');
+            }}
+          >
             Review Requests
           </button>
         </div>

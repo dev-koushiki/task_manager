@@ -787,6 +787,7 @@ export const api = {
     });
   },
 
+
   // ==========================================
   // HIERARCHICAL TASK MANAGEMENT APIS
   // ==========================================
@@ -992,87 +993,6 @@ export const api = {
       }
       return true;
     }
-  },
-
-  // ==========================================
-  // PHASE 4: PROJECT, MILESTONE & AI APIS
-  // ==========================================
-  async analyzeConceptNote(payload) {
-    return safeFetchJson(`${API_BASE_URL}/projects/analyze-concept-note`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify(payload),
-    });
-  },
-
-  async transcribeAudio(payload) {
-    return safeFetchJson(`${API_BASE_URL}/projects/transcribe`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify(payload),
-    });
-  },
-
-  async extractFromTranscript(transcript) {
-    return safeFetchJson(`${API_BASE_URL}/projects/extract-from-transcript`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ transcript }),
-    });
-  },
-
-  async assignProjectEmployees(projectId, employeeIds) {
-    return safeFetchJson(`${API_BASE_URL}/projects/${projectId}/assign`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ employeeIds }),
-    });
-  },
-
-  async addProjectMilestone(projectId, milestoneData) {
-    return safeFetchJson(`${API_BASE_URL}/projects/${projectId}/milestones`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify(milestoneData),
-    });
-  },
-
-  async updateProjectMilestone(projectId, milestoneId, updates) {
-    return safeFetchJson(`${API_BASE_URL}/projects/${projectId}/milestones/${milestoneId}`, {
-      method: 'PUT',
-      headers: getHeaders(),
-      body: JSON.stringify(updates),
-    });
-  },
-
-  async deleteProjectMilestone(projectId, milestoneId) {
-    return safeFetchJson(`${API_BASE_URL}/projects/${projectId}/milestones/${milestoneId}`, {
-      method: 'DELETE',
-      headers: getHeaders(),
-    });
-  },
-
-  async assignMilestoneEmployees(projectId, milestoneId, employeeIds) {
-    return safeFetchJson(`${API_BASE_URL}/projects/${projectId}/milestones/${milestoneId}/assign`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ employeeIds }),
-    });
-  },
-
-  async uploadProjectRecording(projectId, recordingData) {
-    return safeFetchJson(`${API_BASE_URL}/projects/${projectId}/recordings`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify(recordingData),
-    });
-  },
-
-  async deleteProjectRecording(projectId, recordingId) {
-    return safeFetchJson(`${API_BASE_URL}/projects/${projectId}/recordings/${recordingId}`, {
-      method: 'DELETE',
-      headers: getHeaders(),
-    });
   },
 
   // ==========================================

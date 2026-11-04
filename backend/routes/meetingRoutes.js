@@ -1,5 +1,6 @@
 const express = require("express");
 const crypto = require("crypto");
+const mongoose = require("mongoose");
 const router = express.Router();
 const Meeting = require("../models/Meeting");
 const MeetingSignal = require("../models/MeetingSignal");

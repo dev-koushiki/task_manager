@@ -1222,7 +1222,7 @@ export const EmployeeProfileView = ({ user, isAdmin, onProfileUpdated }) => {
                   ) : (
                     <div className="prof-empty-prompt" onClick={() => setIsEditingProfessional(true)}>
                       <p>No professional bio added yet. Add a summary of your background, achievements, and impact.</p>
-                      <button type="button" className="btn btn-secondary btn-xs">+ Add Bio</button>
+                      <button type="button" className="btn btn-secondary btn-xs" onClick={(e) => { e.stopPropagation(); setIsEditingProfessional(true); }}>+ Add Bio</button>
                     </div>
                   )}
                 </div>
@@ -1241,7 +1241,7 @@ export const EmployeeProfileView = ({ user, isAdmin, onProfileUpdated }) => {
                   ) : (
                     <div className="prof-empty-prompt" onClick={() => setIsEditingProfessional(true)}>
                       <p>Highlight your core technologies and frameworks.</p>
-                      <button type="button" className="btn btn-secondary btn-xs">+ Add Technical Skills</button>
+                      <button type="button" className="btn btn-secondary btn-xs" onClick={(e) => { e.stopPropagation(); setIsEditingProfessional(true); }}>+ Add Technical Skills</button>
                     </div>
                   )}
                 </div>
@@ -1260,7 +1260,7 @@ export const EmployeeProfileView = ({ user, isAdmin, onProfileUpdated }) => {
                   ) : (
                     <div className="prof-empty-prompt" onClick={() => setIsEditingProfessional(true)}>
                       <p>e.g. System Architecture, Cloud Security, Agile Delivery, UX Research.</p>
-                      <button type="button" className="btn btn-secondary btn-xs">+ Add Expertise</button>
+                      <button type="button" className="btn btn-secondary btn-xs" onClick={(e) => { e.stopPropagation(); setIsEditingProfessional(true); }}>+ Add Expertise</button>
                     </div>
                   )}
                 </div>
@@ -1289,7 +1289,7 @@ export const EmployeeProfileView = ({ user, isAdmin, onProfileUpdated }) => {
                   ) : (
                     <div className="prof-empty-prompt" onClick={() => setIsEditingProfessional(true)}>
                       <p>No previous work experience recorded yet.</p>
-                      <button type="button" className="btn btn-secondary btn-xs">+ Add Work Experience</button>
+                      <button type="button" className="btn btn-secondary btn-xs" onClick={(e) => { e.stopPropagation(); setIsEditingProfessional(true); }}>+ Add Work Experience</button>
                     </div>
                   )}
                 </div>
@@ -1317,7 +1317,7 @@ export const EmployeeProfileView = ({ user, isAdmin, onProfileUpdated }) => {
                   ) : (
                     <div className="prof-empty-prompt" onClick={() => setIsEditingProfessional(true)}>
                       <p>No education history added yet.</p>
-                      <button type="button" className="btn btn-secondary btn-xs">+ Add Education</button>
+                      <button type="button" className="btn btn-secondary btn-xs" onClick={(e) => { e.stopPropagation(); setIsEditingProfessional(true); }}>+ Add Education</button>
                     </div>
                   )}
                 </div>

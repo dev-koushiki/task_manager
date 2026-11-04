@@ -27,6 +27,7 @@ import {
   DownloadIcon,
 } from './Icons';
 import { api } from '../services/api';
+import { useConnectMeeting } from '../context/ConnectMeetingContext';
 
 export const ConnectView = ({
   user,
@@ -34,26 +35,42 @@ export const ConnectView = ({
   onScheduleInCalendar,
   onBackToCalendar,
 }) => {
-  const [activeTab, setActiveTab] = useState('hub'); // 'hub' | 'room' | 'history'
-  const [roomCodeInput, setRoomCodeInput] = useState('');
-  const [currentRoomCode, setCurrentRoomCode] = useState(initialRoomCode || '');
-  const [activeMeeting, setActiveMeeting] = useState(null);
-  const [isHost, setIsHost] = useState(false);
+  const {
+    isInCall,
+    currentRoomCode,
+    activeMeeting,
+    isHost,
+    callDuration,
+    activePeers,
+    chatMessages,
+    hostControls,
+    connectionError,
+    isMicOn,
+    isCameraOn,
+    isScreenSharing,
+    isHandRaised,
+    localStream,
+    screenStream,
+    remoteStreams,
+    joinMeeting,
+    createInstantMeeting,
+    leaveMeeting,
+    endMeetingForEveryone,
+    toggleMicrophone,
+    toggleCamera,
+    toggleScreenShare,
+    toggleHandRaised,
+    sendChatMessage,
+    sendHostAction,
+    unlockAudio,
+  } = useConnectMeeting();
 
-  // In-Call Media States
-  const [isMicOn, setIsMicOn] = useState(true);
-  const [isCameraOn, setIsCameraOn] = useState(true);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [isHandRaised, setIsHandRaised] = useState(false);
+  // Navigation tab within Connect: 'hub' | 'room' | 'history'
+  const [activeTab, setActiveTab] = useState(isInCall ? 'room' : 'hub');
+  const [roomCodeInput, setRoomCodeInput] = useState(initialRoomCode || '');
   const [activeSidePanel, setActiveSidePanel] = useState(''); // '' | 'participants' | 'chat' | 'info'
   const [copiedNotice, setCopiedNotice] = useState(false);
-  const [callDuration, setCallDuration] = useState(0);
-
-  // In-Call Participants and Chat
-  const [activePeers, setActivePeers] = useState([]);
-  const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
-  const [hostControls, setHostControls] = useState({ muteAll: false, lockMeeting: false });
 
   // Meeting Recording State & Refs
   const [isRecording, setIsRecording] = useState(false);
@@ -64,14 +81,20 @@ export const ConnectView = ({
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
   const recordingIntervalRef = useRef(null);
-  const recordingStreamRef = useRef(null);
-  const audioContextRef = useRef(null);
 
-  // Custom Website Popup Dialog State (replaces native window.alert and window.confirm)
+  // Modal for displaying newly created room details (Phase 2 requirement: host explicitly enters room)
+  const [createdRoomModal, setCreatedRoomModal] = useState({
+    isOpen: false,
+    roomCode: '',
+    meetingLink: '',
+    title: '',
+  });
+
+  // Custom Website Popup Dialog State
   const [dialogState, setDialogState] = useState({
     isOpen: false,
-    type: 'alert', // 'alert' | 'confirm'
-    variant: 'info', // 'info' | 'danger' | 'warning' | 'success'
+    type: 'alert',
+    variant: 'info',
     title: '',
     message: '',
     confirmText: 'OK',
@@ -135,24 +158,23 @@ export const ConnectView = ({
 
   // Google Integration State
   const [googleStatus, setGoogleStatus] = useState({ connected: false, email: '', hasClientId: false });
-  const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
   const [googleNotice, setGoogleNotice] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  // WebRTC Media Stream References
-  const myId = String(user?.id || user?._id || '');
+  // Video Element Refs
   const localVideoRef = useRef(null);
   const screenShareVideoRef = useRef(null);
-  const localStreamRef = useRef(null);
-  const screenStreamRef = useRef(null);
-  const peerConnectionsRef = useRef(new Map()); // userId -> RTCPeerConnection
-  const remoteStreamsRef = useRef(new Map()); // userId -> MediaStream
-  const pendingCandidatesRef = useRef(new Map()); // userId -> Array of RTCIceCandidateInit
-  const pollingIntervalRef = useRef(null);
-  const timerIntervalRef = useRef(null);
-  const lastMuteAllTimestampRef = useRef(0);
   const chatBottomRef = useRef(null);
-  const [peersTick, setPeersTick] = useState(0);
+  const myId = String(user?.id || user?._id || '');
+
+  // Synchronize activeTab with call status
+  useEffect(() => {
+    if (isInCall) {
+      setActiveTab('room');
+    } else if (activeTab === 'room') {
+      setActiveTab('hub');
+    }
+  }, [isInCall]);
 
   // Auto-scroll chat container to the latest message
   useEffect(() => {
@@ -161,50 +183,33 @@ export const ConnectView = ({
     }
   }, [chatMessages, activeSidePanel]);
 
-  // Ensure local video element is wired when room view is active
+  // Wire local video element when camera is active in room
   useEffect(() => {
-    if (activeTab === 'room') {
-      if (localVideoRef.current && localStreamRef.current && localVideoRef.current.srcObject !== localStreamRef.current) {
-        localVideoRef.current.srcObject = localStreamRef.current;
+    if (activeTab === 'room' && localVideoRef.current && localStream) {
+      if (localVideoRef.current.srcObject !== localStream) {
+        localVideoRef.current.srcObject = localStream;
         localVideoRef.current.play?.().catch(() => {});
       }
     }
-  }, [activeTab, isCameraOn]);
+  }, [activeTab, localStream, isCameraOn]);
 
-  // Global user interaction listener to bypass browser audio autoplay restrictions
-  useEffect(() => {
-    if (activeTab !== 'room') return;
-    const unlockAllMedia = () => {
-      document.querySelectorAll('audio, video').forEach((el) => {
-        if (el.paused && el.srcObject && !el.muted) {
-          el.play().catch(() => {});
-        }
-      });
-    };
-    window.addEventListener('click', unlockAllMedia, { passive: true });
-    window.addEventListener('touchstart', unlockAllMedia, { passive: true });
-    window.addEventListener('keydown', unlockAllMedia, { passive: true });
-    return () => {
-      window.removeEventListener('click', unlockAllMedia);
-      window.removeEventListener('touchstart', unlockAllMedia);
-      window.removeEventListener('keydown', unlockAllMedia);
-    };
-  }, [activeTab]);
-
-  // Initialize or check if loaded with an initialRoomCode
+  // Initialize Hub data without automatic joining (Phase 2 Fix)
   useEffect(() => {
     loadHubData();
     checkGoogleStatus();
 
-    // Check if redirect contains room code or google OAuth callback
+    // Check URL parameters for OAuth or prefilled room code
     const params = new URLSearchParams(window.location.search);
     const roomParam = params.get('room');
     const googleAuthCode = params.get('code');
 
     if (googleAuthCode) {
       handleGoogleAuthCallback(googleAuthCode);
-    } else if (roomParam || initialRoomCode) {
-      handleJoinRoom(roomParam || initialRoomCode);
+    } else if (roomParam) {
+      // Prefill the room input field so the user can review and explicitly click Join
+      setRoomCodeInput(roomParam);
+    } else if (initialRoomCode) {
+      setRoomCodeInput(initialRoomCode);
     }
 
     return () => {
@@ -213,9 +218,6 @@ export const ConnectView = ({
       }
       if (recordingIntervalRef.current) {
         clearInterval(recordingIntervalRef.current);
-      }
-      if (audioContextRef.current) {
-        try { audioContextRef.current.close(); } catch (_) {}
       }
     };
   }, []);
@@ -257,7 +259,6 @@ export const ConnectView = ({
       const res = await api.connectGoogleCallback(code, redirectUri);
       setGoogleNotice(res.message || 'Google Account successfully connected!');
       checkGoogleStatus();
-      // Clean query parameter
       window.history.replaceState({}, document.title, window.location.pathname);
     } catch (err) {
       setGoogleNotice(err.message || 'Google authorization failed.');
@@ -273,8 +274,7 @@ export const ConnectView = ({
       if (authInfo.configured && authInfo.authUrl) {
         window.location.href = authInfo.authUrl;
       } else {
-        // Fallback simulation mode for local testing without OAuth secrets
-        const res = await api.connectGoogleCallback(null, null, true);
+        await api.connectGoogleCallback(null, null, true);
         setGoogleNotice('Connected in Developer Test Mode (Simulation).');
         checkGoogleStatus();
       }
@@ -307,84 +307,28 @@ export const ConnectView = ({
 
   const handleSyncMeeting = async (meetingId) => {
     try {
-      const res = await api.syncMeetingWithGoogle(meetingId);
-      showCustomAlert(res.message || 'Meeting synchronized with Google Calendar.', 'Google Calendar', 'success');
+      const res = await api.syncMeetingToGoogle(meetingId);
+      showCustomAlert(res.message || 'Meeting synced to Google Calendar & Meet!', 'Google Sync', 'success');
       loadHubData();
     } catch (err) {
-      showCustomAlert(err.message || 'Google sync failed. Please connect Google account first.', 'Sync Failed', 'danger');
+      showCustomAlert(err.message || 'Failed to sync meeting to Google Calendar.', 'Sync Error', 'danger');
     }
   };
 
-  // ----------------------------------------------------
-  // WEBRTC CALLING ENGINE & ROOM LIFECYCLE
-  // ----------------------------------------------------
-
-  const initLocalMedia = async () => {
-    try {
-      // Release any prior tracks
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((t) => t.stop());
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-
-      localStreamRef.current = stream;
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-        localVideoRef.current.play?.().catch(() => {});
-      }
-      setIsCameraOn(true);
-      setIsMicOn(true);
-
-      // Attach tracks to any established peer connections
-      peerConnectionsRef.current.forEach((pc) => {
-        stream.getTracks().forEach((track) => {
-          const sender = pc.getSenders().find((s) => s.track && s.track.kind === track.kind);
-          if (sender) {
-            sender.replaceTrack(track).catch(() => {});
-          } else {
-            try { pc.addTrack(track, stream); } catch (_) {}
-          }
-        });
-      });
-
-      return stream;
-    } catch (err) {
-      console.warn('Camera/Microphone permission denied or unavailable:', err.message);
-      // Fallback audio-only or empty stream
-      try {
-        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        localStreamRef.current = audioStream;
-        setIsCameraOn(false);
-        setIsMicOn(true);
-        peerConnectionsRef.current.forEach((pc) => {
-          audioStream.getAudioTracks().forEach((track) => {
-            const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'audio');
-            if (sender) {
-              sender.replaceTrack(track).catch(() => {});
-            } else {
-              try { pc.addTrack(track, audioStream); } catch (_) {}
-            }
-          });
-        });
-        return audioStream;
-      } catch (e) {
-        setIsCameraOn(false);
-        setIsMicOn(false);
-        return null;
-      }
-    }
-  };
-
+  // Phase 2: Host clicks Create Instant Meeting -> Creates Room and shows details without auto-joining
   const handleStartInstantMeeting = async () => {
     try {
       setLoading(true);
-      const res = await api.createConnectRoom('Instant Connect Meeting');
+      const res = await createInstantMeeting('Instant Connect Meeting');
       if (res && res.roomCode) {
-        handleJoinRoom(res.roomCode);
+        const fullLink = `${window.location.origin}/connect?room=${res.roomCode}`;
+        setCreatedRoomModal({
+          isOpen: true,
+          roomCode: res.roomCode,
+          meetingLink: fullLink,
+          title: res.meeting?.title || 'Instant Connect Meeting',
+        });
+        loadHubData();
       }
     } catch (err) {
       showCustomAlert(err.message || 'Failed to create meeting room.', 'Meeting Creation Failed', 'danger');
@@ -393,6 +337,7 @@ export const ConnectView = ({
     }
   };
 
+  // Phase 2: Explicit Join Meeting action
   const handleJoinRoom = async (codeToJoin) => {
     const code = (codeToJoin || roomCodeInput || '').trim();
     if (!code) {
@@ -402,684 +347,63 @@ export const ConnectView = ({
 
     try {
       setLoading(true);
-      // Verify room & permissions
-      const roomData = await api.getConnectRoom(code);
-      if (!roomData || !roomData.meeting) {
-        showCustomAlert('Meeting room not found or access denied. Please verify your room code.', 'Room Not Found', 'danger');
-        return;
-      }
-
-      setCurrentRoomCode(roomData.roomCode || code);
-      setActiveMeeting(roomData.meeting);
-      setIsHost(Boolean(roomData.isHost));
-      setHostControls(roomData.hostControls || { muteAll: false, lockMeeting: false });
-      if (roomData.chatMessages && Array.isArray(roomData.chatMessages)) {
-        setChatMessages(roomData.chatMessages);
-      }
-
-      // Register join attendance in DB
-      await api.joinConnectRoom(code);
-
-      // Start local media
-      await initLocalMedia();
-
+      await joinMeeting(code);
+      setCreatedRoomModal((prev) => ({ ...prev, isOpen: false }));
       setActiveTab('room');
-      setCallDuration(0);
-
-      // Start duration counter
-      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = setInterval(() => {
-        setCallDuration((prev) => prev + 1);
-      }, 1000);
-
-      // Start polling for active peers, signaling, and chat
-      startRoomPolling(code);
     } catch (err) {
-      showCustomAlert(err.message || 'Unable to join meeting room.', 'Unable to Join', 'danger');
+      showCustomAlert(err.message || 'Unable to join meeting room. Please check the room code.', 'Unable to Join', 'danger');
     } finally {
       setLoading(false);
     }
   };
 
-  const startRoomPolling = (code) => {
-    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-
-    pollingIntervalRef.current = setInterval(async () => {
-      try {
-        const [signalData, chatData] = await Promise.all([
-          api.getConnectSignals(code).catch(() => ({ signals: [], activePeers: [] })),
-          api.getConnectChat(code).catch(() => []),
-        ]);
-
-        if (signalData.meetingStatus === 'completed') {
-          if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-          cleanupCallSession();
-          showCustomAlert(
-            'This meeting has been ended by the host. All attendance records have been saved.',
-            'Meeting Ended',
-            'warning'
-          );
-          return;
-        }
-
-        if (signalData.activePeers && Array.isArray(signalData.activePeers)) {
-          setActivePeers(signalData.activePeers);
-
-          // Establish WebRTC mesh connections with all active peers in the room
-          signalData.activePeers.forEach(async (peer) => {
-            const peerId = String(peer.userId);
-            if (!peerId || peerId === myId) return;
-
-            let pc = peerConnectionsRef.current.get(peerId);
-            const isInitiator = myId > peerId;
-            const needsConnection = !pc || pc.connectionState === 'failed' || pc.connectionState === 'closed';
-
-            if (needsConnection && isInitiator) {
-              try {
-                pc = createPeerConnection(peerId, code, true);
-                const offer = await pc.createOffer({
-                  offerToReceiveAudio: true,
-                  offerToReceiveVideo: true,
-                });
-                await pc.setLocalDescription(offer);
-                await api.sendConnectSignal(code, peerId, offer, 'offer');
-              } catch (err) {
-                console.warn('Failed to initiate WebRTC offer to peer:', peerId, err.message);
-              }
-            }
-          });
-
-          // Clean up remote streams for peers who have disconnected
-          const activePeerIdSet = new Set(signalData.activePeers.map((p) => String(p.userId)));
-          for (const [rId, pc] of peerConnectionsRef.current.entries()) {
-            if (!activePeerIdSet.has(rId)) {
-              try { pc.close(); } catch (_) {}
-              peerConnectionsRef.current.delete(rId);
-              remoteStreamsRef.current.delete(rId);
-              pendingCandidatesRef.current.delete(rId);
-              setPeersTick((t) => t + 1);
-            }
-          }
-        }
-
-        if (signalData.hostControls) {
-          setHostControls(signalData.hostControls);
-          const muteTs = signalData.hostControls.muteAllTimestamp || 0;
-          if (
-            signalData.hostControls.muteAll &&
-            muteTs &&
-            muteTs !== lastMuteAllTimestampRef.current &&
-            !isHost
-          ) {
-            lastMuteAllTimestampRef.current = muteTs;
-            if (localStreamRef.current) {
-              localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = false));
-            }
-            setIsMicOn(false);
-          }
-        }
-
-        if (chatData && Array.isArray(chatData)) {
-          setChatMessages((prev) => {
-            const map = new Map();
-            // Retain any pending optimistic messages that have not yet arrived from server
-            prev.filter((m) => String(m.id || '').startsWith('temp_')).forEach((m) => map.set(m.id, m));
-            chatData.forEach((m) => {
-              const key = m.id || `${m.senderId}_${new Date(m.timestamp).getTime()}_${m.text}`;
-              map.set(key, m);
-            });
-            const merged = Array.from(map.values());
-            merged.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
-            return merged;
-          });
-        }
-
-        // Process queued WebRTC signals
-        if (signalData.signals && signalData.signals.length > 0) {
-          await handleIncomingSignals(signalData.signals, code);
-        }
-      } catch (e) {
-        // Polling error silently suppressed during brief transitions
-      }
-    }, 1200);
-  };
-
-  const handleIncomingSignals = async (signals, code) => {
-    for (const item of signals) {
-      const { senderId, signal, type } = item;
-      const sId = String(senderId);
-      if (!sId || sId === myId) continue;
-
-      try {
-        let pc = peerConnectionsRef.current.get(sId);
-        const signalType = type || signal?.type;
-
-        if (signalType === 'offer') {
-          if (!pc || pc.signalingState !== 'stable') {
-            if (pc) {
-              try { pc.close(); } catch (_) {}
-            }
-            pc = createPeerConnection(sId, code, false);
-          }
-
-          const sdpData = signal.sdp ? signal : (signal.signal || signal);
-          await pc.setRemoteDescription(new RTCSessionDescription(sdpData));
-
-          // Drain queued ICE candidates
-          const pending = pendingCandidatesRef.current.get(sId) || [];
-          for (const cand of pending) {
-            await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
-          }
-          pendingCandidatesRef.current.delete(sId);
-
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          await api.sendConnectSignal(code, sId, answer, 'answer');
-        } else if (signalType === 'answer') {
-          if (pc && pc.signalingState === 'have-local-offer') {
-            const sdpData = signal.sdp ? signal : (signal.signal || signal);
-            await pc.setRemoteDescription(new RTCSessionDescription(sdpData));
-
-            // Drain queued ICE candidates
-            const pending = pendingCandidatesRef.current.get(sId) || [];
-            for (const cand of pending) {
-              await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
-            }
-            pendingCandidatesRef.current.delete(sId);
-          }
-        } else if (signalType === 'candidate' || signal?.candidate) {
-          const candidateData = signal.candidate || signal;
-          if (candidateData && candidateData.candidate) {
-            if (pc && pc.remoteDescription && pc.remoteDescription.type) {
-              await pc.addIceCandidate(new RTCIceCandidate(candidateData)).catch(() => {});
-            } else {
-              if (!pendingCandidatesRef.current.has(sId)) {
-                pendingCandidatesRef.current.set(sId, []);
-              }
-              pendingCandidatesRef.current.get(sId).push(candidateData);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Signaling processing error with peer:', sId, err.message);
-      }
-    }
-  };
-
-  const createPeerConnection = (remoteUserId, code, isOfferer) => {
-    let pc = peerConnectionsRef.current.get(remoteUserId);
-    if (pc && pc.connectionState !== 'closed' && pc.connectionState !== 'failed') {
-      return pc;
-    }
-    if (pc) {
-      try { pc.close(); } catch (_) {}
-    }
-
-    const configuration = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' },
-      ],
-    };
-
-    pc = new RTCPeerConnection(configuration);
-    peerConnectionsRef.current.set(remoteUserId, pc);
-
-    // Add local tracks (Audio and Camera/Screen)
-    const streamToPublish = screenStreamRef.current || localStreamRef.current;
-    if (streamToPublish) {
-      streamToPublish.getTracks().forEach((track) => {
-        try {
-          pc.addTrack(track, streamToPublish);
-        } catch (_) {}
-      });
-    }
-
-    // Handle ICE candidates found locally
-    pc.onicecandidate = (event) => {
-      if (event.candidate && event.candidate.candidate) {
-        api.sendConnectSignal(code, remoteUserId, { candidate: event.candidate }, 'candidate').catch(() => {});
-      }
-    };
-
-    // Handle incoming remote media tracks (Audio and Video)
-    pc.ontrack = (event) => {
-      let stream = remoteStreamsRef.current.get(remoteUserId);
-      if (!stream) {
-        stream = event.streams?.[0] || new MediaStream();
-        remoteStreamsRef.current.set(remoteUserId, stream);
-      }
-      if (event.streams && event.streams[0]) {
-        event.streams[0].getTracks().forEach((track) => {
-          if (!stream.getTracks().some((t) => t.id === track.id)) {
-            stream.addTrack(track);
-          }
-        });
-      }
-      if (event.track && !stream.getTracks().some((t) => t.id === event.track.id)) {
-        stream.addTrack(event.track);
-      }
-      setPeersTick((t) => t + 1);
-    };
-
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') {
-        try { pc.restartIce(); } catch (_) {}
-      }
-      setPeersTick((t) => t + 1);
-    };
-
-    return pc;
-  };
-
-  const toggleMicrophone = () => {
-    if (localStreamRef.current) {
-      const audioTracks = localStreamRef.current.getAudioTracks();
-      if (audioTracks.length > 0) {
-        const nextState = !audioTracks[0].enabled;
-        audioTracks[0].enabled = nextState;
-        setIsMicOn(nextState);
-        api.sendConnectPeerState(currentRoomCode, { micOn: nextState }).catch(() => {});
-      }
-    }
-  };
-
-  const toggleCamera = () => {
-    if (localStreamRef.current) {
-      const videoTracks = localStreamRef.current.getVideoTracks();
-      if (videoTracks.length > 0) {
-        const nextState = !videoTracks[0].enabled;
-        videoTracks[0].enabled = nextState;
-        setIsCameraOn(nextState);
-        api.sendConnectPeerState(currentRoomCode, { cameraOn: nextState }).catch(() => {});
-      }
-    }
-  };
-
-  const stopScreenSharing = () => {
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach((t) => t.stop());
-      screenStreamRef.current = null;
-    }
-    setIsScreenSharing(false);
-
-    // Revert video track in local video element
-    if (localVideoRef.current && localStreamRef.current) {
-      localVideoRef.current.srcObject = localStreamRef.current;
-      localVideoRef.current.play?.().catch(() => {});
-    }
-
-    // Revert video track across all active RTCPeerConnections
-    const camTrack = localStreamRef.current ? localStreamRef.current.getVideoTracks()[0] : null;
-    peerConnectionsRef.current.forEach((pc) => {
-      const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-      if (sender && camTrack) {
-        sender.replaceTrack(camTrack).catch(() => {});
-      }
-    });
-
-    api.sendConnectPeerState(currentRoomCode, { screenSharing: false }).catch(() => {});
-  };
-
-  const toggleScreenShare = async () => {
-    if (isScreenSharing) {
-      stopScreenSharing();
-    } else {
-      try {
-        const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        screenStreamRef.current = displayStream;
-        setIsScreenSharing(true);
-
-        if (screenShareVideoRef.current) {
-          screenShareVideoRef.current.srcObject = displayStream;
-          screenShareVideoRef.current.play?.().catch(() => {});
-        }
-
-        const screenTrack = displayStream.getVideoTracks()[0];
-
-        // Replace video track across all active peer connections so remotes see the screen!
-        peerConnectionsRef.current.forEach((pc) => {
-          const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-          if (sender) {
-            sender.replaceTrack(screenTrack).catch(() => {});
-          } else {
-            try { pc.addTrack(screenTrack, displayStream); } catch (_) {}
-          }
-        });
-
-        api.sendConnectPeerState(currentRoomCode, { screenSharing: true }).catch(() => {});
-
-        screenTrack.onended = () => {
-          stopScreenSharing();
-        };
-      } catch (err) {
-        console.warn('Screen share cancelled or not allowed:', err.message);
-      }
-    }
-  };
-
-  // -------------------------------------------------------------------
-  // Meeting Recording (Screen / Meeting Tab Video + Mixed Microphone Audio)
-  // -------------------------------------------------------------------
-  const startRecording = async () => {
-    try {
-      recordedChunksRef.current = [];
-      let recordStream = null;
-
-      // Method 1: Ask user to capture the meeting tab/window with system audio
-      if (navigator.mediaDevices?.getDisplayMedia) {
-        try {
-          const displayStream = await navigator.mediaDevices.getDisplayMedia({
-            video: {
-              displaySurface: 'browser',
-            },
-            audio: true, // Captures other participants and tab sounds
-          });
-
-          // Mix local microphone into audio track so the recorder's voice is included
-          try {
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            if (AudioCtx) {
-              const audioCtx = new AudioCtx();
-              audioContextRef.current = audioCtx;
-              const dest = audioCtx.createMediaStreamDestination();
-
-              let hasAudioSource = false;
-              const displayAudioTracks = displayStream.getAudioTracks();
-              if (displayAudioTracks.length > 0) {
-                const displaySource = audioCtx.createMediaStreamSource(
-                  new MediaStream([displayAudioTracks[0]])
-                );
-                displaySource.connect(dest);
-                hasAudioSource = true;
-              }
-
-              if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
-                const micTrack = localStreamRef.current.getAudioTracks()[0];
-                const micSource = audioCtx.createMediaStreamSource(new MediaStream([micTrack]));
-                micSource.connect(dest);
-                hasAudioSource = true;
-              }
-
-              const mixedAudioTracks = hasAudioSource
-                ? dest.stream.getAudioTracks()
-                : displayStream.getAudioTracks();
-
-              recordStream = new MediaStream([
-                ...displayStream.getVideoTracks(),
-                ...mixedAudioTracks,
-              ]);
-            } else {
-              recordStream = displayStream;
-            }
-          } catch (mixErr) {
-            console.warn('Audio mixing error, using display stream directly:', mixErr);
-            recordStream = displayStream;
-          }
-
-          // If the user clicks Chrome's blue "Stop sharing" bar, stop recording cleanly
-          const videoTrack = displayStream.getVideoTracks()[0];
-          if (videoTrack) {
-            videoTrack.onended = () => {
-              stopRecording();
-            };
-          }
-        } catch (displayErr) {
-          if (displayErr.name === 'NotAllowedError' || displayErr.name === 'AbortError') {
-            return; // User cancelled prompt
-          }
-          console.warn('Display capture failed, falling back to local stream:', displayErr);
-        }
-      }
-
-      // Method 2 fallback: If displayMedia is not available or rejected
-      if (!recordStream) {
-        if (localStreamRef.current) {
-          recordStream = localStreamRef.current;
-        } else {
-          showCustomAlert('Cannot access camera or screen to record.', 'Recording Error', 'warning');
-          return;
-        }
-      }
-
-      recordingStreamRef.current = recordStream;
-
-      // Detect best supported MIME type
-      const mimeTypes = [
-        'video/webm;codecs=vp9,opus',
-        'video/webm;codecs=vp8,opus',
-        'video/webm;codecs=h264,opus',
-        'video/webm',
-        'video/mp4',
-      ];
-      let selectedMimeType = '';
-      for (const type of mimeTypes) {
-        if (window.MediaRecorder?.isTypeSupported?.(type)) {
-          selectedMimeType = type;
-          break;
-        }
-      }
-
-      const recorder = new MediaRecorder(
-        recordStream,
-        selectedMimeType ? { mimeType: selectedMimeType } : undefined
-      );
-      mediaRecorderRef.current = recorder;
-
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          recordedChunksRef.current.push(event.data);
-        }
-      };
-
-      recorder.onstop = () => {
-        const mimeType = selectedMimeType || 'video/webm';
-        const blob = new Blob(recordedChunksRef.current, { type: mimeType });
-        if (blob.size > 0) {
-          const url = URL.createObjectURL(blob);
-          setRecordedVideoUrl(url);
-          setShowRecordModal(true);
-
-          // Auto-download recorded meeting
-          const meetingTitle = (activeMeeting?.title || 'Connect_Meeting').replace(/[^a-z0-9_-]/gi, '_');
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-          const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-          const filename = `TaskFlow_${meetingTitle}_${timestamp}.${ext}`;
-
-          const a = document.createElement('a');
-          a.style.display = 'none';
-          a.href = url;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(() => {
-            document.body.removeChild(a);
-          }, 200);
-        }
-
-        // Cleanup display capture tracks without touching active local camera/mic
-        if (recordingStreamRef.current) {
-          recordingStreamRef.current.getTracks().forEach((t) => {
-            const isLocal =
-              localStreamRef.current &&
-              (t === localStreamRef.current.getVideoTracks()[0] ||
-                t === localStreamRef.current.getAudioTracks()[0]);
-            if (!isLocal) {
-              try { t.stop(); } catch (_) {}
-            }
-          });
-          recordingStreamRef.current = null;
-        }
-
-        if (audioContextRef.current) {
-          try { audioContextRef.current.close(); } catch (_) {}
-          audioContextRef.current = null;
-        }
-
-        setIsRecording(false);
-        setRecordingDuration(0);
-        if (recordingIntervalRef.current) {
-          clearInterval(recordingIntervalRef.current);
-          recordingIntervalRef.current = null;
-        }
-      };
-
-      recorder.start(1000);
-      setIsRecording(true);
-      setRecordingDuration(0);
-
-      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
-      recordingIntervalRef.current = setInterval(() => {
-        setRecordingDuration((prev) => prev + 1);
-      }, 1000);
-    } catch (err) {
-      console.error('Failed to start recording:', err);
-      showCustomAlert('Unable to start recording: ' + (err.message || 'Permission denied'), 'Recording Error', 'danger');
-      setIsRecording(false);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch (err) {
-        console.warn('Error stopping media recorder:', err);
-      }
-    }
-  };
-
-  const toggleRecording = () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  };
-
-  const handleSendChat = async (e) => {
-    e?.preventDefault();
-    if (!chatInput.trim() || !currentRoomCode) return;
-    const text = chatInput.trim();
-    setChatInput('');
-
-    const myName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || user?.email || 'Me';
-    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const optimisticMsg = {
-      id: tempId,
-      senderId: myId,
-      senderName: myName,
-      text,
-      timestamp: new Date().toISOString(),
-    };
-
-    // Optimistically show message immediately
-    setChatMessages((prev) => [...prev, optimisticMsg]);
-
-    try {
-      const res = await api.sendConnectChat(currentRoomCode, text);
-      if (res && res.chatMessage) {
-        setChatMessages((prev) =>
-          prev.map((m) => (m.id === tempId ? res.chatMessage : m))
-        );
-      }
-    } catch (err) {
-      console.warn('Failed to send chat message:', err);
-    }
-  };
-
-  const handleHostAction = async (action, value) => {
-    if (!isHost) return;
-    try {
-      await api.sendConnectHostAction(currentRoomCode, action, value);
-      setHostControls((prev) => ({ ...prev, [action]: value }));
-      if (action === 'muteAll' && value) {
-        setIsMicOn(false);
-        if (localStreamRef.current) {
-          localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = false));
-        }
-      }
-    } catch (err) {
-      showCustomAlert(err.message || 'Host action failed.', 'Host Action Error', 'danger');
-    }
-  };
-
+  // Explicit Leave Meeting action
   const handleLeaveMeeting = () => {
     showCustomConfirm({
       title: 'Leave Meeting?',
-      message: 'Are you sure you want to leave this meeting? You can rejoin anytime with your room code.',
-      confirmText: 'Leave Meeting',
+      message: 'Are you sure you want to leave this meeting? Your attendance time will be recorded.',
+      confirmText: 'Leave',
       cancelText: 'Stay',
       variant: 'danger',
       onConfirm: async () => {
-        try {
-          if (currentRoomCode) {
-            await api.leaveConnectRoom(currentRoomCode).catch(() => {});
-          }
-        } finally {
-          cleanupCallSession();
-        }
+        await leaveMeeting();
+        setActiveTab('hub');
+        loadHubData();
       },
     });
   };
 
+  // Host ends meeting for everyone
   const handleEndMeetingForAll = () => {
     showCustomConfirm({
-      title: 'End Meeting for All?',
-      message: 'End this meeting for all participants? All active peers will be disconnected and attendance records will be saved.',
-      confirmText: 'End Meeting for All',
+      title: 'End Meeting for Everyone?',
+      message: 'This will disconnect all active participants and conclude the meeting session. Attendance records will be permanently saved.',
+      confirmText: 'End Meeting',
       cancelText: 'Cancel',
       variant: 'danger',
       onConfirm: async () => {
-        try {
-          if (currentRoomCode) {
-            await api.endConnectRoom(currentRoomCode).catch(() => {});
-          }
-        } finally {
-          cleanupCallSession();
-        }
+        await endMeetingForEveryone();
+        setActiveTab('hub');
+        loadHubData();
       },
     });
   };
 
-  const cleanupCallSession = () => {
-    // Stop tracks
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
-      localStreamRef.current = null;
-    }
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach((t) => t.stop());
-      screenStreamRef.current = null;
-    }
-
-    // Close peer connections
-    peerConnectionsRef.current.forEach((pc) => pc.close());
-    peerConnectionsRef.current.clear();
-    remoteStreamsRef.current.clear();
-
-    // Clear intervals
-    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    if (recordingIntervalRef.current) {
-      clearInterval(recordingIntervalRef.current);
-      recordingIntervalRef.current = null;
-    }
-
-    // Safely stop active recording
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try { mediaRecorderRef.current.stop(); } catch (_) {}
-    }
-
-    setActiveTab('hub');
-    setCurrentRoomCode('');
-    setActiveMeeting(null);
-    setIsScreenSharing(false);
-    setIsHandRaised(false);
-    loadHubData();
+  // In-call chat submit
+  const handleSendChat = async (e) => {
+    e?.preventDefault();
+    if (!chatInput.trim()) return;
+    const text = chatInput;
+    setChatInput('');
+    await sendChatMessage(text);
   };
 
+  // Host Action (Mute All / Lock Meeting)
+  const handleHostAction = async (action, value) => {
+    await sendHostAction(action, value);
+  };
+
+  // Copy Room Link to Clipboard
   const copyRoomLink = () => {
     const link = `${window.location.origin}/connect?room=${currentRoomCode}`;
     navigator.clipboard.writeText(link);
@@ -1087,65 +411,110 @@ export const ConnectView = ({
     setTimeout(() => setCopiedNotice(false), 2500);
   };
 
-  const formatTimer = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const unlockAudio = () => {
-    document.querySelectorAll('audio, video').forEach((m) => {
-      if (m.paused && m.srcObject && !m.muted) {
-        m.play().catch(() => {});
+  // Meeting Screen & Audio Recording
+  const toggleRecording = async () => {
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
       }
-    });
+      setIsRecording(false);
+      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+    } else {
+      try {
+        const streamToRecord = screenStream || localStream;
+        if (!streamToRecord) {
+          showCustomAlert('No active media stream found to record.', 'Recording Error', 'warning');
+          return;
+        }
+
+        recordedChunksRef.current = [];
+        const options = { mimeType: 'video/webm;codecs=vp9,opus' };
+        let recorder;
+        try {
+          recorder = new MediaRecorder(streamToRecord, options);
+        } catch {
+          recorder = new MediaRecorder(streamToRecord);
+        }
+
+        recorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            recordedChunksRef.current.push(event.data);
+          }
+        };
+
+        recorder.onstop = () => {
+          const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          setRecordedVideoUrl(url);
+          setShowRecordModal(true);
+
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = url;
+          a.download = `TaskFlow_Meeting_${currentRoomCode}_${new Date().toISOString().slice(0, 10)}.webm`;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => document.body.removeChild(a), 100);
+        };
+
+        recorder.start(1000);
+        mediaRecorderRef.current = recorder;
+        setIsRecording(true);
+        setRecordingDuration(0);
+
+        recordingIntervalRef.current = setInterval(() => {
+          setRecordingDuration((prev) => prev + 1);
+        }, 1000);
+      } catch (err) {
+        showCustomAlert(err.message || 'Failed to start meeting recording.', 'Recording Error', 'danger');
+      }
+    }
   };
 
-  const remotePresenter = activePeers.find(
-    (p) => String(p.userId) !== myId && p.screenSharing
-  );
+  // Format MM:SS for display
+  const formatTimer = (secs) => {
+    const mins = Math.floor(secs / 60);
+    const remainingSecs = secs % 60;
+    return `${mins.toString().padStart(2, '0')}:${remainingSecs.toString().padStart(2, '0')}`;
+  };
+
+  // Presentation check
+  const remotePresenter = activePeers.find((p) => p.screenSharing && String(p.userId) !== myId);
   const isAnyonePresenting = isScreenSharing || Boolean(remotePresenter);
 
   return (
-    <div className="connect-module-container animate-fade-in">
+    <div className="connect-module-root animate-fade-in">
       {/* ----------------------------------------------------
-          VIEW 1: IN-CALL VIDEO MEETING ROOM (GOOGLE MEET-LIKE)
+          VIEW 1: IN-CALL EXPERIENCE (ROOM VIEW)
       ---------------------------------------------------- */}
       {activeTab === 'room' && (
         <div className="in-call-experience-wrapper" onClick={unlockAudio}>
           {/* Top Meeting Header Bar */}
           <div className="call-top-bar">
             <div className="call-top-left">
-              <div className="call-live-indicator">
-                <span className="live-dot animate-pulse"></span>
-                <strong>LIVE</strong>
-                <span className="call-timer-badge">{formatTimer(callDuration)}</span>
-              </div>
-              {isRecording && (
-                <div className="recording-status-pill" title="Meeting is currently being recorded">
-                  <span className="rec-dot"></span>
-                  <strong>REC</strong>
-                  <span>{formatTimer(recordingDuration)}</span>
-                </div>
-              )}
+              <span className="live-pulse-dot" />
               <h3 className="call-meeting-title">{activeMeeting?.title || 'Connect Video Meeting'}</h3>
               <div className="call-room-code-badge" onClick={copyRoomLink} title="Click to copy join link">
                 <CopyIcon size={13} />
                 <span>{currentRoomCode}</span>
-                {copiedNotice && <span className="copied-pill">Copied!</span>}
+                {copiedNotice && <span className="copied-pill">Link Copied!</span>}
               </div>
             </div>
 
             <div className="call-top-right">
-              {activeMeeting?.googleSynced && (
-                <span className="badge-google-synced" title="Synchronized with Google Calendar">
-                  Google Synced
-                </span>
-              )}
-              {isHost && (
-                <span className="badge-host-crown">
-                  <ShieldIcon size={12} /> Host Controls Active
-                </span>
+              <div className="call-timer-chip">
+                <ClockIcon size={14} />
+                <span>{formatTimer(callDuration)}</span>
+              </div>
+              <div className="peers-count-chip">
+                <UsersIcon size={14} />
+                <span>{activePeers.length || 1} in call</span>
+              </div>
+              {hostControls.lockMeeting && (
+                <div className="call-locked-chip" title="Meeting locked by host">
+                  <LockIcon size={13} />
+                  <span>Locked</span>
+                </div>
               )}
             </div>
           </div>
@@ -1153,15 +522,15 @@ export const ConnectView = ({
           {/* Main Stage & Video Tiles */}
           <div className="call-stage-area">
             <div className={`video-gallery-grid ${isAnyonePresenting ? 'presentation-mode' : ''}`}>
-              {/* Screen Sharing Presentation Tile if Active (Local OR Remote) */}
+              {/* Screen Sharing Presentation Tile if Active */}
               {isAnyonePresenting && (
                 <div className="presentation-screen-tile animate-scale-up">
                   {isScreenSharing ? (
                     <video
                       ref={(el) => {
                         screenShareVideoRef.current = el;
-                        if (el && screenStreamRef.current && el.srcObject !== screenStreamRef.current) {
-                          el.srcObject = screenStreamRef.current;
+                        if (el && screenStream && el.srcObject !== screenStream) {
+                          el.srcObject = screenStream;
                           el.play?.().catch(() => {});
                         }
                       }}
@@ -1173,7 +542,7 @@ export const ConnectView = ({
                   ) : (
                     <video
                       ref={(el) => {
-                        const rStream = remoteStreamsRef.current.get(String(remotePresenter?.userId));
+                        const rStream = remoteStreams.get(String(remotePresenter?.userId));
                         if (el && rStream && el.srcObject !== rStream) {
                           el.srcObject = rStream;
                           el.play?.().catch(() => {});
@@ -1198,8 +567,8 @@ export const ConnectView = ({
                 <video
                   ref={(el) => {
                     localVideoRef.current = el;
-                    if (el && localStreamRef.current && el.srcObject !== localStreamRef.current) {
-                      el.srcObject = localStreamRef.current;
+                    if (el && localStream && el.srcObject !== localStream) {
+                      el.srcObject = localStream;
                       el.play?.().catch(() => {});
                     }
                   }}
@@ -1231,34 +600,20 @@ export const ConnectView = ({
                 .filter((p) => String(p.userId) !== myId)
                 .map((peer) => {
                   const pId = String(peer.userId);
-                  const remoteStream = remoteStreamsRef.current.get(pId);
+                  const remoteStream = remoteStreams.get(pId);
                   const hasVideoTrack = remoteStream && remoteStream.getVideoTracks().some((t) => t.readyState === 'live');
                   const isCameraActive = peer.cameraOn !== false && hasVideoTrack;
 
                   return (
                     <div key={pId} className="video-tile remote-tile">
-                      {/* Audio element ensures remote voice plays regardless of camera state */}
-                      {remoteStream && (
-                        <audio
-                          autoPlay
-                          playsInline
-                          ref={(el) => {
-                            if (el && el.srcObject !== remoteStream) {
-                              el.srcObject = remoteStream;
-                              el.play().catch((err) => console.warn('Audio playback error:', err));
-                            }
-                          }}
-                        />
-                      )}
-
                       {isCameraActive ? (
                         <video
                           autoPlay
                           playsInline
                           ref={(el) => {
-                            if (el && el.srcObject !== remoteStream) {
+                            if (el && remoteStream && el.srcObject !== remoteStream) {
                               el.srcObject = remoteStream;
-                              el.play().catch((err) => console.warn('Video playback error:', err));
+                              el.play?.().catch((err) => console.warn('Video playback error:', err));
                             }
                           }}
                           className="camera-video-element"
@@ -1287,10 +642,12 @@ export const ConnectView = ({
                   );
                 })}
 
-              {/* Empty peer notice when alone */}
+              {/* Empty peer notice when alone in room */}
               {activePeers.filter((p) => String(p.userId) !== myId).length === 0 && (
-                <div className="waiting-peers-tile animate-fade-in">
-                  <UsersIcon size={32} className="text-muted" />
+                <div className="waiting-peer-card">
+                  <div className="pulse-avatar-ring">
+                    <UsersIcon size={32} />
+                  </div>
                   <h4>You are the only person in this meeting</h4>
                   <p>Share the room code or invitation link with team members to collaborate.</p>
                   <button type="button" className="btn btn-secondary btn-sm" onClick={copyRoomLink}>
@@ -1300,48 +657,53 @@ export const ConnectView = ({
               )}
             </div>
 
-            {/* In-Call Sliding Sidebar (Participants / Chat / Info) */}
+            {/* In-Call Collapsible Side Panel (Participants / Chat / Info) */}
             {activeSidePanel && (
-              <div className="call-side-drawer animate-fade-in">
-                <div className="drawer-header">
+              <div className="call-side-panel animate-scale-up">
+                <div className="side-panel-header">
                   <h4>
                     {activeSidePanel === 'participants' && `Participants (${activePeers.length || 1})`}
-                    {activeSidePanel === 'chat' && 'Meeting Messages'}
-                    {activeSidePanel === 'info' && 'Joining Information'}
+                    {activeSidePanel === 'chat' && 'In-Call Chat'}
+                    {activeSidePanel === 'info' && 'Meeting Information'}
                   </h4>
                   <button type="button" className="close-btn" onClick={() => setActiveSidePanel('')}>
                     &times;
                   </button>
                 </div>
 
-                {/* 1. Participants List */}
+                {/* Panel 1: Participants List with Host Controls */}
                 {activeSidePanel === 'participants' && (
-                  <div className="drawer-body">
+                  <div className="side-panel-body">
                     {isHost && (
-                      <div className="host-quick-actions">
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-xs"
-                          onClick={() => handleHostAction('muteAll', !hostControls.muteAll)}
-                        >
-                          {hostControls.muteAll ? 'Unmute All Participants' : 'Mute All Participants'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-xs"
-                          onClick={() => handleHostAction('lockMeeting', !hostControls.lockMeeting)}
-                        >
-                          {hostControls.lockMeeting ? 'Unlock Meeting Room' : 'Lock Meeting Room'}
-                        </button>
+                      <div className="host-controls-box">
+                        <span className="host-box-title">Host Controls</span>
+                        <div className="host-actions-grid">
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-xs"
+                            onClick={() => handleHostAction('muteAll', !hostControls.muteAll)}
+                          >
+                            {hostControls.muteAll ? 'Unmute All Participants' : 'Mute All Participants'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-xs"
+                            onClick={() => handleHostAction('lockMeeting', !hostControls.lockMeeting)}
+                          >
+                            {hostControls.lockMeeting ? 'Unlock Meeting Room' : 'Lock Meeting Room'}
+                          </button>
+                        </div>
                       </div>
                     )}
 
-                    <div className="drawer-participants-list">
-                      <div className="drawer-peer-item me">
-                        <div className="peer-avatar">{user?.firstName?.[0] || 'U'}</div>
+                    <div className="participants-stack-list">
+                      <div className="peer-row me-row">
+                        <div className="peer-avatar">
+                          {user?.firstName?.[0] || 'U'}
+                        </div>
                         <div className="peer-info">
-                          <strong>{user?.firstName} {user?.lastName} (You)</strong>
-                          <span className="peer-role">{isHost ? 'Meeting Host' : 'Participant'}</span>
+                          <strong>{user?.firstName || 'You'} {user?.lastName || ''} (You)</strong>
+                          <small>{user?.email}</small>
                         </div>
                         <div className="peer-status-icons">
                           {isMicOn ? <MicIcon size={14} className="text-success" /> : <MicOffIcon size={14} className="text-danger" />}
@@ -1351,16 +713,18 @@ export const ConnectView = ({
 
                       {activePeers
                         .filter((p) => String(p.userId) !== myId)
-                        .map((p) => (
-                          <div key={p.userId} className="drawer-peer-item">
-                            <div className="peer-avatar">{p.name?.[0] || 'P'}</div>
+                        .map((peer, i) => (
+                          <div key={peer.userId || i} className="peer-row">
+                            <div className="peer-avatar">
+                              {peer.name?.[0] || 'P'}
+                            </div>
                             <div className="peer-info">
-                              <strong>{p.name}</strong>
-                              <span className="peer-role">{p.isHost ? 'Meeting Host' : 'Participant'}</span>
+                              <strong>{peer.name || 'Participant'}</strong>
+                              <small>{peer.email}</small>
                             </div>
                             <div className="peer-status-icons">
-                              {p.micOn !== false ? <MicIcon size={14} className="text-success" /> : <MicOffIcon size={14} className="text-danger" />}
-                              {p.cameraOn !== false ? <VideoIcon size={14} className="text-success" /> : <VideoOffIcon size={14} className="text-muted" />}
+                              {peer.micOn !== false ? <MicIcon size={14} className="text-success" /> : <MicOffIcon size={14} className="text-danger" />}
+                              {peer.cameraOn !== false ? <VideoIcon size={14} className="text-success" /> : <VideoOffIcon size={14} className="text-muted" />}
                             </div>
                           </div>
                         ))}
@@ -1368,27 +732,24 @@ export const ConnectView = ({
                   </div>
                 )}
 
-                {/* 2. In-Call Chat */}
+                {/* Panel 2: In-Call Real-Time Chat */}
                 {activeSidePanel === 'chat' && (
-                  <div className="drawer-body chat-drawer-body">
+                  <div className="side-panel-body chat-panel-body">
                     <div className="chat-messages-container">
                       {chatMessages.length === 0 ? (
-                        <p className="no-chat-yet">Messages sent here are visible to everyone in this call.</p>
+                        <p className="empty-chat-text">No messages yet. Send a message to start chatting with participants.</p>
                       ) : (
-                        chatMessages.map((m, idx) => {
-                          const isMine =
-                            String(m.senderId) === myId ||
-                            (m.senderId && (m.senderId === user?.id || m.senderId === user?._id)) ||
-                            (m.senderName &&
-                              m.senderName.toLowerCase() ===
-                                `${user?.firstName || ''} ${user?.lastName || ''}`.trim().toLowerCase());
+                        chatMessages.map((msg, i) => {
+                          const isMine = String(msg.senderId) === myId;
                           return (
-                            <div key={m.id || idx} className={`chat-bubble-row ${isMine ? 'mine' : ''}`}>
-                              <div className="chat-meta">
-                                <strong>{isMine ? 'You' : m.senderName}</strong>
-                                <span>{m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                            <div key={msg.id || i} className={`chat-bubble-wrap ${isMine ? 'mine' : 'theirs'}`}>
+                              <span className="chat-sender-name">{isMine ? 'You' : msg.senderName}</span>
+                              <div className="chat-bubble-content">
+                                <p>{msg.text}</p>
+                                <span className="chat-time-tag">
+                                  {new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
                               </div>
-                              <div className="chat-text-bubble">{m.text}</div>
                             </div>
                           );
                         })
@@ -1396,13 +757,13 @@ export const ConnectView = ({
                       <div ref={chatBottomRef} />
                     </div>
 
-                    <form className="chat-input-form" onSubmit={handleSendChat}>
+                    <form onSubmit={handleSendChat} className="chat-composer-form">
                       <input
                         type="text"
-                        placeholder="Send a message to everyone..."
+                        placeholder="Type a message to participants..."
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
-                        className="chat-field"
+                        className="chat-input-field"
                       />
                       <button type="submit" className="btn btn-primary btn-sm" disabled={!chatInput.trim()}>
                         Send
@@ -1411,19 +772,30 @@ export const ConnectView = ({
                   </div>
                 )}
 
-                {/* 3. Joining Info */}
+                {/* Panel 3: Meeting Information */}
                 {activeSidePanel === 'info' && (
-                  <div className="drawer-body">
-                    <div className="joining-info-box">
+                  <div className="side-panel-body info-panel-body">
+                    <div className="info-item">
                       <label>Meeting Title</label>
-                      <p>{activeMeeting?.title}</p>
+                      <p>{activeMeeting?.title || 'Connect Meeting'}</p>
                     </div>
-                    <div className="joining-info-box">
+                    {activeMeeting?.agenda && (
+                      <div className="info-item">
+                        <label>Agenda</label>
+                        <p>{activeMeeting.agenda}</p>
+                      </div>
+                    )}
+                    <div className="info-item">
                       <label>Room Code</label>
-                      <p><strong>{currentRoomCode}</strong></p>
+                      <div className="code-box-row">
+                        <code>{currentRoomCode}</code>
+                        <button type="button" className="btn btn-secondary btn-xs" onClick={copyRoomLink}>
+                          Copy
+                        </button>
+                      </div>
                     </div>
-                    <div className="joining-info-box">
-                      <label>Direct Join URL</label>
+                    <div className="info-item">
+                      <label>Join Link</label>
                       <p className="url-text">{`${window.location.origin}/connect?room=${currentRoomCode}`}</p>
                       <button type="button" className="btn btn-secondary btn-sm" onClick={copyRoomLink}>
                         <CopyIcon size={14} /> <span>Copy Joining Info</span>
@@ -1435,9 +807,9 @@ export const ConnectView = ({
             )}
           </div>
 
-          {/* Floating Bottom Control Dock */}
-          <div className="call-controls-dock">
-            {/* Mic Toggle */}
+          {/* Bottom Dock Control Bar */}
+          <div className="call-bottom-dock">
+            {/* Microphone Toggle */}
             <button
               type="button"
               className={`control-circle-btn ${isMicOn ? 'btn-active' : 'btn-danger'}`}
@@ -1471,7 +843,7 @@ export const ConnectView = ({
             <button
               type="button"
               className={`control-circle-btn ${isHandRaised ? 'btn-highlight' : 'btn-control-secondary'}`}
-              onClick={() => setIsHandRaised(!isHandRaised)}
+              onClick={toggleHandRaised}
               title={isHandRaised ? 'Lower hand' : 'Raise hand'}
             >
               <HandIcon size={20} />
@@ -1573,7 +945,7 @@ export const ConnectView = ({
                     type="button"
                     className="btn btn-secondary"
                     onClick={() => handleJoinRoom(roomCodeInput)}
-                    disabled={!roomCodeInput.trim()}
+                    disabled={!roomCodeInput.trim() || loading}
                   >
                     Join
                   </button>
@@ -1590,7 +962,7 @@ export const ConnectView = ({
               </div>
             </div>
 
-            {/* Google Calendar Status Pill Card */}
+            {/* Google Calendar Status Card */}
             <div className="google-status-sidebar-card">
               <div className="google-card-header">
                 <SparklesIcon size={18} className="text-accent" />
@@ -1658,7 +1030,7 @@ export const ConnectView = ({
               ) : upcomingMeetings.length === 0 ? (
                 <div className="empty-state animate-fade-in">
                   <VideoIcon size={40} className="text-muted" />
-                  <h3>No upcoming video meetings</h3>
+                  <h3>Select a meeting or create a new meeting to get started</h3>
                   <p>Start an instant meeting above or schedule a new meeting with the Calendar.</p>
                   <button type="button" className="btn btn-primary" onClick={handleStartInstantMeeting} style={{ marginTop: '12px' }}>
                     <VideoIcon size={16} /> <span>Start Instant Meeting</span>
@@ -1721,6 +1093,7 @@ export const ConnectView = ({
                                   className="btn btn-primary btn-sm"
                                   onClick={() => handleJoinRoom(m.roomCode || m._id)}
                                   style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                  disabled={loading}
                                 >
                                   <VideoIcon size={14} />
                                   <span>Join Meeting</span>
@@ -1839,6 +1212,90 @@ export const ConnectView = ({
         </div>
       )}
 
+      {/* Phase 2: Host Created Room Modal (Room created, presents link, host explicitly enters) */}
+      {createdRoomModal.isOpen && (
+        <div className="modal-backdrop" onClick={() => setCreatedRoomModal((prev) => ({ ...prev, isOpen: false }))}>
+          <div className="meeting-record-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="record-modal-header">
+              <div className="record-modal-title">
+                <CheckCircleIcon size={20} className="text-success" />
+                <h3>Meeting Room Created!</h3>
+              </div>
+              <button
+                type="button"
+                className="btn-icon-close"
+                onClick={() => setCreatedRoomModal((prev) => ({ ...prev, isOpen: false }))}
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="record-modal-body" style={{ padding: '20px' }}>
+              <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                Your meeting room has been successfully initialized. You can copy the invitation link to share with colleagues and click below to enter the room when you are ready.
+              </p>
+
+              <div style={{ background: 'var(--bg-subtle, rgba(0,0,0,0.2))', padding: '14px', borderRadius: '10px', marginBottom: '14px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Room Code</label>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                  <code style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent-color, #3b82f6)' }}>
+                    {createdRoomModal.roomCode}
+                  </code>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdRoomModal.roomCode);
+                      showCustomAlert('Room code copied!', 'Copied', 'success');
+                    }}
+                  >
+                    <CopyIcon size={12} /> Copy Code
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ background: 'var(--bg-subtle, rgba(0,0,0,0.2))', padding: '14px', borderRadius: '10px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Invitation Link</label>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {createdRoomModal.meetingLink}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdRoomModal.meetingLink);
+                      showCustomAlert('Meeting link copied to clipboard!', 'Copied', 'success');
+                    }}
+                  >
+                    <CopyIcon size={12} /> Copy
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="record-modal-footer" style={{ padding: '16px 20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setCreatedRoomModal((prev) => ({ ...prev, isOpen: false }))}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => handleJoinRoom(createdRoomModal.roomCode)}
+              >
+                <VideoIcon size={14} />
+                <span>Enter Meeting Room</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Meeting Recording Review & Download Modal */}
       {showRecordModal && (
         <div className="modal-backdrop" onClick={() => setShowRecordModal(false)}>
@@ -1852,15 +1309,6 @@ export const ConnectView = ({
                 type="button"
                 className="btn-icon-close"
                 onClick={() => setShowRecordModal(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'inherit',
-                  fontSize: '22px',
-                  cursor: 'pointer',
-                  lineHeight: '1',
-                  padding: '4px',
-                }}
                 aria-label="Close"
               >
                 &times;

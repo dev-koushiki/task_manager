@@ -59,6 +59,8 @@ import { OrganizationStructureBuilder } from './OrganizationStructureBuilder';
 import { AdminEmployeePanel } from './AdminEmployeePanel';
 import { CalendarMeetingsView } from './CalendarMeetingsView';
 import { ConnectView } from './ConnectView';
+import { FloatingMeetingBar } from './FloatingMeetingBar';
+import { ConnectMeetingProvider } from '../context/ConnectMeetingContext';
 import { OrgTreeManagement } from './OrgTreeManagement';
 import { UnifiedEmployeeDashboard } from './UnifiedEmployeeDashboard';
 import { EmployeeProfileView } from './EmployeeProfileView';
@@ -67,7 +69,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { ErrorBoundary } from './ErrorBoundary';
 import { api } from '../services/api';
 
-export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptInvite, onUpdateUser }) => {
+const DashboardInner = ({ user, onLogout, theme, onToggleTheme, onTestAcceptInvite, onUpdateUser }) => {
   const userRole = user?.role || 'employee';
   const perms = user?.permissions || {};
   const isAdmin = userRole === 'admin';
@@ -1798,7 +1800,15 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                           {todaysTasks.length} today · {upcomingItems.length} upcoming
                         </span>
                       </div>
-                      <button type="button" className="schedule-chevron-btn" aria-label="Toggle schedule">
+                      <button
+                        type="button"
+                        className="schedule-chevron-btn"
+                        aria-label="Toggle schedule"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowScheduleSection(!showScheduleSection);
+                        }}
+                      >
                         <ChevronDownIcon
                           size={16}
                           className={`transition-transform ${showScheduleSection ? 'rotate-180' : ''}`}
@@ -2386,6 +2396,20 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
           setActiveTab('analytics');
         }}
       />
+
+      {/* Persistent Meeting Floating Mini-Bar (visible across all tabs when in a meeting) */}
+      <FloatingMeetingBar
+        isVisible={activeTab !== 'connect'}
+        onReturnToConnect={() => setActiveTab('connect')}
+      />
     </div>
+  );
+};
+
+export const Dashboard = (props) => {
+  return (
+    <ConnectMeetingProvider user={props.user}>
+      <DashboardInner {...props} />
+    </ConnectMeetingProvider>
   );
 };
