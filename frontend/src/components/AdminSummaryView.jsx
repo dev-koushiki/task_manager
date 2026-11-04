@@ -133,18 +133,6 @@ export const AdminSummaryView = ({
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-
-          {onOpenNewProject && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={onOpenNewProject}
-              style={{ whiteSpace: 'nowrap' }}
-            >
-              <PlusIcon size={16} />
-              <span>Launch Project</span>
-            </button>
-          )}
         </div>
       </div>
 
