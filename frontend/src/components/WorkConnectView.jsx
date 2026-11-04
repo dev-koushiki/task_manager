@@ -275,9 +275,17 @@ export const WorkConnectView = ({
 
     setIsSubmittingRequest(true);
     try {
+      const targetId = selectedTargetEmployee._id || selectedTargetEmployee.id;
+      if (!targetId) {
+        throw new Error('Please select a valid colleague to connect with.');
+      }
+
       const res = await api.requestWorkConnectConnection({
-        receiverId: selectedTargetEmployee._id,
-        requestReason,
+        targetUserId: targetId,
+        receiverId: targetId,
+        reason: requestReason,
+        requestReason: requestReason,
+        taskId: attachedTaskId || null,
         attachedTaskId: attachedTaskId || null,
       });
 
@@ -285,7 +293,7 @@ export const WorkConnectView = ({
         setRequestModalOpen(false);
         setActiveTab('incoming');
         loadOutgoing();
-        alert(`Connection request sent to ${selectedTargetEmployee.firstName}!`);
+        alert(`Connection request sent to ${selectedTargetEmployee.firstName || selectedTargetEmployee.name || 'colleague'}!`);
       }
     } catch (err) {
       alert(`Could not send request: ${err.message}`);

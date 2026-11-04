@@ -3011,10 +3011,30 @@ export const api = {
   },
 
   async requestWorkConnectConnection(payload) {
+    const targetUserId =
+      payload.targetUserId ||
+      payload.receiverId ||
+      payload.recipientId ||
+      payload.targetId ||
+      payload.userId ||
+      '';
+    const reason = (payload.reason || payload.requestReason || '').trim();
+    const taskId = payload.taskId || payload.attachedTaskId || null;
+
+    const normalizedBody = {
+      ...payload,
+      targetUserId,
+      receiverId: targetUserId,
+      reason,
+      requestReason: reason,
+      taskId,
+      attachedTaskId: taskId,
+    };
+
     return await safeFetchJson(`${API_BASE_URL}/workconnect/request`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizedBody),
     });
   },
 

@@ -175,7 +175,15 @@ router.post("/status", authMiddleware, workConnectAuth, async (req, res) => {
 router.post("/request", authMiddleware, workConnectAuth, async (req, res) => {
   try {
     const requesterId = req.user.id.toString();
-    const { targetUserId, reason, taskId } = req.body;
+    const targetUserId = (
+      req.body.targetUserId ||
+      req.body.receiverId ||
+      req.body.recipientId ||
+      req.body.targetId ||
+      ""
+    ).toString();
+    const reason = (req.body.reason || req.body.requestReason || "").trim();
+    const taskId = req.body.taskId || req.body.attachedTaskId || null;
 
     if (!targetUserId) {
       return res.status(400).json({ message: "targetUserId is required." });
@@ -311,14 +319,21 @@ router.get("/requests/outgoing", authMiddleware, workConnectAuth, async (req, re
 });
 
 // ----------------------------------------------------
-// 6. PUT /api/workconnect/requests/:sessionId/accept - Accept request
+// 6. PUT / POST /api/workconnect/requests/:sessionId/accept - Accept request
 // ----------------------------------------------------
-router.put("/requests/:sessionId/accept", authMiddleware, workConnectAuth, async (req, res) => {
+const handleAcceptWorkConnectRequest = async (req, res) => {
   try {
     const userId = req.user.id.toString();
     const { sessionId } = req.params;
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(sessionId);
+    const sessionQuery = {
+      $or: [
+        { sessionId },
+        ...(isObjectId ? [{ _id: sessionId }] : []),
+      ],
+    };
 
-    const session = await WorkConnectSession.findOne({ sessionId })
+    const session = await WorkConnectSession.findOne(sessionQuery)
       .populate("requester", "firstName lastName email designation department profilePhoto")
       .populate("receiver", "firstName lastName email designation department profilePhoto");
 
@@ -336,14 +351,16 @@ router.put("/requests/:sessionId/accept", authMiddleware, workConnectAuth, async
     session.startedAt = new Date();
     await session.save();
 
+    const actualSessionId = session.sessionId;
+
     // Mark both users as in-session
     await Promise.all([
-      User.findByIdAndUpdate(session.requester._id, { workConnectStatus: "in-session", currentWorkConnectSessionId: sessionId }),
-      User.findByIdAndUpdate(session.receiver._id, { workConnectStatus: "in-session", currentWorkConnectSessionId: sessionId }),
+      User.findByIdAndUpdate(session.requester._id, { workConnectStatus: "in-session", currentWorkConnectSessionId: actualSessionId }),
+      User.findByIdAndUpdate(session.receiver._id, { workConnectStatus: "in-session", currentWorkConnectSessionId: actualSessionId }),
     ]);
 
-    activePresence.set(session.requester._id.toString(), { status: "in-session", lastPing: Date.now(), sessionId });
-    activePresence.set(session.receiver._id.toString(), { status: "in-session", lastPing: Date.now(), sessionId });
+    activePresence.set(session.requester._id.toString(), { status: "in-session", lastPing: Date.now(), sessionId: actualSessionId });
+    activePresence.set(session.receiver._id.toString(), { status: "in-session", lastPing: Date.now(), sessionId: actualSessionId });
 
     // Inform requester via notification and socket
     await Notification.create({
@@ -351,36 +368,46 @@ router.put("/requests/:sessionId/accept", authMiddleware, workConnectAuth, async
       title: "WorkConnect Request Accepted",
       message: `${session.receiver.firstName} ${session.receiver.lastName} accepted your connection request. Collaboration workspace is now active.`,
       type: "meeting",
-      link: `/?tab=workconnect&sub=active&session=${sessionId}`,
+      link: `/?tab=workconnect&sub=active&session=${actualSessionId}`,
     }).catch(() => {});
 
     if (ioInstance) {
       ioInstance.to(session.requester._id.toString()).emit("workconnect_accepted", {
-        sessionId,
+        sessionId: actualSessionId,
         partner: {
           id: session.receiver._id,
           name: `${session.receiver.firstName} ${session.receiver.lastName}`,
         },
       });
-      ioInstance.to(sessionId).emit("workconnect_session_ready", { sessionId });
+      ioInstance.to(actualSessionId).emit("workconnect_session_ready", { sessionId: actualSessionId });
     }
 
     res.json({ success: true, message: "Connection accepted.", session });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-});
+};
+
+router.put("/requests/:sessionId/accept", authMiddleware, workConnectAuth, handleAcceptWorkConnectRequest);
+router.post("/requests/:sessionId/accept", authMiddleware, workConnectAuth, handleAcceptWorkConnectRequest);
 
 // ----------------------------------------------------
-// 7. PUT /api/workconnect/requests/:sessionId/reject - Reject request
+// 7. PUT / POST /api/workconnect/requests/:sessionId/reject - Reject request
 // ----------------------------------------------------
-router.put("/requests/:sessionId/reject", authMiddleware, workConnectAuth, async (req, res) => {
+const handleRejectWorkConnectRequest = async (req, res) => {
   try {
     const userId = req.user.id.toString();
     const { sessionId } = req.params;
     const { reason } = req.body;
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(sessionId);
+    const sessionQuery = {
+      $or: [
+        { sessionId },
+        ...(isObjectId ? [{ _id: sessionId }] : []),
+      ],
+    };
 
-    const session = await WorkConnectSession.findOne({ sessionId });
+    const session = await WorkConnectSession.findOne(sessionQuery);
     if (!session) return res.status(404).json({ message: "Session not found." });
 
     if (session.receiver.toString() !== userId && req.user.role !== "admin") {
@@ -394,7 +421,7 @@ router.put("/requests/:sessionId/reject", authMiddleware, workConnectAuth, async
 
     if (ioInstance) {
       ioInstance.to(session.requester.toString()).emit("workconnect_rejected", {
-        sessionId,
+        sessionId: session.sessionId,
         reason: session.endReason,
       });
     }
@@ -403,17 +430,27 @@ router.put("/requests/:sessionId/reject", authMiddleware, workConnectAuth, async
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-});
+};
+
+router.put("/requests/:sessionId/reject", authMiddleware, workConnectAuth, handleRejectWorkConnectRequest);
+router.post("/requests/:sessionId/reject", authMiddleware, workConnectAuth, handleRejectWorkConnectRequest);
 
 // ----------------------------------------------------
-// 8. PUT /api/workconnect/requests/:sessionId/cancel - Cancel request
+// 8. PUT / POST /api/workconnect/requests/:sessionId/cancel - Cancel request
 // ----------------------------------------------------
-router.put("/requests/:sessionId/cancel", authMiddleware, workConnectAuth, async (req, res) => {
+const handleCancelWorkConnectRequest = async (req, res) => {
   try {
     const userId = req.user.id.toString();
     const { sessionId } = req.params;
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(sessionId);
+    const sessionQuery = {
+      $or: [
+        { sessionId },
+        ...(isObjectId ? [{ _id: sessionId }] : []),
+      ],
+    };
 
-    const session = await WorkConnectSession.findOne({ sessionId });
+    const session = await WorkConnectSession.findOne(sessionQuery);
     if (!session) return res.status(404).json({ message: "Session not found." });
 
     if (session.requester.toString() !== userId && req.user.role !== "admin") {
@@ -425,14 +462,17 @@ router.put("/requests/:sessionId/cancel", authMiddleware, workConnectAuth, async
     await session.save();
 
     if (ioInstance) {
-      ioInstance.to(session.receiver.toString()).emit("workconnect_cancelled", { sessionId });
+      ioInstance.to(session.receiver.toString()).emit("workconnect_cancelled", { sessionId: session.sessionId });
     }
 
     res.json({ success: true, message: "Request cancelled.", session });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-});
+};
+
+router.put("/requests/:sessionId/cancel", authMiddleware, workConnectAuth, handleCancelWorkConnectRequest);
+router.post("/requests/:sessionId/cancel", authMiddleware, workConnectAuth, handleCancelWorkConnectRequest);
 
 // ----------------------------------------------------
 // 9. GET /api/workconnect/sessions/active - Current active session
