@@ -1246,10 +1246,10 @@ export const ConnectView = ({
           MODALS & CUSTOM POPUP DIALOGS
       ---------------------------------------------------- */}
 
-      {/* Created Room Modal (Phase 2 requirement: host explicitly enters room) */}
+      {/* Created Room Modal (host explicitly enters room) */}
       {createdRoomModal.isOpen && (
-        <div className="modal-backdrop" onClick={() => setCreatedRoomModal((prev) => ({ ...prev, isOpen: false }))}>
-          <div className="meeting-record-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+        <div className="taskflow-dialog-overlay" onClick={() => setCreatedRoomModal((prev) => ({ ...prev, isOpen: false }))}>
+          <div className="meeting-record-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px', margin: 'auto' }}>
             <div className="record-modal-header">
               <div className="record-modal-title">
                 <CheckCircleIcon size={20} className="text-success" />
@@ -1332,8 +1332,8 @@ export const ConnectView = ({
 
       {/* Meeting Recording Review & Download Modal */}
       {showRecordModal && (
-        <div className="modal-backdrop" onClick={() => setShowRecordModal(false)}>
-          <div className="meeting-record-modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="taskflow-dialog-overlay" onClick={() => setShowRecordModal(false)}>
+          <div className="meeting-record-modal-content" onClick={(e) => e.stopPropagation()} style={{ margin: 'auto' }}>
             <div className="record-modal-header">
               <div className="record-modal-title">
                 <CheckCircleIcon size={20} className="text-success" />
@@ -1387,44 +1387,40 @@ export const ConnectView = ({
         </div>
       )}
 
-      {/* Custom Themed Popup Dialog Modal */}
+      {/* Custom TaskFlow In-Website Dialog / Popup Modal */}
       {dialogState.isOpen && (
-        <div className="custom-dialog-backdrop" onClick={closeDialog}>
+        <div
+          className="taskflow-dialog-overlay"
+          onClick={() => {
+            if (dialogState.type === 'alert') {
+              if (typeof dialogState.onConfirm === 'function') dialogState.onConfirm();
+              else closeDialog();
+            } else {
+              closeDialog();
+            }
+          }}
+        >
           <div
-            className={`custom-dialog-card variant-${dialogState.variant} animate-scale-up`}
+            className="taskflow-dialog-card"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
           >
-            <div className="custom-dialog-header">
-              <div className="custom-dialog-title-group">
-                <span className={`custom-dialog-icon-circle variant-${dialogState.variant}`}>
-                  {dialogState.variant === 'danger' && <PhoneOffIcon size={18} />}
-                  {dialogState.variant === 'warning' && <ShieldIcon size={18} />}
-                  {dialogState.variant === 'success' && <CheckCircleIcon size={18} />}
-                  {dialogState.variant === 'info' && <SparklesIcon size={18} />}
-                </span>
-                <h3 className="custom-dialog-title">{dialogState.title}</h3>
-              </div>
-              <button
-                type="button"
-                className="custom-dialog-close-btn"
-                onClick={closeDialog}
-                aria-label="Close dialog"
-              >
-                &times;
-              </button>
+            <div className={`taskflow-dialog-icon-wrapper variant-${dialogState.variant}`}>
+              {dialogState.variant === 'danger' && <PhoneOffIcon size={24} />}
+              {dialogState.variant === 'warning' && <ShieldIcon size={24} />}
+              {dialogState.variant === 'success' && <CheckCircleIcon size={24} />}
+              {dialogState.variant === 'info' && <SparklesIcon size={24} />}
             </div>
 
-            <div className="custom-dialog-body">
-              <p className="custom-dialog-message">{dialogState.message}</p>
-            </div>
+            <h3 className="taskflow-dialog-title">{dialogState.title}</h3>
+            <p className="taskflow-dialog-message">{dialogState.message}</p>
 
-            <div className="custom-dialog-footer">
+            <div className="taskflow-dialog-actions">
               {dialogState.type === 'confirm' && (
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm"
+                  className="taskflow-dialog-btn-cancel"
                   onClick={closeDialog}
                 >
                   {dialogState.cancelText || 'Cancel'}
@@ -1432,7 +1428,9 @@ export const ConnectView = ({
               )}
               <button
                 type="button"
-                className={`btn btn-${dialogState.variant === 'danger' ? 'danger' : 'primary'} btn-sm`}
+                className={`taskflow-dialog-btn-confirm ${
+                  dialogState.variant === 'danger' ? 'variant-danger' : ''
+                }`}
                 onClick={() => {
                   if (typeof dialogState.onConfirm === 'function') {
                     dialogState.onConfirm();
@@ -1440,6 +1438,7 @@ export const ConnectView = ({
                     closeDialog();
                   }
                 }}
+                autoFocus
               >
                 {dialogState.confirmText || 'OK'}
               </button>

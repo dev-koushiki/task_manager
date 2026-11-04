@@ -5545,17 +5545,20 @@
 
 .video-gallery-grid {
   flex: 1;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 12px;
-  padding: 16px;
+  display: flex;
+  flex-wrap: wrap;
   align-content: center;
-  justify-items: center;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
   overflow-y: auto;
+  width: 100%;
 }
 
 .video-gallery-grid.presentation-mode {
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
 }
 
 .presentation-screen-tile {
@@ -6115,25 +6118,28 @@
 /* ----------------------------------------------------
    TASKFLOW CUSTOM DIALOG & CONFIRMATION POPUP MODAL
 ---------------------------------------------------- */
-.taskflow-dialog-overlay {
+.taskflow-dialog-overlay,
+.custom-dialog-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.65);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   z-index: 10000;
   padding: 20px;
   animation: dialogFadeIn 0.2s ease-out;
 }
 
-[data-theme="dark"] .taskflow-dialog-overlay {
+[data-theme="dark"] .taskflow-dialog-overlay,
+[data-theme="dark"] .custom-dialog-backdrop {
   background: rgba(0, 0, 0, 0.8);
 }
 
-.taskflow-dialog-card {
+.taskflow-dialog-card,
+.custom-dialog-card {
   width: 100%;
   max-width: 440px;
   background: #1e293b;
@@ -6142,15 +6148,17 @@
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
   padding: 28px 24px;
   color: #f8fafc;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
   text-align: center;
   position: relative;
   animation: dialogScaleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  margin: auto !important;
 }
 
-[data-theme="light"] .taskflow-dialog-card {
+[data-theme="light"] .taskflow-dialog-card,
+[data-theme="light"] .custom-dialog-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
   color: #0f172a;
