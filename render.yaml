@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: task-manager-backend
+    env: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGO_MAX_POOL_SIZE
+        value: "5"
+      - key: MONGO_MIN_POOL_SIZE
+        value: "0"
+      - key: MONGO_MAX_IDLE_TIME_MS
+        value: "30000"
+      - key: MONGO_SERVER_SELECTION_TIMEOUT_MS
+        value: "5000"
+      - key: MONGO_WAIT_QUEUE_TIMEOUT_MS
+        value: "5000"

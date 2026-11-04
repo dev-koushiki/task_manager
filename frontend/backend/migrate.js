@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const { connectDB, disconnectDB } = require("./config/database");
 require("dotenv").config();
 
 const User = require("./models/User");
@@ -8,9 +8,8 @@ const Project = require("./models/Project");
 const Task = require("./models/Task");
 
 async function migrate() {
-  const uri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/task_manager";
   console.log("Connecting to MongoDB for migration...");
-  await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
+  await connectDB();
   console.log("Connected.");
 
   const users = await User.find();
@@ -48,91 +47,59 @@ async function migrate() {
         canDeleteTasks: true,
         canViewTasks: true,
         canManageEmployees: true,
-        canCreateProjects: true,
-        canEditProjects: true,
-        canDeleteProjects: true,
-        canViewProjects: true,
-        canManageStructure: true,
-        canViewExecutiveSummary: true,
-        canApproveWork: true,
-        canViewTeamTasks: true,
-        canViewAllTasks: true,
+        canManageProjects: true,
+        canManageOrganization: true,
       };
-      user.accessScopes = {
-        taskScope: "company",
-        projectScope: "company",
-        employeeScope: "company",
-        reportScope: "company",
+    } else if (user.role === "manager") {
+      user.permissions = {
+        canCreateTasks: true,
+        canAssignTasks: true,
+        canEditTasks: true,
+        canApproveTasks: true,
+        canDeleteTasks: false,
+        canViewTasks: true,
+        canManageEmployees: true,
+        canManageProjects: true,
+        canManageOrganization: false,
       };
     } else {
-      if (!user.permissions || Object.keys(user.permissions).length === 0) {
-        user.permissions = {
-          canCreateTasks: user.role === "director" || user.role === "manager",
-          canAssignTasks: user.role === "director" || user.role === "manager",
-          canEditTasks: user.role === "director" || user.role === "manager",
-          canApproveTasks: user.role === "director" || user.role === "manager",
-          canDeleteTasks: false,
-          canViewTasks: true,
-          canManageEmployees: false,
-          canCreateProjects: user.role === "director",
-          canEditProjects: user.role === "director",
-          canDeleteProjects: false,
-          canViewProjects: true,
-          canManageStructure: false,
-          canViewExecutiveSummary: user.role === "director",
-          canApproveWork: user.role === "director" || user.role === "manager",
-          canViewTeamTasks: user.role === "director" || user.role === "manager",
-          canViewAllTasks: false,
-        };
-      }
-      if (!user.accessScopes || Object.keys(user.accessScopes).length === 0) {
-        user.accessScopes = {
-          taskScope: user.role === "director" ? "project" : user.role === "manager" ? "team" : "own",
-          projectScope: "project",
-          employeeScope: user.role === "director" ? "department" : user.role === "manager" ? "team" : "own",
-          reportScope: "own",
-        };
-      }
+      user.permissions = {
+        canCreateTasks: false,
+        canAssignTasks: false,
+        canEditTasks: false,
+        canApproveTasks: false,
+        canDeleteTasks: false,
+        canViewTasks: true,
+        canManageEmployees: false,
+        canManageProjects: false,
+        canManageOrganization: false,
+      };
     }
-
-    if (!Array.isArray(user.reportingRelationships)) {
-      user.reportingRelationships = [];
-      if (user.reportsTo) {
-        user.reportingRelationships.push({
-          managerId: user.reportsTo,
-          relationshipType: "direct",
-        });
-      }
-    }
-
     await user.save();
-    console.log(`Migrated user: ${user.email} -> org ${org._id}`);
+    console.log(`Updated user: ${user.email} -> org ${org._id}`);
 
-    // Migrate invitations matching user's company
-    const invites = await Invitation.find({
-      $or: [{ organizationId: null }, { organizationId: { $exists: false } }],
-      companyName: user.companyName,
-    });
-    for (const inv of invites) {
-      inv.organizationId = org._id;
-      await inv.save();
-      console.log(`Migrated invitation: ${inv.email} -> org ${org._id}`);
-    }
+    // Update invitations sent by or for this user
+    await Invitation.updateMany(
+      { inviter: user._id, organizationId: { $exists: false } },
+      { $set: { organizationId: org._id } }
+    );
+    await Invitation.updateMany(
+      { email: user.email, organizationId: { $exists: false } },
+      { $set: { organizationId: org._id } }
+    );
 
-    // Migrate projects matching user
+    // Update projects created by this user
     const projects = await Project.find({
-      $or: [{ organizationId: null }, { organizationId: { $exists: false } }],
-      $or: [{ createdBy: user._id }, { directorId: user._id }],
+      $or: [{ owner: user._id }, { createdBy: user._id }],
     });
-    for (const proj of projects) {
-      proj.organizationId = org._id;
-      await proj.save();
-      console.log(`Migrated project: ${proj.name} -> org ${org._id}`);
+    for (const p of projects) {
+      p.organizationId = org._id;
+      await p.save();
+      console.log(`Migrated project: ${p.title} -> org ${org._id}`);
     }
 
-    // Migrate tasks matching user
+    // Update tasks created or assigned to this user
     const tasks = await Task.find({
-      $or: [{ organizationId: null }, { organizationId: { $exists: false } }],
       $or: [{ user: user._id }, { assignedTo: user._id }, { assignedBy: user._id }],
     });
     for (const t of tasks) {
@@ -143,10 +110,14 @@ async function migrate() {
   }
 
   console.log("Migration complete!");
+  await disconnectDB();
   process.exit(0);
 }
 
-migrate().catch((err) => {
+migrate().catch(async (err) => {
   console.error("Migration error:", err);
+  try {
+    await disconnectDB();
+  } catch (_) {}
   process.exit(1);
 });

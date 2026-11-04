@@ -12,9 +12,7 @@ const Message = require("./models/Message");
 const Meeting = require("./models/Meeting");
 const Notification = require("./models/Notification");
 
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  "mongodb+srv://koushikiudemy_db_user:koushiki123@cluster0.emsh8jh.mongodb.net/task_manager?retryWrites=true&w=majority";
+const { connectDB, disconnectDB } = require("./config/database");
 
 const assert = (condition, msg) => {
   if (!condition) {
@@ -30,7 +28,7 @@ async function runTests() {
   console.log("PHASE 7: GLOBAL SEARCH MULTI-CATEGORY VERIFICATION");
   console.log("=================================================\n");
 
-  await mongoose.connect(MONGODB_URI);
+  await connectDB();
   console.log("Connected to MongoDB successfully.\n");
 
   const testSuffix = `p7_${Date.now()}`;
@@ -329,9 +327,13 @@ async function runTests() {
     console.log("\n=================================================");
     console.log("ALL PHASE 7 GLOBAL SEARCH TESTS PASSED!");
     console.log("=================================================");
+    await disconnectDB();
     process.exit(0);
   } catch (err) {
     console.error("Test failed with error:", err);
+    try {
+      await disconnectDB();
+    } catch (_) {}
     process.exit(1);
   }
 }

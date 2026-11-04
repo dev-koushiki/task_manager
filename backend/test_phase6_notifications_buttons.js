@@ -9,9 +9,7 @@ const Organization = require("./models/Organization");
 const Project = require("./models/Project");
 const Notification = require("./models/Notification");
 
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  "mongodb+srv://koushikiudemy_db_user:koushiki123@cluster0.emsh8jh.mongodb.net/task_manager?retryWrites=true&w=majority";
+const { connectDB, disconnectDB } = require("./config/database");
 
 const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret";
 
@@ -29,7 +27,7 @@ async function runTests() {
   console.log("PHASE 6: NOTIFICATIONS & BUTTON FUNCTIONALITY VERIFICATION");
   console.log("=================================================\n");
 
-  await mongoose.connect(MONGODB_URI);
+  await connectDB();
   console.log("Connected to MongoDB successfully.\n");
 
   const testSuffix = `p6_${Date.now()}`;
@@ -290,9 +288,13 @@ async function runTests() {
     console.log("\n=================================================");
     console.log("ALL PHASE 6 NOTIFICATION & BUTTON TESTS PASSED!");
     console.log("=================================================");
+    await disconnectDB();
     process.exit(0);
   } catch (err) {
     console.error("Test failed with error:", err);
+    try {
+      await disconnectDB();
+    } catch (_) {}
     process.exit(1);
   }
 }

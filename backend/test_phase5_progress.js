@@ -10,9 +10,7 @@ const Notification = require("./models/Notification");
 const PerformanceRating = require("./models/PerformanceRating");
 const Recognition = require("./models/Recognition");
 
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  "mongodb+srv://koushikiudemy_db_user:koushiki123@cluster0.emsh8jh.mongodb.net/task_manager?retryWrites=true&w=majority";
+const { connectDB, disconnectDB } = require("./config/database");
 
 const assert = (condition, msg) => {
   if (!condition) {
@@ -28,7 +26,7 @@ async function runTests() {
   console.log("PHASE 5: EMPLOYEE DASHBOARD – MY PROGRESS & RATINGS");
   console.log("=================================================\n");
 
-  await mongoose.connect(MONGODB_URI);
+  await connectDB();
   console.log("Connected to MongoDB successfully.\n");
 
   const testSuffix = `p5_${Date.now()}`;
@@ -531,7 +529,7 @@ async function runTests() {
     console.error("Test execution failed:", err);
     process.exit(1);
   } finally {
-    await mongoose.disconnect();
+    await disconnectDB();
   }
 }
 

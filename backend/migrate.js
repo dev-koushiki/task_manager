@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const { connectDB, disconnectDB } = require("./config/database");
 require("dotenv").config();
 
 const User = require("./models/User");
@@ -8,9 +8,8 @@ const Project = require("./models/Project");
 const Task = require("./models/Task");
 
 async function migrate() {
-  const uri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/task_manager";
   console.log("Connecting to MongoDB for migration...");
-  await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
+  await connectDB();
   console.log("Connected.");
 
   const users = await User.find();
@@ -143,10 +142,14 @@ async function migrate() {
   }
 
   console.log("Migration complete!");
+  await disconnectDB();
   process.exit(0);
 }
 
-migrate().catch((err) => {
+migrate().catch(async (err) => {
   console.error("Migration error:", err);
+  try {
+    await disconnectDB();
+  } catch (_) {}
   process.exit(1);
 });

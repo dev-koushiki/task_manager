@@ -14,16 +14,14 @@ const {
   calculateOrganizationAnalytics,
 } = require("./services/performanceEvaluationEngine");
 
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  "mongodb+srv://koushikiudemy_db_user:koushiki123@cluster0.emsh8jh.mongodb.net/task_manager?retryWrites=true&w=majority";
+const { connectDB, disconnectDB } = require("./config/database");
 
 async function runTests() {
   console.log("=================================================");
   console.log("AUTOMATED EMPLOYEE PERFORMANCE EVALUATION TEST SUITE");
   console.log("=================================================\n");
 
-  await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+  await connectDB();
   console.log("Connected to MongoDB successfully.\n");
 
   const testOrgId = new mongoose.Types.ObjectId();
@@ -439,7 +437,7 @@ async function runTests() {
     await Organization.deleteOne({ _id: testOrgId });
     process.exit(1);
   } finally {
-    await mongoose.disconnect();
+    await disconnectDB();
   }
 }
 

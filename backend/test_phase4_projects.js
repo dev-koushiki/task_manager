@@ -8,14 +8,14 @@ const Project = require('./models/Project');
 const Notification = require('./models/Notification');
 const aiService = require('./services/aiService');
 
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://koushikiudemy_db_user:koushiki123@cluster0.emsh8jh.mongodb.net/task_manager?retryWrites=true&w=majority";
+const { connectDB, disconnectDB } = require('./config/database');
 
 async function runPhase4Tests() {
   console.log('=================================================');
   console.log('PHASE 4: PROJECT, MILESTONE ASSIGNMENT & AI TEST');
   console.log('=================================================');
 
-  await mongoose.connect(MONGODB_URI);
+  await connectDB();
   console.log('\nConnected to MongoDB successfully.');
 
   const testSuffix = Date.now();
@@ -305,7 +305,7 @@ Target deadline is December 20, 2026. This is part of the final testing phase.
     console.log('=================================================\n');
 
   } finally {
-    await mongoose.disconnect();
+    await disconnectDB();
   }
 }
 
