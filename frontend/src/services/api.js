@@ -3206,4 +3206,106 @@ export const api = {
       return { success: true, frequentConnections: [], reportingPeers: [] };
     }
   },
+
+  // ----------------------------------------------------
+  // HELP DESK & SMART TICKET MANAGEMENT SYSTEM
+  // ----------------------------------------------------
+  async createHelpDeskTicket(payload) {
+    return await safeFetchJson(`${API_BASE_URL}/helpdesk/tickets`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getHelpDeskTickets(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    const url = `${API_BASE_URL}/helpdesk/tickets${q ? `?${q}` : ''}`;
+    try {
+      return await safeFetchJson(url, { headers: getHeaders() });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, tickets: [], total: 0 };
+    }
+  },
+
+  async getHelpDeskTicket(id) {
+    return await safeFetchJson(`${API_BASE_URL}/helpdesk/tickets/${id}`, {
+      headers: getHeaders(),
+    });
+  },
+
+  async assignHelpDeskTicket(id, payload) {
+    return await safeFetchJson(`${API_BASE_URL}/helpdesk/tickets/${id}/assign`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updateHelpDeskTicketStatus(id, payload) {
+    return await safeFetchJson(`${API_BASE_URL}/helpdesk/tickets/${id}/status`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async addTicketMessage(id, payload) {
+    return await safeFetchJson(`${API_BASE_URL}/helpdesk/tickets/${id}/messages`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getTicketMessages(id) {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/helpdesk/tickets/${id}/messages`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, messages: [] };
+    }
+  },
+
+  async getHelpDeskAiAssist(id) {
+    return await safeFetchJson(`${API_BASE_URL}/helpdesk/tickets/${id}/ai-assist`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({}),
+    });
+  },
+
+  async getHelpDeskAnalytics(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/helpdesk/analytics${q ? `?${q}` : ''}`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, analytics: {} };
+    }
+  },
+
+  async getHelpDeskSettings() {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/helpdesk/settings`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, settings: null };
+    }
+  },
+
+  async updateHelpDeskSettings(payload) {
+    return await safeFetchJson(`${API_BASE_URL}/helpdesk/settings`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
 };

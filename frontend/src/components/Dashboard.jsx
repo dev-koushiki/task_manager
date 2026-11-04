@@ -35,6 +35,7 @@ import {
   AwardIcon,
   ClockIcon,
   MonitorIcon,
+  LifeBuoyIcon,
 } from './Icons';
 import { PerformanceDashboardView } from './PerformanceDashboardView';
 import { EmployeeDirectoryModal } from './EmployeeDirectoryModal';
@@ -42,6 +43,7 @@ import { GroupingChatView } from './GroupingChatView';
 import { ProjectSectionView } from './ProjectSectionView';
 import { MyProgressView } from './MyProgressView';
 import { WorkConnectView } from './WorkConnectView';
+import { HelpDeskView } from './HelpDeskView';
 import { TaskModal } from './TaskModal';
 import { ProjectModal } from './ProjectModal';
 import { TaskReviewModal } from './TaskReviewModal';
@@ -775,6 +777,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 {incomingWcCount > 0 && <span className="nav-badge-pill">{incomingWcCount}</span>}
               </button>
 
+              {/* 8. Help Desk (AI Smart Ticketing) */}
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'helpdesk' ? 'active' : ''}`}
+                onClick={() => setActiveTab('helpdesk')}
+              >
+                <LifeBuoyIcon size={18} className="nav-icon" />
+                <span>Help Desk</span>
+              </button>
+
               {/* 7. My Progress */}
               <button
                 type="button"
@@ -871,6 +883,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 {incomingWcCount > 0 && <span className="nav-badge-pill">{incomingWcCount}</span>}
               </button>
 
+              {/* Help Desk (AI Smart Ticketing) */}
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'helpdesk' ? 'active' : ''}`}
+                onClick={() => setActiveTab('helpdesk')}
+              >
+                <LifeBuoyIcon size={18} className="nav-icon" />
+                <span>Help Desk</span>
+              </button>
+
               {/* My Progress */}
               <button
                 type="button"
@@ -964,6 +986,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'calendar' && 'Calendar & Meetings'}
               {activeTab === 'connect' && 'Connekt'}
               {activeTab === 'workconnect' && 'WorkConnect Remote Assistance'}
+              {activeTab === 'helpdesk' && 'AI Help Desk & Smart Ticket Management'}
               {activeTab === 'overview' && 'Executive Administration Overview'}
               {activeTab === 'projects' && 'Projects'}
               {activeTab === 'analytics' && 'Automated Performance Evaluation & Periodic Analytics'}
@@ -979,6 +1002,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'calendar' && 'Schedule meetings, monitor deadlines, and track action items'}
               {activeTab === 'connect' && 'Native in-website video conferencing, screen sharing, chat, and Google Calendar sync'}
               {activeTab === 'workconnect' && 'Independent browser-native screen sharing, real-time collaboration workspace, voice, video, and live annotations'}
+              {activeTab === 'helpdesk' && 'AI-powered issue analysis, automated categorization, department routing, SLA monitoring, and resolution tracking'}
               {activeTab === 'overview' && 'Executive summary, progress health, and organization KPIs'}
               {activeTab === 'projects' && 'Project deliverables, milestone tracks, and inspection'}
               {activeTab === 'analytics' && 'Dynamic task delivery scoring, on-time telemetry, quality audits, and organization leaderboard'}
@@ -2078,6 +2102,15 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               tasks={tasks}
               projects={projects}
               preselectedTaskId={workConnectTaskId}
+            />
+          )}
+
+          {/* TAB: HELPDESK (AI-Powered Help Desk & Smart Ticket Management) */}
+          {activeTab === 'helpdesk' && (
+            <HelpDeskView
+              user={user}
+              tasks={tasks}
+              projects={projects}
             />
           )}
 

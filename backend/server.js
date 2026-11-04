@@ -19,6 +19,7 @@ const groupRoutes = require("./routes/groupRoutes");
 const performanceRoutes = require("./routes/performanceRoutes");
 const searchRoutes = require("./routes/searchRoutes");
 const { router: workConnectRoutes, setWorkConnectIO } = require("./routes/workConnectRoutes");
+const helpDeskRoutes = require("./routes/helpDeskRoutes");
 
 const app = express();
 
@@ -88,6 +89,7 @@ const routePairs = [
   ["/performance", performanceRoutes],
   ["/search", searchRoutes],
   ["/workconnect", workConnectRoutes],
+  ["/helpdesk", helpDeskRoutes],
 ];
 
 routePairs.forEach(([prefix, handler]) => {
