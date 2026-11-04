@@ -62,17 +62,26 @@ router.get("/employees", authMiddleware, workConnectAuth, async (req, res) => {
       .populate("reportsTo", "firstName lastName designation")
       .lean();
 
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
-
     let mapped = colleagues.map((colleague) => {
       const cId = colleague._id.toString();
       const inMem = activePresence.get(cId);
 
-      let effectiveStatus = "offline";
-      if (inMem && (Date.now() - inMem.lastPing < 2 * 60 * 1000)) {
-        effectiveStatus = inMem.status || "online";
-      } else if (colleague.workConnectStatus && colleague.workConnectLastSeen && new Date(colleague.workConnectLastSeen) > twoMinutesAgo) {
+      // Presence resolution:
+      // 1. Live socket / memory presence takes first priority
+      // 2. Active collaboration session
+      // 3. Explicit status ("busy", "in-session", "dnd", "online")
+      // 4. Default active workspace members to "online"
+      let effectiveStatus = "online";
+      if (inMem && inMem.status) {
+        effectiveStatus = inMem.status;
+      } else if (colleague.currentWorkConnectSessionId) {
+        effectiveStatus = "in-session";
+      } else if (colleague.workConnectStatus && colleague.workConnectStatus !== "offline") {
         effectiveStatus = colleague.workConnectStatus;
+      } else if (colleague.workConnectStatus === "offline" && colleague.workConnectLastSeen && (Date.now() - new Date(colleague.workConnectLastSeen).getTime() < 10 * 60 * 1000)) {
+        effectiveStatus = "offline";
+      } else {
+        effectiveStatus = "online";
       }
 
       // Check hierarchy relationship
@@ -145,11 +154,13 @@ router.post("/status", authMiddleware, workConnectAuth, async (req, res) => {
     });
 
     if (ioInstance) {
-      ioInstance.emit("workconnect_status_update", {
+      const statusPayload = {
         userId,
         status: newStatus,
         lastSeen: new Date(),
-      });
+      };
+      ioInstance.emit("workconnect_status_update", statusPayload);
+      ioInstance.emit("employee_status_update", statusPayload);
     }
 
     res.json({ success: true, status: newStatus });

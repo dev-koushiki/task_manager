@@ -172,7 +172,7 @@ const userSchema = new mongoose.Schema(
     workConnectStatus: {
       type: String,
       enum: ["online", "offline", "busy", "in-session", "dnd"],
-      default: "offline",
+      default: "online",
     },
     workConnectLastSeen: {
       type: Date,

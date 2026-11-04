@@ -92,6 +92,10 @@ class WorkConnectService {
         this.emit('status_update', data);
       });
 
+      this.socket.on('workconnect_status_update', (data) => {
+        this.emit('status_update', data);
+      });
+
       this.socket.on('workconnect_incoming_request', (data) => {
         this.emit('incoming_request', data);
       });

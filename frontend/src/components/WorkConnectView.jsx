@@ -59,9 +59,17 @@ export const WorkConnectView = ({
   // Assistance Summary Detail Modal
   const [viewSummarySession, setViewSummarySession] = useState(null);
 
-  // Initialize Socket and listeners
+  // Initialize Socket, presence announcement, and listeners
   useEffect(() => {
     workConnectService.initSocket(user);
+
+    // Automatically announce current user availability as online
+    api.updateWorkConnectStatus(myStatus || 'online').catch(() => {});
+
+    // Periodic heartbeat to keep presence refreshed
+    const heartbeatTimer = setInterval(() => {
+      api.updateWorkConnectStatus(myStatus || 'online').catch(() => {});
+    }, 45000);
 
     const unsubIncoming = workConnectService.on('incoming_request', (req) => {
       setIncomingRequests((prev) => [req, ...prev.filter((r) => r._id !== req._id)]);
@@ -87,11 +95,12 @@ export const WorkConnectView = ({
     });
 
     return () => {
+      clearInterval(heartbeatTimer);
       unsubIncoming();
       unsubAccepted();
       unsubStatus();
     };
-  }, [user]);
+  }, [user, myStatus]);
 
   // Handle preselected task passed from TaskModal
   useEffect(() => {
@@ -320,9 +329,23 @@ export const WorkConnectView = ({
     }
   };
 
+  // Safe Colleague Status Resolver
+  const getColleagueStatus = (emp) => {
+    const ws = emp.workConnectStatus;
+    if (ws && ['online', 'in-session', 'busy', 'dnd', 'offline'].includes(ws)) {
+      return ws;
+    }
+    // Active members in the workspace default to online
+    if (emp.status === 'active' || !emp.status) {
+      return 'online';
+    }
+    return 'offline';
+  };
+
   // Status Chip Renderer
   const renderStatusBadge = (status) => {
     switch (status) {
+      case 'active':
       case 'online':
         return <span className="status-pill status-online">● Online</span>;
       case 'in-session':
@@ -358,7 +381,7 @@ export const WorkConnectView = ({
         }
       }
       if (statusFilter !== 'all') {
-        const st = emp.workConnectStatus || emp.status || 'offline';
+        const st = getColleagueStatus(emp);
         if (st !== statusFilter) return false;
       }
       return true;
@@ -540,8 +563,9 @@ export const WorkConnectView = ({
               </div>
             ) : (
               displayedEmployees.map((emp) => {
-                const isOnline = emp.workConnectStatus === 'online';
-                const isBusy = emp.workConnectStatus === 'busy' || emp.workConnectStatus === 'in-session';
+                const empStatus = getColleagueStatus(emp);
+                const isOnline = empStatus === 'online';
+                const isBusy = empStatus === 'busy' || empStatus === 'in-session';
                 return (
                   <div key={emp._id} className="employee-connect-card">
                     <div className="card-top">
@@ -549,7 +573,7 @@ export const WorkConnectView = ({
                         <div className="avatar-circle">
                           {emp.firstName?.charAt(0) || 'E'}
                         </div>
-                        <span className={`avatar-status-dot dot-${emp.workConnectStatus || emp.status || 'offline'}`} />
+                        <span className={`avatar-status-dot dot-${empStatus}`} />
                       </div>
                       <div className="emp-info">
                         <h4 className="emp-name">{emp.firstName} {emp.lastName}</h4>
@@ -561,7 +585,7 @@ export const WorkConnectView = ({
                     <div className="card-middle">
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-muted">Status:</span>
-                        {renderStatusBadge(emp.workConnectStatus || emp.status || 'offline')}
+                        {renderStatusBadge(empStatus)}
                       </div>
                       {emp.relationship && (
                         <div className="relationship-tag">
@@ -576,7 +600,7 @@ export const WorkConnectView = ({
                         type="button"
                         className="btn btn-primary btn-sm w-full"
                         onClick={() => handleOpenRequestModal(emp)}
-                        disabled={emp.workConnectStatus === 'dnd' || emp.status === 'dnd'}
+                        disabled={empStatus === 'dnd'}
                       >
                         <PhoneCallIcon size={14} />
                         <span>Request Connection</span>
@@ -818,7 +842,7 @@ export const WorkConnectView = ({
                       </div>
                     </div>
                     <div className="card-middle">
-                      {renderStatusBadge(emp.workConnectStatus)}
+                      {renderStatusBadge(getColleagueStatus(emp))}
                     </div>
                     <div className="card-bottom">
                       <button
@@ -859,7 +883,7 @@ export const WorkConnectView = ({
                       </div>
                     </div>
                     <div className="card-middle">
-                      {renderStatusBadge(conn.workConnectStatus)}
+                      {renderStatusBadge(getColleagueStatus(conn))}
                     </div>
                     <div className="card-bottom">
                       <button
