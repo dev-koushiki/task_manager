@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { SparklesIcon, CornerDownRightIcon, PlusIcon, TrashIcon } from './Icons';
+import { SparklesIcon, CornerDownRightIcon, PlusIcon, TrashIcon, MonitorIcon } from './Icons';
 import { api } from '../services/api';
 
 const TaskModalDialog = ({
@@ -10,6 +10,7 @@ const TaskModalDialog = ({
   employees,
   defaultProjectId,
   parentTaskId,
+  onConnectForAssistance,
 }) => {
   const [assigneeOptions, setAssigneeOptions] = useState(employees);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -323,13 +324,31 @@ const TaskModalDialog = ({
             </div>
           </div>
 
-          <div className="modal-actions" style={{ marginTop: '16px' }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSubmitting}>
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-              {isSubmitting ? 'Assigning Task...' : editingTask ? 'Save Changes' : parentTaskId ? 'Create Subtask' : 'Assign Task'}
-            </button>
+          <div className="modal-actions" style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              {editingTask && onConnectForAssistance && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm flex items-center gap-1.5"
+                  onClick={() => {
+                    onConnectForAssistance(editingTask._id || editingTask.id);
+                    onClose();
+                  }}
+                  title="Connect with a colleague or supervisor for live remote assistance"
+                >
+                  <MonitorIcon size={14} />
+                  <span>Connect for Assistance</span>
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSubmitting}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                {isSubmitting ? 'Assigning Task...' : editingTask ? 'Save Changes' : parentTaskId ? 'Create Subtask' : 'Assign Task'}
+              </button>
+            </div>
           </div>
         </form>
       </div>
@@ -346,6 +365,7 @@ export const TaskModal = ({
   employees = [],
   defaultProjectId = '',
   parentTaskId = null,
+  onConnectForAssistance = null,
 }) => {
   if (!isOpen) return null;
 
@@ -359,6 +379,7 @@ export const TaskModal = ({
       employees={employees}
       defaultProjectId={defaultProjectId}
       parentTaskId={parentTaskId}
+      onConnectForAssistance={onConnectForAssistance}
     />
   );
 };

@@ -17,6 +17,7 @@ import {
   MessageSquareIcon,
   SendIcon,
   ClockIcon,
+  MonitorIcon,
 } from './Icons';
 import { api } from '../services/api';
 
@@ -28,6 +29,7 @@ export const UnifiedEmployeeDashboard = ({
   onOpenSubmitModal,
   onOpenReviewModal,
   onTasksUpdated,
+  onConnectForAssistance,
 }) => {
   const [activePanel, setActivePanel] = useState('submission'); // 'submission' | 'assignment'
   const [authorizedAssignees, setAuthorizedAssignees] = useState([]);
@@ -672,7 +674,7 @@ export const UnifiedEmployeeDashboard = ({
                       />
                     </div>
 
-                    {/* Action Submission Button */}
+                      {/* Action Submission Button */}
                     <div className="task-footer-action">
                       {isCompleted ? (
                         <div className="badge-approved-stamp">
@@ -689,6 +691,18 @@ export const UnifiedEmployeeDashboard = ({
                           onClick={() => onOpenSubmitModal(t)}
                         >
                           <CheckCircleIcon size={16} /> Submit Deliverable for Supervisor Review
+                        </button>
+                      )}
+
+                      {!isCompleted && onConnectForAssistance && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm mt-2 w-full flex items-center justify-center gap-1.5"
+                          onClick={() => onConnectForAssistance(t._id || t.id)}
+                          title="Connect with a colleague or supervisor for real-time remote assistance on this task"
+                        >
+                          <MonitorIcon size={14} />
+                          <span>Connect for Assistance</span>
                         </button>
                       )}
                     </div>

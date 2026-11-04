@@ -3042,4 +3042,168 @@ export const api = {
       headers: getHeaders(),
     });
   },
+
+  // ----------------------------------------------------
+  // WORKCONNECT (Remote Assistance & Collaboration System)
+  // ----------------------------------------------------
+  async getWorkConnectEmployees(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    const url = `${API_BASE_URL}/workconnect/employees${q ? `?${q}` : ''}`;
+    try {
+      return await safeFetchJson(url, { headers: getHeaders() });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, employees: [] };
+    }
+  },
+
+  async updateWorkConnectStatus(status) {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/workconnect/status`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ status }),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: false, status };
+    }
+  },
+
+  async requestWorkConnectConnection(payload) {
+    return await safeFetchJson(`${API_BASE_URL}/workconnect/request`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getIncomingWorkConnectRequests() {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/workconnect/requests/incoming`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, incomingRequests: [] };
+    }
+  },
+
+  async getOutgoingWorkConnectRequests() {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/workconnect/requests/outgoing`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, outgoingRequests: [] };
+    }
+  },
+
+  async acceptWorkConnectRequest(requestId) {
+    return await safeFetchJson(`${API_BASE_URL}/workconnect/requests/${requestId}/accept`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({}),
+    });
+  },
+
+  async rejectWorkConnectRequest(requestId, reason = '') {
+    return await safeFetchJson(`${API_BASE_URL}/workconnect/requests/${requestId}/reject`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  async cancelWorkConnectRequest(requestId) {
+    return await safeFetchJson(`${API_BASE_URL}/workconnect/requests/${requestId}/cancel`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({}),
+    });
+  },
+
+  async getActiveWorkConnectSessions() {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/workconnect/sessions/active`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, activeSessions: [] };
+    }
+  },
+
+  async getWorkConnectSession(sessionId) {
+    return await safeFetchJson(`${API_BASE_URL}/workconnect/sessions/${sessionId}`, {
+      headers: getHeaders(),
+    });
+  },
+
+  async endWorkConnectSession(sessionId, summaryPayload = {}) {
+    return await safeFetchJson(`${API_BASE_URL}/workconnect/sessions/${sessionId}/end`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(summaryPayload),
+    });
+  },
+
+  async updateWorkConnectPermissions(sessionId, permissions) {
+    return await safeFetchJson(`${API_BASE_URL}/workconnect/sessions/${sessionId}/permissions`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify({ permissions }),
+    });
+  },
+
+  async updateWorkConnectAssistanceSummary(sessionId, summaryData) {
+    return await safeFetchJson(`${API_BASE_URL}/workconnect/sessions/${sessionId}/summary`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(summaryData),
+    });
+  },
+
+  async sendWorkConnectSignal(sessionId, signalData) {
+    return await safeFetchJson(`${API_BASE_URL}/workconnect/sessions/${sessionId}/signals`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(signalData),
+    });
+  },
+
+  async getWorkConnectSignals(sessionId, since = 0) {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/workconnect/sessions/${sessionId}/signals?since=${since}`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, signals: [] };
+    }
+  },
+
+  async getWorkConnectHistory(params = {}) {
+    const q = new URLSearchParams(params).toString();
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/workconnect/history${q ? `?${q}` : ''}`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, history: [], analytics: {} };
+    }
+  },
+
+  async getFrequentWorkConnectConnections() {
+    try {
+      return await safeFetchJson(`${API_BASE_URL}/workconnect/connections/frequent`, {
+        headers: getHeaders(),
+      });
+    } catch (err) {
+      if (!isOfflineError(err)) throw err;
+      return { success: true, frequentConnections: [], reportingPeers: [] };
+    }
+  },
 };

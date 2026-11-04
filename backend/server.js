@@ -18,6 +18,7 @@ const notificationRoutes = require("./routes/notificationRoutes");
 const groupRoutes = require("./routes/groupRoutes");
 const performanceRoutes = require("./routes/performanceRoutes");
 const searchRoutes = require("./routes/searchRoutes");
+const { router: workConnectRoutes, setWorkConnectIO } = require("./routes/workConnectRoutes");
 
 const app = express();
 
@@ -86,6 +87,7 @@ const routePairs = [
   ["/groups", groupRoutes],
   ["/performance", performanceRoutes],
   ["/search", searchRoutes],
+  ["/workconnect", workConnectRoutes],
 ];
 
 routePairs.forEach(([prefix, handler]) => {
@@ -118,6 +120,52 @@ if (!process.env.VERCEL) {
   const server = app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  try {
+    const { Server } = require("socket.io");
+    const io = new Server(server, {
+      cors: {
+        origin: "*",
+        methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      },
+    });
+    setWorkConnectIO(io);
+
+    io.on("connection", (socket) => {
+      socket.on("register_user", (userId) => {
+        if (userId) {
+          socket.join(`user:${userId}`);
+        }
+      });
+
+      socket.on("join_session", (sessionId) => {
+        if (sessionId) {
+          socket.join(`session:${sessionId}`);
+        }
+      });
+
+      socket.on("leave_session", (sessionId) => {
+        if (sessionId) {
+          socket.leave(`session:${sessionId}`);
+        }
+      });
+
+      socket.on("signal", (data) => {
+        if (data && data.sessionId) {
+          socket.to(`session:${data.sessionId}`).emit("signal", data);
+        }
+      });
+
+      socket.on("status_change", (data) => {
+        if (data && data.userId && data.status) {
+          io.emit("employee_status_update", data);
+        }
+      });
+    });
+    console.log("WorkConnect Socket.IO initialized on server");
+  } catch (ioErr) {
+    console.warn("Socket.IO initialization skipped:", ioErr.message);
+  }
 
   server.on("error", (error) => {
     if (error.code === "EADDRINUSE") {

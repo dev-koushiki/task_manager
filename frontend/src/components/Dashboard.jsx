@@ -34,12 +34,14 @@ import {
   MailIcon,
   AwardIcon,
   ClockIcon,
+  MonitorIcon,
 } from './Icons';
 import { PerformanceDashboardView } from './PerformanceDashboardView';
 import { EmployeeDirectoryModal } from './EmployeeDirectoryModal';
 import { GroupingChatView } from './GroupingChatView';
 import { ProjectSectionView } from './ProjectSectionView';
 import { MyProgressView } from './MyProgressView';
+import { WorkConnectView } from './WorkConnectView';
 import { TaskModal } from './TaskModal';
 import { ProjectModal } from './ProjectModal';
 import { TaskReviewModal } from './TaskReviewModal';
@@ -118,6 +120,8 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
   const [connectRoomCode, setConnectRoomCode] = useState('');
   const [isDirectoryModalOpen, setIsDirectoryModalOpen] = useState(false);
   const [selectedEmployeeForEval, setSelectedEmployeeForEval] = useState(null);
+  const [workConnectTaskId, setWorkConnectTaskId] = useState(null);
+  const [incomingWcCount, setIncomingWcCount] = useState(0);
 
   const refreshAllData = async () => {
     try {
@@ -188,6 +192,29 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
 
     return () => clearInterval(pollInterval);
   }, [user]);
+
+  // Background polling for incoming WorkConnect connection requests
+  useEffect(() => {
+    if (!user) return;
+    const fetchIncomingCount = () => {
+      api
+        .getIncomingWorkConnectRequests()
+        .then((res) => {
+          if (res?.incomingRequests) {
+            setIncomingWcCount(res.incomingRequests.length);
+          }
+        })
+        .catch(() => {});
+    };
+    fetchIncomingCount();
+    const wcInterval = setInterval(fetchIncomingCount, 10000);
+    return () => clearInterval(wcInterval);
+  }, [user]);
+
+  const handleOpenWorkConnectForTask = (taskId) => {
+    setWorkConnectTaskId(taskId);
+    setActiveTab('workconnect');
+  };
 
   // Project Actions
   const handleSaveProject = async (projectData) => {
@@ -737,6 +764,17 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 <span>Connekt</span>
               </button>
 
+              {/* 7. WorkConnect (Remote Assistance) */}
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'workconnect' ? 'active' : ''}`}
+                onClick={() => setActiveTab('workconnect')}
+              >
+                <MonitorIcon size={18} className="nav-icon" />
+                <span>WorkConnect</span>
+                {incomingWcCount > 0 && <span className="nav-badge-pill">{incomingWcCount}</span>}
+              </button>
+
               {/* 7. My Progress */}
               <button
                 type="button"
@@ -820,6 +858,17 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               >
                 <VideoIcon size={18} className="nav-icon" />
                 <span>Connekt</span>
+              </button>
+
+              {/* WorkConnect (Remote Assistance) */}
+              <button
+                type="button"
+                className={`sidebar-nav-item ${activeTab === 'workconnect' ? 'active' : ''}`}
+                onClick={() => setActiveTab('workconnect')}
+              >
+                <MonitorIcon size={18} className="nav-icon" />
+                <span>WorkConnect</span>
+                {incomingWcCount > 0 && <span className="nav-badge-pill">{incomingWcCount}</span>}
               </button>
 
               {/* My Progress */}
@@ -914,6 +963,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'tasks' && (!isAdmin ? 'Unified Employee Dashboard' : 'Taskflow Tasks')}
               {activeTab === 'calendar' && 'Calendar & Meetings'}
               {activeTab === 'connect' && 'Connekt'}
+              {activeTab === 'workconnect' && 'WorkConnect Remote Assistance'}
               {activeTab === 'overview' && 'Executive Administration Overview'}
               {activeTab === 'projects' && 'Projects'}
               {activeTab === 'analytics' && 'Automated Performance Evaluation & Periodic Analytics'}
@@ -928,6 +978,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
               {activeTab === 'tasks' && (!isAdmin ? 'Submission Panel (work delivery & milestone completion) and Assignment Panel (reporting delegation)' : "Manage and track organization team's work")}
               {activeTab === 'calendar' && 'Schedule meetings, monitor deadlines, and track action items'}
               {activeTab === 'connect' && 'Native in-website video conferencing, screen sharing, chat, and Google Calendar sync'}
+              {activeTab === 'workconnect' && 'Independent browser-native screen sharing, real-time collaboration workspace, voice, video, and live annotations'}
               {activeTab === 'overview' && 'Executive summary, progress health, and organization KPIs'}
               {activeTab === 'projects' && 'Project deliverables, milestone tracks, and inspection'}
               {activeTab === 'analytics' && 'Dynamic task delivery scoring, on-time telemetry, quality audits, and organization leaderboard'}
@@ -1113,6 +1164,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
                 setIsReviewModalOpen(true);
               }}
               onTasksUpdated={refreshAllData}
+              onConnectForAssistance={handleOpenWorkConnectForTask}
             />
           )}
 
@@ -2019,6 +2071,16 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
             />
           )}
 
+          {/* TAB: WORKCONNECT (Real-Time Remote Assistance & Collaboration) */}
+          {activeTab === 'workconnect' && (
+            <WorkConnectView
+              user={user}
+              tasks={tasks}
+              projects={projects}
+              preselectedTaskId={workConnectTaskId}
+            />
+          )}
+
           {/* TAB: OVERVIEW (Admin Executive Summary) */}
           {isAdmin && activeTab === 'overview' && (
             <AdminSummaryView
@@ -2253,6 +2315,7 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
         employees={employees}
         defaultProjectId={taskModalProjectId}
         parentTaskId={taskModalParentId}
+        onConnectForAssistance={handleOpenWorkConnectForTask}
       />
 
       <TaskReviewModal
