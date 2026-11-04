@@ -33,6 +33,7 @@ import {
   VideoIcon,
   MailIcon,
   AwardIcon,
+  ClockIcon,
 } from './Icons';
 import { PerformanceDashboardView } from './PerformanceDashboardView';
 import { EmployeeDirectoryModal } from './EmployeeDirectoryModal';
@@ -494,10 +495,10 @@ export const Dashboard = ({ user, onLogout, theme, onToggleTheme, onTestAcceptIn
       list.sort((a, b) => {
         const da = a.deadline || a.dueDate || '9999-99-99';
         const db = b.deadline || b.dueDate || '9999-99-99';
-        return da.localeCompare(db);
+        return String(da).localeCompare(String(db));
       });
     } else if (sortBy === 'alphabetical') {
-      list.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+      list.sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
     } else if (sortBy === 'newest') {
       list.sort((a, b) => new Date(b.createdAt || b.updatedAt || 0) - new Date(a.createdAt || a.updatedAt || 0));
     }

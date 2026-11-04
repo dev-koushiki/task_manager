@@ -4,6 +4,7 @@ import { RegisterScreen } from './components/RegisterScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { AcceptInviteScreen } from './components/AcceptInviteScreen';
 import { Dashboard } from './components/Dashboard';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ThemeToggle } from './components/ThemeToggle';
 import { api } from './services/api';
 import './App.css';
@@ -171,6 +172,7 @@ function App() {
       )}
 
       {currentView === 'dashboard' && (
+        <ErrorBoundary fallbackTitle="Error loading dashboard" onReset={() => window.location.reload()}>
         <Dashboard
           user={currentUser}
           onLogout={handleLogout}
@@ -179,6 +181,7 @@ function App() {
           onTestAcceptInvite={handleTestAcceptInvite}
           onUpdateUser={setCurrentUser}
         />
+        </ErrorBoundary>
       )}
     </div>
   );
