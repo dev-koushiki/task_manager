@@ -1665,70 +1665,98 @@ export const ConnectView = ({
                   </button>
                 </div>
               ) : (
-                <div className="upcoming-meetings-grid">
-                  {upcomingMeetings.map((m) => {
-                    const isToday = m.date === new Date().toISOString().split('T')[0];
-                    return (
-                      <div key={m._id || m.id} className="connect-meeting-card animate-scale-up">
-                        <div className="card-top-status">
-                          <span className={`meeting-day-pill ${isToday ? 'today' : ''}`}>
-                            {isToday ? 'TODAY' : m.date}
-                          </span>
-                          <span className="room-code-tag">Room: {m.roomCode || 'con-room'}</span>
-                        </div>
+                <div className="history-table-wrapper animate-scale-up">
+                  <table className="task-table connect-upcoming-table">
+                    <thead>
+                      <tr>
+                        <th>Meeting Title & Room</th>
+                        <th>Date & Schedule</th>
+                        <th>Organizer</th>
+                        <th>Participants</th>
+                        <th style={{ textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {upcomingMeetings.map((m) => {
+                        const isToday = m.date === new Date().toISOString().split('T')[0];
+                        return (
+                          <tr key={m._id || m.id}>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  <strong style={{ fontSize: '14px', color: 'var(--text-main)' }}>{m.title}</strong>
+                                  <span className="room-code-tag" style={{ display: 'inline-flex', alignItems: 'center', margin: 0 }}>
+                                    Room: {m.roomCode || 'con-room'}
+                                  </span>
+                                </div>
+                                {m.agenda && <p className="meeting-card-agenda" style={{ marginTop: '2px' }}>{m.agenda}</p>}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <span className={`meeting-day-pill ${isToday ? 'today' : ''}`} style={{ width: 'fit-content' }}>
+                                  {isToday ? 'TODAY' : m.date}
+                                </span>
+                                <span className="meta-item" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                  <ClockIcon size={13} /> {m.startTime} - {m.endTime}
+                                </span>
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <UserIcon size={14} className="text-muted" />
+                                <span style={{ fontWeight: 500, color: 'var(--text-main)' }}>{m.organizerName}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <UsersIcon size={14} className="text-muted" />
+                                <span style={{ color: 'var(--text-muted)' }}>{m.participants?.length || 0} participants</span>
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => handleJoinRoom(m.roomCode || m._id)}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                >
+                                  <VideoIcon size={14} />
+                                  <span>Join Meeting</span>
+                                </button>
 
-                        <h4 className="meeting-card-title">{m.title}</h4>
-                        {m.agenda && <p className="meeting-card-agenda">{m.agenda}</p>}
+                                <button
+                                  type="button"
+                                  className="btn btn-outline btn-sm"
+                                  onClick={() => {
+                                    const link = `${window.location.origin}/connect?room=${m.roomCode}`;
+                                    navigator.clipboard.writeText(link);
+                                    showCustomAlert('Meeting link copied to clipboard!', 'Link Copied', 'success');
+                                  }}
+                                  title="Copy meeting link"
+                                  style={{ padding: '6px 8px' }}
+                                >
+                                  <CopyIcon size={14} />
+                                </button>
 
-                        <div className="meeting-card-meta">
-                          <span className="meta-item">
-                            <ClockIcon size={13} /> {m.startTime} - {m.endTime}
-                          </span>
-                          <span className="meta-item">
-                            <UserIcon size={13} /> Organizer: <strong>{m.organizerName}</strong>
-                          </span>
-                          <span className="meta-item">
-                            <UsersIcon size={13} /> {m.participants?.length || 0} participants
-                          </span>
-                        </div>
-
-                        <div className="meeting-card-actions-row">
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            onClick={() => handleJoinRoom(m.roomCode || m._id)}
-                          >
-                            <VideoIcon size={14} />
-                            <span>Join Meeting</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-sm"
-                            onClick={() => {
-                              const link = `${window.location.origin}/connect?room=${m.roomCode}`;
-                              navigator.clipboard.writeText(link);
-                              showCustomAlert('Meeting link copied to clipboard!', 'Link Copied', 'success');
-                            }}
-                            title="Copy link"
-                          >
-                            <CopyIcon size={14} />
-                          </button>
-
-                          {googleStatus.connected && (
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => handleSyncMeeting(m._id || m.id)}
-                              title="Sync to Google Calendar & Google Meet"
-                            >
-                              Sync Google
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                                {googleStatus.connected && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => handleSyncMeeting(m._id || m.id)}
+                                    title="Sync to Google Calendar & Google Meet"
+                                  >
+                                    Sync Google
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
