@@ -583,6 +583,7 @@ export const ConnectView = ({
                       }}
                       autoPlay
                       playsInline
+                      muted
                       className="screen-share-video"
                     />
                   )}
@@ -639,24 +640,31 @@ export const ConnectView = ({
 
                   return (
                     <div key={pId} className="video-tile remote-tile">
-                      {/* Audio playback element */}
+                      {/* Audio playback element - dedicated audio stream for smooth voice */}
                       {remoteStream && (
                         <audio
                           autoPlay
                           playsInline
                           ref={(el) => {
-                            if (el && el.srcObject !== remoteStream) {
-                              el.srcObject = remoteStream;
-                              el.play().catch((err) => console.warn('Audio playback error:', err));
+                            if (el) {
+                              const audioTracks = remoteStream.getAudioTracks();
+                              if (audioTracks.length > 0) {
+                                if (!el.srcObject || el.srcObject.getAudioTracks()[0]?.id !== audioTracks[0].id) {
+                                  el.srcObject = new MediaStream([audioTracks[0]]);
+                                }
+                                el.play().catch(() => {});
+                              }
                             }
                           }}
                         />
                       )}
 
+                      {/* Video playback element - muted to allow instant autoplay and prevent audio conflicts */}
                       {isCameraActive ? (
                         <video
                           autoPlay
                           playsInline
+                          muted
                           ref={(el) => {
                             if (el && el.srcObject !== remoteStream) {
                               el.srcObject = remoteStream;

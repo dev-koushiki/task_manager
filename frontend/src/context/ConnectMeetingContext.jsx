@@ -42,8 +42,12 @@ export const ConnectMeetingProvider = ({ children, user }) => {
   const screenStreamRef = useRef(null);
   const peerConnectionsRef = useRef(new Map()); // peerId -> RTCPeerConnection
   const remoteStreamsRef = useRef(new Map()); // peerId -> MediaStream
-  const remoteAudioElementsRef = useRef(new Map()); // peerId -> HTMLAudioElement in DOM
+  const remoteAudioElementsRef = useRef(new Map()); // peerId -> HTMLAudioElement
   const pendingCandidatesRef = useRef(new Map()); // peerId -> Array of candidate data
+  const lastProcessedOfferSdpRef = useRef(new Map()); // peerId -> sdp string
+  const lastProcessedAnswerSdpRef = useRef(new Map()); // peerId -> sdp string
+  const peerMissingPollsRef = useRef(new Map()); // peerId -> missing count
+  const connectionAttemptTimeRef = useRef(new Map()); // peerId -> timestamp
   const pollingIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
   const lastMuteAllTimestampRef = useRef(0);
@@ -57,9 +61,9 @@ export const ConnectMeetingProvider = ({ children, user }) => {
         audioEl.play().catch(() => {});
       }
     });
-    // 2. Play any media elements on page
-    document.querySelectorAll('audio, video').forEach((el) => {
-      if (el && el.paused && el.srcObject && !el.muted) {
+    // 2. Play any audio elements on page
+    document.querySelectorAll('audio').forEach((el) => {
+      if (el && el.paused && el.srcObject) {
         el.play().catch(() => {});
       }
     });
@@ -85,35 +89,29 @@ export const ConnectMeetingProvider = ({ children, user }) => {
       try {
         audioEl.pause();
         audioEl.srcObject = null;
-        if (audioEl.parentNode) {
-          audioEl.parentNode.removeChild(audioEl);
-        }
       } catch (_) {}
       remoteAudioElementsRef.current.delete(peerId);
     }
   };
 
-  // Attach an incoming audio track to a dedicated HTML5 Audio element in the DOM
-  const attachRemoteAudio = useCallback((peerId, track, stream) => {
+  // Attach an incoming audio track to a dedicated HTML5 Audio element
+  const attachRemoteAudio = useCallback((peerId, track) => {
     let audioEl = remoteAudioElementsRef.current.get(peerId);
     if (!audioEl) {
-      audioEl = document.createElement('audio');
+      audioEl = new Audio();
       audioEl.autoplay = true;
       audioEl.playsInline = true;
-      audioEl.style.display = 'none';
-      audioEl.setAttribute('data-peer-audio', peerId);
-      document.body.appendChild(audioEl);
       remoteAudioElementsRef.current.set(peerId, audioEl);
     }
 
-    const audioStream = stream || new MediaStream([track]);
-    if (audioEl.srcObject !== audioStream) {
+    const audioStream = new MediaStream([track]);
+    if (!audioEl.srcObject || audioEl.srcObject.getAudioTracks()[0]?.id !== track.id) {
       audioEl.srcObject = audioStream;
     }
 
     const playAudio = () => {
       audioEl.play().catch((err) => {
-        console.warn(`[ConnectWebRTC] Autoplay waiting for user gesture for peer ${peerId}:`, err.message);
+        console.warn(`[ConnectAudio] Autoplay waiting for user gesture for peer ${peerId}:`, err.message);
       });
     };
 
@@ -259,9 +257,9 @@ export const ConnectMeetingProvider = ({ children, user }) => {
         stream.addTrack(event.track);
       }
 
-      // If audio track, attach to persistent HTML5 audio element immediately
+      // If audio track, attach to dedicated audio player immediately
       if (event.track.kind === 'audio') {
-        attachRemoteAudio(remoteUserId, event.track, stream);
+        attachRemoteAudio(remoteUserId, event.track);
       }
 
       // Update reactive state map for immediate UI re-rendering
@@ -292,6 +290,14 @@ export const ConnectMeetingProvider = ({ children, user }) => {
         const signalType = type || signal?.type;
 
         if (signalType === 'offer') {
+          const sdpData = signal.sdp ? signal : (signal.signal || signal);
+          const rawSdp = typeof sdpData === 'string' ? sdpData : (sdpData.sdp || JSON.stringify(sdpData));
+
+          // Deduplicate offers to prevent unnecessary renegotiation
+          if (lastProcessedOfferSdpRef.current.get(sId) === rawSdp) {
+            continue;
+          }
+
           // Polite Peer / Offer collision handling
           const isPolite = myId < sId;
           const offerCollision = pc && pc.signalingState !== 'stable';
@@ -312,7 +318,8 @@ export const ConnectMeetingProvider = ({ children, user }) => {
             pc = createPeerConnection(sId, code);
           }
 
-          const sdpData = signal.sdp ? signal : (signal.signal || signal);
+          lastProcessedOfferSdpRef.current.set(sId, rawSdp);
+
           await pc.setRemoteDescription(new RTCSessionDescription(sdpData));
 
           // Drain queued ICE candidates
@@ -328,8 +335,15 @@ export const ConnectMeetingProvider = ({ children, user }) => {
           const answerPayload = answer.toJSON ? answer.toJSON() : { type: answer.type, sdp: answer.sdp };
           await api.sendConnectSignal(code, sId, answerPayload, 'answer');
         } else if (signalType === 'answer') {
+          const sdpData = signal.sdp ? signal : (signal.signal || signal);
+          const rawSdp = typeof sdpData === 'string' ? sdpData : (sdpData.sdp || JSON.stringify(sdpData));
+
+          if (lastProcessedAnswerSdpRef.current.get(sId) === rawSdp) {
+            continue;
+          }
+          lastProcessedAnswerSdpRef.current.set(sId, rawSdp);
+
           if (pc && pc.signalingState === 'have-local-offer') {
-            const sdpData = signal.sdp ? signal : (signal.signal || signal);
             await pc.setRemoteDescription(new RTCSessionDescription(sdpData));
 
             // Drain queued ICE candidates
@@ -378,17 +392,42 @@ export const ConnectMeetingProvider = ({ children, user }) => {
         if (signalData.activePeers && Array.isArray(signalData.activePeers)) {
           setActivePeers(signalData.activePeers);
 
-          // Establish peer connections with all active peers (higher userId initiates)
+          // Establish peer connections with active peers without creating duplicate connections
           signalData.activePeers.forEach(async (peer) => {
             const peerId = String(peer.userId);
             if (!peerId || peerId === myId) return;
 
+            // Reset missing poll counter since peer is present in activePeers
+            peerMissingPollsRef.current.delete(peerId);
+
             let pc = peerConnectionsRef.current.get(peerId);
             const isInitiator = myId > peerId;
-            const needsConnection = !pc || pc.connectionState === 'failed' || pc.connectionState === 'closed';
+
+            const isDead = pc && (pc.connectionState === 'failed' || pc.connectionState === 'closed');
+            if (isDead) {
+              try { pc.close(); } catch (_) {}
+              peerConnectionsRef.current.delete(peerId);
+              pc = null;
+            }
+
+            const isConnecting = pc && (pc.connectionState === 'connecting' || pc.signalingState === 'have-local-offer');
+            const isConnected = pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected');
+
+            // If connection attempt stalled for over 8 seconds without success, allow clean retry
+            const attemptTime = connectionAttemptTimeRef.current.get(peerId) || 0;
+            const isStalled = isConnecting && (Date.now() - attemptTime > 8000);
+
+            if (isStalled) {
+              try { pc.close(); } catch (_) {}
+              peerConnectionsRef.current.delete(peerId);
+              pc = null;
+            }
+
+            const needsConnection = !pc && !isConnected;
 
             if (needsConnection && isInitiator) {
               try {
+                connectionAttemptTimeRef.current.set(peerId, Date.now());
                 pc = createPeerConnection(peerId, code);
                 const offer = await pc.createOffer({
                   offerToReceiveAudio: true,
@@ -403,17 +442,28 @@ export const ConnectMeetingProvider = ({ children, user }) => {
             }
           });
 
-          // Clean up disconnected peers
+          // Clean up disconnected peers with debounce grace period (protects against single-poll drops)
           const activePeerIdSet = new Set(signalData.activePeers.map((p) => String(p.userId)));
           let hasPruned = false;
           for (const [rId, pc] of peerConnectionsRef.current.entries()) {
             if (!activePeerIdSet.has(rId)) {
-              try { pc.close(); } catch (_) {}
-              peerConnectionsRef.current.delete(rId);
-              remoteStreamsRef.current.delete(rId);
-              cleanupPeerAudio(rId);
-              pendingCandidatesRef.current.delete(rId);
-              hasPruned = true;
+              const missingCount = (peerMissingPollsRef.current.get(rId) || 0) + 1;
+              peerMissingPollsRef.current.set(rId, missingCount);
+
+              // Only disconnect if missing for 6 consecutive polls (~7-8 seconds) AND connection is not live
+              const isConnectionAlive = pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected');
+              if (missingCount >= 6 && !isConnectionAlive) {
+                try { pc.close(); } catch (_) {}
+                peerConnectionsRef.current.delete(rId);
+                remoteStreamsRef.current.delete(rId);
+                cleanupPeerAudio(rId);
+                pendingCandidatesRef.current.delete(rId);
+                lastProcessedOfferSdpRef.current.delete(rId);
+                lastProcessedAnswerSdpRef.current.delete(rId);
+                peerMissingPollsRef.current.delete(rId);
+                connectionAttemptTimeRef.current.delete(rId);
+                hasPruned = true;
+              }
             }
           }
           if (hasPruned) {
@@ -440,7 +490,7 @@ export const ConnectMeetingProvider = ({ children, user }) => {
           }
         }
 
-        // Chat messages
+        // Chat messages (preserved intact)
         if (chatData && Array.isArray(chatData)) {
           setChatMessages((prev) => {
             const map = new Map();
@@ -495,18 +545,19 @@ export const ConnectMeetingProvider = ({ children, user }) => {
     peerConnectionsRef.current.clear();
     remoteStreamsRef.current.clear();
 
-    // Clean up all remote audio elements from DOM
+    // Clean up all remote audio elements
     remoteAudioElementsRef.current.forEach((audioEl) => {
       try {
         audioEl.pause();
         audioEl.srcObject = null;
-        if (audioEl.parentNode) {
-          audioEl.parentNode.removeChild(audioEl);
-        }
       } catch (_) {}
     });
     remoteAudioElementsRef.current.clear();
     pendingCandidatesRef.current.clear();
+    lastProcessedOfferSdpRef.current.clear();
+    lastProcessedAnswerSdpRef.current.clear();
+    peerMissingPollsRef.current.clear();
+    connectionAttemptTimeRef.current.clear();
 
     // Reset state
     setIsInCall(false);
@@ -535,6 +586,9 @@ export const ConnectMeetingProvider = ({ children, user }) => {
     }
 
     setConnectionError('');
+
+    // Unlock audio context on join gesture
+    unlockAudio();
 
     // 1. Verify room exists and user is authorized
     const roomData = await api.getConnectRoom(code);
@@ -732,7 +786,7 @@ export const ConnectMeetingProvider = ({ children, user }) => {
     }
   };
 
-  // Send In-Call Chat Message
+  // Send In-Call Chat Message (preserved intact)
   const sendChatMessage = async (text) => {
     const trimmed = (text || '').trim();
     const code = currentRoomCode || roomCodeRef.current;

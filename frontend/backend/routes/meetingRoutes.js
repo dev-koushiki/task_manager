@@ -773,28 +773,54 @@ router.get("/rooms/:roomCode/signals", authMiddleware, async (req, res) => {
       }
     }
 
-    // 3. Update active ping & prune stale peers
+    // 3. Update active ping & prune stale peers (In-memory authoritative map + atomic DB sync)
     const now = new Date();
-    const fifteenSecsAgo = new Date(now.getTime() - 15000);
+    const nowTs = now.getTime();
+    const staleThreshold = nowTs - 20000;
 
-    const meeting = await Meeting.findOne({
+    if (!roomPeers.has(roomCode)) {
+      roomPeers.set(roomCode, new Map());
+    }
+    const peersMap = roomPeers.get(roomCode);
+
+    // Read meeting metadata via lean query (no VersionError, no lock)
+    const meetingMeta = await Meeting.findOne({
       roomCode,
       organizationId: req.user.organizationId,
-    }).select("activePeers hostControls status organizer");
+    }).select("hostControls status organizer activePeers").lean();
 
-    if (!meeting) {
+    if (!meetingMeta) {
       return res.status(404).json({ message: "Meeting room not found." });
     }
 
-    let hasChanges = false;
-    meeting.activePeers = meeting.activePeers || [];
-    let myPeer = meeting.activePeers.find((p) => p.userId === userId);
-    if (myPeer) {
-      myPeer.lastPing = now;
-      hasChanges = true;
+    // Populate memory cache from DB if memory was empty
+    if (peersMap.size === 0 && meetingMeta.activePeers && Array.isArray(meetingMeta.activePeers)) {
+      meetingMeta.activePeers.forEach((p) => {
+        if (p.userId) {
+          peersMap.set(p.userId.toString(), {
+            userId: p.userId.toString(),
+            name: p.name,
+            email: p.email,
+            cameraOn: p.cameraOn !== false,
+            micOn: p.micOn !== false,
+            screenSharing: Boolean(p.screenSharing),
+            handRaised: Boolean(p.handRaised),
+            joinedAt: p.joinedAt || now,
+            lastPing: p.lastPing ? new Date(p.lastPing).getTime() : nowTs,
+            isHost: Boolean(p.isHost),
+          });
+        }
+      });
+    }
+
+    // Update current user's ping
+    const isHost = (meetingMeta.organizer && meetingMeta.organizer.toString() === userId) || req.user.role === "admin";
+    let currentPeer = peersMap.get(userId);
+    if (currentPeer) {
+      currentPeer.lastPing = nowTs;
+      currentPeer.isHost = isHost || currentPeer.isHost;
     } else {
-      const isHost = meeting.organizer.toString() === userId || req.user.role === "admin";
-      meeting.activePeers.push({
+      currentPeer = {
         userId,
         name: `${req.user.firstName} ${req.user.lastName}`.trim(),
         email: req.user.email,
@@ -803,29 +829,32 @@ router.get("/rooms/:roomCode/signals", authMiddleware, async (req, res) => {
         screenSharing: false,
         handRaised: false,
         joinedAt: now,
-        lastPing: now,
+        lastPing: nowTs,
         isHost,
-      });
-      hasChanges = true;
+      };
+      peersMap.set(userId, currentPeer);
     }
 
-    const beforeCount = meeting.activePeers.length;
-    meeting.activePeers = meeting.activePeers.filter(
-      (p) => p.userId === userId || (p.lastPing && new Date(p.lastPing) >= fifteenSecsAgo)
-    );
-    if (meeting.activePeers.length !== beforeCount) {
-      hasChanges = true;
+    // Prune stale peers from memory
+    for (const [pId, pData] of peersMap.entries()) {
+      if (pId !== userId && pData.lastPing && pData.lastPing < staleThreshold) {
+        peersMap.delete(pId);
+      }
     }
 
-    if (hasChanges) {
-      await meeting.save().catch(() => {});
-    }
+    const activePeersList = Array.from(peersMap.values());
+
+    // Atomic non-blocking DB update without Mongoose VersionError
+    Meeting.updateOne(
+      { _id: meetingMeta._id },
+      { $set: { activePeers: activePeersList } }
+    ).catch(() => {});
 
     res.json({
       signals: queued,
-      activePeers: meeting.activePeers,
-      hostControls: meeting.hostControls || { muteAll: false, lockMeeting: false },
-      meetingStatus: meeting.status || "scheduled",
+      activePeers: activePeersList,
+      hostControls: meetingMeta.hostControls || { muteAll: false, lockMeeting: false },
+      meetingStatus: meetingMeta.status || "scheduled",
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
