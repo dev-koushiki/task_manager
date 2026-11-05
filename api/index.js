@@ -58,7 +58,7 @@ function loadServer() {
 // Initial load attempt
 loadServer();
 
-module.exports = (req, res) => {
+module.exports = async (req, res) => {
   const handler = loadServer();
   if (!handler) {
     console.error("Server module load failure:", lastError);
@@ -69,5 +69,15 @@ module.exports = (req, res) => {
       dirname: __dirname,
     });
   }
+
+  try {
+    const db = require("../backend/config/database");
+    if (db && db.mongoose && db.mongoose.connection.readyState !== 1) {
+      await db.connectDB();
+    }
+  } catch (dbErr) {
+    console.warn("[Vercel Serverless] Pre-connect error:", dbErr.message);
+  }
+
   return handler(req, res);
 };

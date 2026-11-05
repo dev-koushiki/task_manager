@@ -66,7 +66,7 @@ app.use(async (req, res, next) => {
   }
 
   // Ensure DB connection is active (handles serverless cold starts or temporary driver reconnects)
-  if (mongoose.connection.readyState < 1) {
+  if (mongoose.connection.readyState !== 1) {
     try {
       await connectDB();
     } catch (dbErr) {

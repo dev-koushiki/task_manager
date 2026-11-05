@@ -83,13 +83,24 @@ const connectDB = async () => {
     return connectionPromise;
   }
 
+  if (mongoose.connection.readyState === 2) {
+    await new Promise((resolve) => {
+      mongoose.connection.once("connected", resolve);
+      mongoose.connection.once("error", resolve);
+      setTimeout(resolve, 4000);
+    });
+    if (mongoose.connection.readyState === 1) {
+      return mongoose.connection;
+    }
+  }
+
   registerConnectionEvents();
 
   const uri = getMongoURI();
   const options = getMongoOptions();
 
-  // Disable command buffering so queries fail fast when disconnected rather than accumulating in memory
-  mongoose.set("bufferCommands", false);
+  // Allow Mongoose command buffering during connection to prevent cold-start failures
+  mongoose.set("bufferCommands", true);
 
   connectionPromise = mongoose
     .connect(uri, options)
