@@ -970,13 +970,17 @@ router.get("/recognition/nominees", authMiddleware, async (req, res) => {
 // ==========================================
 router.get("/recognition/awards", authMiddleware, async (req, res) => {
   try {
+    const orgId = req.user.organizationId;
     const companyName = req.user.companyName;
 
-    const awards = await Recognition.find({
-      companyName,
+    const query = {
       status: { $in: ["approved", "published"] },
-    }).sort({ createdAt: -1 });
+      ...(orgId
+        ? (companyName ? { $or: [{ organizationId: orgId }, { companyName }] } : { organizationId: orgId })
+        : { companyName }),
+    };
 
+    const awards = await Recognition.find(query).sort({ approvedAt: -1, createdAt: -1 });
     const myAwards = awards.filter((a) => String(a.employeeId) === String(req.user._id));
 
     res.json({
@@ -992,7 +996,7 @@ router.get("/recognition/awards", authMiddleware, async (req, res) => {
 
 // ==========================================
 // 11. POST /api/performance/recognition/approve
-// Admin reviews, approves, and issues recognition award
+// HR reviews, approves, and issues recognition award
 // ==========================================
 router.post("/recognition/approve", authMiddleware, async (req, res) => {
   try {
@@ -1004,22 +1008,58 @@ router.post("/recognition/approve", authMiddleware, async (req, res) => {
       customComment,
       employeePhoto,
       employeeIdNumber,
+      templateId,
     } = req.body;
 
-    // Security: Only Admin or Level 1 Executive can approve official recognition
-    if (req.user.role !== "admin" && req.user.hierarchyLevel !== 1) {
+    // 1. HR / Admin Authorization Check:
+    // Only authorized HR users or Admins can review, create, and issue recognition awards & certificates.
+    // Employees, project managers, and unauthorized roles must not access certificate creation controls.
+    const userRole = req.user.role || "employee";
+    const userDept = (req.user.department || "").toLowerCase();
+    const userDesig = (req.user.designation || req.user.positionTitle || "").toLowerCase();
+    const hasEmployeeMgmt = Boolean(req.user.permissions?.canManageEmployees);
+
+    const isAuthorizedHR =
+      userRole === "admin" ||
+      req.user.hierarchyLevel === 1 ||
+      userRole === "hr" ||
+      hasEmployeeMgmt ||
+      userDept.includes("human resources") ||
+      userDept === "hr" ||
+      userDept.includes("hr &") ||
+      /\bhr\b/.test(userDesig) ||
+      userDesig.includes("human resources");
+
+    if (!isAuthorizedHR) {
       return res.status(403).json({
-        message: "Access Denied: Only authorized administrators can review and approve recognition awards.",
+        message: "Access Denied: Only authorized Human Resources (HR) or Administrators can review, create, and issue recognition awards.",
       });
     }
 
     if (!employeeId || !type || !period) {
-      return res.status(400).json({ message: "employeeId, type, and period are required" });
+      return res.status(400).json({ message: "employeeId, type, and period are required." });
     }
 
     const employee = await User.findById(employeeId);
     if (!employee) {
-      return res.status(404).json({ message: "Target employee not found" });
+      return res.status(404).json({ message: "Target employee not found." });
+    }
+
+    // 2. Strict Employee Assignment & Organization Validation:
+    // HR can issue certificates only to employees belonging to their assigned organization and within their authorized HR scope.
+    const hrOrgId = req.user.organizationId?.toString();
+    const empOrgId = employee.organizationId?.toString();
+    const hrCompany = (req.user.companyName || "").trim().toLowerCase();
+    const empCompany = (employee.companyName || "").trim().toLowerCase();
+
+    const isSameOrg =
+      (hrOrgId && empOrgId && hrOrgId === empOrgId) ||
+      (hrCompany && empCompany && hrCompany === empCompany);
+
+    if (!isSameOrg) {
+      return res.status(403).json({
+        message: "Access Denied: You cannot issue certificates to employees outside your authorized organization.",
+      });
     }
 
     const awardTitle = title && title.trim()
@@ -1027,6 +1067,8 @@ router.post("/recognition/approve", authMiddleware, async (req, res) => {
       : type === "year"
       ? `Employee of the Year – ${period}`
       : `Employee of the Month – ${period}`;
+
+    const safeType = ["month", "year", "custom"].includes(type) ? type : "custom";
 
     // Calculate official criteria scores
     const empRatings = await PerformanceRating.find({
@@ -1049,16 +1091,22 @@ router.post("/recognition/approve", authMiddleware, async (req, res) => {
       : 4.5;
     const compositeScore = Math.round(((ratingScore * 0.40) + (qualityScore * 0.25) + (deliveryScore * 0.20) + (initiativeScore * 0.15)) * 20);
 
+    const resolvedEmployeeIdNumber =
+      employee.employeeId ||
+      employee.employeeIdNumber ||
+      employeeIdNumber ||
+      `EMP-${employee._id.toString().slice(-4).toUpperCase()}`;
+
     const newAward = new Recognition({
       employeeId: employee._id,
-      employeeName: `${employee.firstName} ${employee.lastName}`,
-      employeeIdNumber: employeeIdNumber || employee.employeeId || `EMP-${employee._id.toString().slice(-4).toUpperCase()}`,
-      employeePhoto: employeePhoto || "",
-      employeeDesignation: employee.designation || employee.role,
+      employeeName: `${employee.firstName} ${employee.lastName}`.trim(),
+      employeeIdNumber: resolvedEmployeeIdNumber,
+      employeePhoto: employeePhoto || employee.avatar || employee.photo || "",
+      employeeDesignation: employee.designation || employee.positionTitle || employee.role || "Specialist",
       department: employee.department || "General",
       organizationId: req.user.organizationId || employee.organizationId || null,
       companyName: req.user.companyName,
-      type,
+      type: safeType,
       title: awardTitle,
       period,
       criteriaScores: {
@@ -1071,7 +1119,7 @@ router.post("/recognition/approve", authMiddleware, async (req, res) => {
       customComment: customComment || "Awarded in recognition of distinguished performance, strategic initiative, and outstanding delivery.",
       status: "approved",
       approvedBy: req.user._id,
-      approvedByName: `${req.user.firstName} ${req.user.lastName}`,
+      approvedByName: `${req.user.firstName} ${req.user.lastName}`.trim(),
       approvedAt: new Date(),
     });
 
@@ -1117,6 +1165,28 @@ router.post("/recognition/certificate", authMiddleware, async (req, res) => {
     const award = await Recognition.findById(awardId);
     if (!award) {
       return res.status(404).json({ message: "Award record not found" });
+    }
+
+    // Permission check: only authorized HR/admin or the recipient employee themselves can update certificate assets
+    const isRecipient = award.employeeId.toString() === req.user._id.toString();
+    const userRole = req.user.role || "employee";
+    const userDept = (req.user.department || "").toLowerCase();
+    const userDesig = (req.user.designation || req.user.positionTitle || "").toLowerCase();
+    const hasEmployeeMgmt = Boolean(req.user.permissions?.canManageEmployees);
+
+    const isAuthorizedHR =
+      userRole === "admin" ||
+      req.user.hierarchyLevel === 1 ||
+      userRole === "hr" ||
+      hasEmployeeMgmt ||
+      userDept.includes("human resources") ||
+      userDept === "hr" ||
+      userDept.includes("hr &") ||
+      /\bhr\b/.test(userDesig) ||
+      userDesig.includes("human resources");
+
+    if (!isRecipient && !isAuthorizedHR) {
+      return res.status(403).json({ message: "Access Denied: You do not have permission to modify this certificate." });
     }
 
     if (certificatePdfUrl) award.certificatePdfUrl = certificatePdfUrl;

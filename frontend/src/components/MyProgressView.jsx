@@ -2083,7 +2083,9 @@ export const MyProgressView = ({ user }) => {
         isOpen={isCertModalOpen}
         onClose={() => setIsCertModalOpen(false)}
         initialData={certModalData}
-        isAdmin={user.role === 'admin' || user.hierarchyLevel === 1}
+        isAdmin={user?.role === 'admin' || user?.hierarchyLevel === 1}
+        isHR={user?.role === 'admin' || user?.role === 'hr' || user?.hierarchyLevel === 1 || Boolean(user?.permissions?.canManageEmployees)}
+        user={user}
         onAwardApproved={async () => {
           await loadAwards();
           await loadNominees(nomineePeriodType);

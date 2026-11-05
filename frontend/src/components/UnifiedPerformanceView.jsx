@@ -34,13 +34,29 @@ export const UnifiedPerformanceView = ({
   onOpenDirectory = null,
 }) => {
   // Determine user permissions and hierarchy roles dynamically
-  const userRole = user?.role || 'employee';
+  const userRole = (user?.role || 'employee').toLowerCase();
+  const userDept = (user?.department || '').toLowerCase();
+  const userDesig = (user?.designation || user?.positionTitle || '').toLowerCase();
   const perms = user?.permissions || {};
+  const hasEmployeeMgmt = Boolean(perms.canManageEmployees);
+
   const isSupervisorOrManager =
     isAdmin ||
     userRole === 'director' ||
     userRole === 'manager' ||
-    Boolean(perms.canManageEmployees || perms.canAssignTasks || perms.canRateOthers);
+    Boolean(hasEmployeeMgmt || perms.canAssignTasks || perms.canRateOthers);
+
+  const isAuthorizedHR =
+    isAdmin ||
+    userRole === 'admin' ||
+    userRole === 'hr' ||
+    user?.hierarchyLevel === 1 ||
+    hasEmployeeMgmt ||
+    userDept.includes('human resources') ||
+    userDept === 'hr' ||
+    userDept.includes('hr &') ||
+    /\bhr\b/.test(userDesig) ||
+    userDesig.includes('human resources');
 
   // Active Main Subtab Navigation
   // 1: overview | 2: work-progress | 3: scorecard | 4: reviews | 5: self-eval
@@ -1208,17 +1224,53 @@ export const UnifiedPerformanceView = ({
       {/* 8. SUBTAB 6: RECOGNITION & AWARDS */}
       {activeSubTab === 'recognition' && (
         <div className="perf-tab-content animate-fade-in space-y-6">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center flex-wrap gap-3">
             <div>
               <h3 className="font-bold text-base">Honors, Recognition & Digital Certificates</h3>
               <p className="text-xs text-muted">Official organizational achievements and verifiable digital certificates.</p>
             </div>
+            {isAuthorizedHR && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm flex items-center gap-2"
+                onClick={() => {
+                  setCertModalData({
+                    mode: 'issue',
+                    companyName: user?.companyName || 'TaskFlow Enterprise',
+                    period: new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+                  });
+                  setIsCertModalOpen(true);
+                }}
+              >
+                <AwardIcon size={16} />
+                <span>Certificate & Recognition Studio</span>
+              </button>
+            )}
           </div>
 
           {awards.length === 0 ? (
             <div className="p-8 text-center text-muted bg-card-subtle rounded-lg text-sm">
               <AwardIcon size={36} className="mx-auto mb-2 opacity-40 text-amber-500" />
               <p>No honors recorded yet. High performers are nominated monthly and annually.</p>
+              {isAuthorizedHR && (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm inline-flex items-center gap-2"
+                    onClick={() => {
+                      setCertModalData({
+                        mode: 'issue',
+                        companyName: user?.companyName || 'TaskFlow Enterprise',
+                        period: new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+                      });
+                      setIsCertModalOpen(true);
+                    }}
+                  >
+                    <AwardIcon size={16} />
+                    <span>Open Certificate & Recognition Studio</span>
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1227,12 +1279,14 @@ export const UnifiedPerformanceView = ({
                   <div>
                     <div className="flex items-center gap-2 mb-2">
                       <AwardIcon size={20} className="text-amber-500" />
-                      <h4 className="font-bold text-sm">{aw.awardTitle || aw.title || 'Excellence Award'}</h4>
+                      <h4 className="font-bold text-sm">{aw.title || aw.awardTitle || 'Excellence Award'}</h4>
                     </div>
-                    <p className="text-xs text-muted mb-3">{aw.description || 'Awarded for outstanding task delivery and performance leadership.'}</p>
+                    <p className="text-xs text-muted mb-3">{aw.customComment || aw.description || 'Awarded for outstanding task delivery and performance leadership.'}</p>
                     <div className="text-[11px] text-muted space-y-0.5">
-                      <div>Issued: <strong>{formatDate(aw.dateAwarded || aw.createdAt)}</strong></div>
-                      <div>Verification ID: <span className="font-mono text-accent">{aw.certificateId || 'CERT-VERIFIED'}</span></div>
+                      <div>Recipient: <strong>{aw.employeeName || 'Honored Colleague'}</strong> {aw.employeeIdNumber ? `(${aw.employeeIdNumber})` : ''}</div>
+                      <div>Period: <strong>{aw.period || 'General'}</strong></div>
+                      <div>Conferred by: <strong>{aw.approvedByName || 'Authorized HR'}</strong> on <strong>{formatDate(aw.approvedAt || aw.dateAwarded || aw.createdAt)}</strong></div>
+                      <div>Verification ID: <span className="font-mono text-accent">{aw._id || aw.certificateId || 'CERT-VERIFIED'}</span></div>
                     </div>
                   </div>
 
@@ -1243,8 +1297,14 @@ export const UnifiedPerformanceView = ({
                       onClick={() => {
                         setCertModalData({
                           ...aw,
-                          employeeName: `${user?.firstName} ${user?.lastName}`,
-                          title: aw.awardTitle || aw.title,
+                          employeeName: aw.employeeName,
+                          employeeId: aw.employeeIdNumber || aw.employeeId,
+                          employeePhoto: aw.employeePhoto,
+                          title: aw.title || aw.awardTitle,
+                          period: aw.period,
+                          customComment: aw.customComment || aw.description,
+                          companyName: aw.companyName || user?.companyName,
+                          isViewMode: true,
                         });
                         setIsCertModalOpen(true);
                       }}
@@ -1803,7 +1863,9 @@ export const UnifiedPerformanceView = ({
         isOpen={isCertModalOpen}
         onClose={() => setIsCertModalOpen(false)}
         initialData={certModalData}
-        isAdmin={isAdmin || userRole === 'director'}
+        isAdmin={isAdmin}
+        isHR={isAuthorizedHR}
+        user={user}
         onAwardApproved={async () => {
           await loadAllData();
           setIsCertModalOpen(false);
