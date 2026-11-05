@@ -26272,4 +26272,119 @@
   border-color: var(--primary-color, #4f46e5);
 }
 
+/* ========================================================
+   PERFORMANCE RECOGNITION & HONORS SECTION
+   ======================================================== */
+.perf-recognition-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 20px;
+}
+
+.perf-recognition-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  width: 100%;
+}
+
+.perf-recognition-header-text h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-main, #0f172a);
+  margin: 0 0 2px 0;
+}
+
+[data-theme="dark"] .perf-recognition-header-text h3 {
+  color: #f8fafc;
+}
+
+.perf-recognition-header-text p {
+  font-size: 0.78rem;
+  color: var(--text-muted, #64748b);
+  margin: 0;
+}
+
+[data-theme="dark"] .perf-recognition-header-text p {
+  color: #94a3b8;
+}
+
+/* Empty State - Exactly matching website screenshot: centered horizontally and vertically */
+.perf-recognition-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 440px;
+  width: 100%;
+  padding: 80px 20px;
+  text-align: center;
+  margin: auto;
+  animation: fadeIn 0.25s ease-in-out;
+}
+
+.perf-recognition-empty-icon {
+  margin-bottom: 16px;
+  color: var(--text-muted, #64748b);
+  opacity: 0.75;
+  stroke-width: 1.5;
+  display: block;
+}
+
+[data-theme="dark"] .perf-recognition-empty-icon {
+  color: #94a3b8;
+  opacity: 0.85;
+}
+
+.perf-recognition-empty-text {
+  font-size: 13.5px;
+  line-height: 1.6;
+  max-width: 500px;
+  margin: 0;
+  color: var(--text-muted, #64748b);
+}
+
+[data-theme="dark"] .perf-recognition-empty-text {
+  color: #94a3b8;
+}
+
+/* Modal Overlay & Centering for Certificate Studio */
+.cert-studio-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 20px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+[data-theme="dark"] .cert-studio-modal-backdrop {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+/* Bootstrap / Flex Utility Fallbacks */
+.d-flex {
+  display: flex !important;
+}
+
+.align-items-center {
+  align-items: center !important;
+}
+
+.justify-content-between {
+  justify-content: space-between !important;
+}
+
+.justify-content-center {
+  justify-content: center !important;
+}
+
+
 

@@ -414,20 +414,20 @@ export const CertificateModal = ({
       : CERTIFICATE_TEMPLATES[templateId]?.name || 'Executive Gold';
 
   return (
-    <div className="wa-assign-modal-overlay" onClick={onClose}>
+    <div className="cert-studio-modal-backdrop" onClick={onClose}>
       <div
-        className="wa-assign-modal-box cert-modal-box animate-scale-up"
+        className="cert-modal-box animate-scale-up"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="wa-assign-modal-header">
-          <div className="d-flex align-items-center gap-2">
-            <div className="progress-icon-badge" style={{ width: '42px', height: '42px' }}>
+        <div className="wa-assign-modal-header" style={{ padding: '16px 24px' }}>
+          <div className="flex items-center gap-3">
+            <div className="progress-icon-badge" style={{ width: '42px', height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <AwardIcon size={20} />
             </div>
             <div>
-              <h3 className="wa-assign-title">Official Certificate & Recognition Studio</h3>
-              <p className="wa-assign-subtitle">
+              <h3 className="wa-assign-title" style={{ margin: 0, fontSize: '1.15rem' }}>Official Certificate & Recognition Studio</h3>
+              <p className="wa-assign-subtitle" style={{ margin: '2px 0 0 0' }}>
                 Professional, tamper-evident corporate credentials with customizable organization branding
               </p>
             </div>
@@ -465,7 +465,7 @@ export const CertificateModal = ({
                 {/* HR EMPLOYEE SELECTOR (Only in creation mode for authorized HR) */}
                 {isAuthorizedHR && !isViewMode ? (
                   <div className="form-group mb-1">
-                    <div className="d-flex align-items-center justify-content-between mb-1">
+                    <div className="flex items-center justify-between mb-1">
                       <label className="form-sublabel m-0">Select Recipient Employee *</label>
                       {loadingEmployees && (
                         <span style={{ fontSize: '11px', color: '#64748b' }}>Loading roster...</span>
@@ -493,7 +493,7 @@ export const CertificateModal = ({
                       })}
                     </select>
                     {selectedEmpId && (
-                      <div className="d-flex align-items-center gap-1 mt-1" style={{ fontSize: '11px', color: '#059669' }}>
+                      <div className="flex items-center gap-1 mt-1" style={{ fontSize: '11px', color: '#059669' }}>
                         <CheckCircleIcon size={13} />
                         <span>Verified employee in your authorized organization</span>
                       </div>
@@ -510,7 +510,7 @@ export const CertificateModal = ({
                       marginBottom: '4px',
                     }}
                   >
-                    <div className="d-flex align-items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1">
                       <AwardIcon size={16} className="text-amber-500" />
                       <strong style={{ fontSize: '13px' }}>Recipient: {employeeName || 'Honored Colleague'}</strong>
                     </div>
@@ -706,7 +706,7 @@ export const CertificateModal = ({
 
                     {/* Custom Organization Template Option */}
                     <div className="cert-template-custom-box">
-                      <div className="d-flex align-items-center justify-content-between">
+                      <div className="flex items-center justify-between">
                         <strong style={{ fontSize: '12.5px' }}>🏢 Organization Custom Template</strong>
                         {templateId === 'custom' && (
                           <span className="badge badge-gold">Active Template</span>
@@ -725,7 +725,7 @@ export const CertificateModal = ({
                         />
                       )}
                       {customTemplateImage && (
-                        <div className="d-flex align-items-center justify-content-between" style={{ marginTop: '4px' }}>
+                        <div className="flex items-center justify-between" style={{ marginTop: '4px' }}>
                           <button
                             type="button"
                             className={`btn btn-sm ${templateId === 'custom' ? 'btn-primary' : 'btn-secondary'}`}
@@ -802,7 +802,7 @@ export const CertificateModal = ({
                   </div>
                 )}
 
-                <div className="d-flex gap-2">
+                <div className="flex gap-2">
                   <div className="form-group flex-1">
                     <label className="form-sublabel">Signatory Name</label>
                     <input
@@ -865,7 +865,7 @@ export const CertificateModal = ({
               <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-color, #e2e8f0)', paddingTop: '12px' }}>
                 <button
                   type="button"
-                  className="btn btn-success btn-block d-flex align-items-center justify-content-center gap-2"
+                  className="btn btn-success btn-block flex items-center justify-center gap-2"
                   onClick={handleApproveAward}
                   disabled={isSaving || !selectedEmpId}
                   style={{

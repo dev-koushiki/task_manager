@@ -1224,8 +1224,8 @@ export const UnifiedPerformanceView = ({
       {/* 8. SUBTAB 6: RECOGNITION & AWARDS */}
       {activeSubTab === 'recognition' && (
         <div className="perf-tab-content animate-fade-in space-y-6">
-          <div className="flex justify-between items-center flex-wrap gap-3">
-            <div>
+          <div className="perf-recognition-header">
+            <div className="perf-recognition-header-text">
               <h3 className="font-bold text-base">Honors, Recognition & Digital Certificates</h3>
               <p className="text-xs text-muted">Official organizational achievements and verifiable digital certificates.</p>
             </div>
@@ -1249,28 +1249,11 @@ export const UnifiedPerformanceView = ({
           </div>
 
           {awards.length === 0 ? (
-            <div className="p-8 text-center text-muted bg-card-subtle rounded-lg text-sm">
-              <AwardIcon size={36} className="mx-auto mb-2 opacity-40 text-amber-500" />
-              <p>No honors recorded yet. High performers are nominated monthly and annually.</p>
-              {isAuthorizedHR && (
-                <div className="mt-4">
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm inline-flex items-center gap-2"
-                    onClick={() => {
-                      setCertModalData({
-                        mode: 'issue',
-                        companyName: user?.companyName || 'TaskFlow Enterprise',
-                        period: new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
-                      });
-                      setIsCertModalOpen(true);
-                    }}
-                  >
-                    <AwardIcon size={16} />
-                    <span>Open Certificate & Recognition Studio</span>
-                  </button>
-                </div>
-              )}
+            <div className="perf-recognition-empty-state">
+              <AwardIcon size={48} className="perf-recognition-empty-icon" />
+              <p className="perf-recognition-empty-text">
+                No honors recorded yet. High performers are nominated monthly and annually.
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
