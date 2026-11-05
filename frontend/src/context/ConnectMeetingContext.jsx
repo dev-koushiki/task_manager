@@ -12,7 +12,29 @@ export const useConnectMeeting = () => {
 };
 
 export const ConnectMeetingProvider = ({ children, user }) => {
-  const myId = String(user?.id || user?._id || '');
+  // Resilient user ID resolution (authenticated user or persistent guest)
+  const [resolvedMyId, setResolvedMyId] = useState(() => {
+    if (user?.id || user?._id) return String(user.id || user._id);
+    if (typeof window !== 'undefined') {
+      try {
+        let gid = localStorage.getItem('tm_guest_id');
+        if (!gid) {
+          gid = 'guest_' + Math.random().toString(36).substring(2, 9);
+          localStorage.setItem('tm_guest_id', gid);
+        }
+        return gid;
+      } catch (_) {}
+    }
+    return '';
+  });
+
+  useEffect(() => {
+    if (user?.id || user?._id) {
+      setResolvedMyId(String(user.id || user._id));
+    }
+  }, [user]);
+
+  const myId = resolvedMyId;
 
   // Active Session State
   const [isInCall, setIsInCall] = useState(false);
@@ -53,20 +75,38 @@ export const ConnectMeetingProvider = ({ children, user }) => {
   const lastMuteAllTimestampRef = useRef(0);
   const roomCodeRef = useRef('');
 
+  // Persistent DOM container for remote audio elements to guarantee playback in Chromium & WebRTC
+  const ensureAudioContainer = () => {
+    if (typeof document === 'undefined') return null;
+    let container = document.getElementById('taskflow-connect-audio-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'taskflow-connect-audio-container';
+      container.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-9999;';
+      document.body.appendChild(container);
+    }
+    return container;
+  };
+
   // Global user interaction listener to unlock audio autoplay across all browsers
   const unlockAudio = useCallback(() => {
-    // 1. Play background audio elements
+    // 1. Play background audio elements in persistent container
     remoteAudioElementsRef.current.forEach((audioEl) => {
       if (audioEl && audioEl.paused && audioEl.srcObject) {
         audioEl.play().catch(() => {});
       }
     });
-    // 2. Play any audio elements on page
-    document.querySelectorAll('audio').forEach((el) => {
-      if (el && el.paused && el.srcObject) {
-        el.play().catch(() => {});
+    // 2. Play any audio elements in persistent container
+    if (typeof document !== 'undefined') {
+      const container = document.getElementById('taskflow-connect-audio-container');
+      if (container) {
+        container.querySelectorAll('audio').forEach((el) => {
+          if (el && el.paused && el.srcObject) {
+            el.play().catch(() => {});
+          }
+        });
       }
-    });
+    }
   }, []);
 
   useEffect(() => {
@@ -89,18 +129,35 @@ export const ConnectMeetingProvider = ({ children, user }) => {
       try {
         audioEl.pause();
         audioEl.srcObject = null;
+        if (audioEl.parentNode) {
+          audioEl.parentNode.removeChild(audioEl);
+        }
       } catch (_) {}
       remoteAudioElementsRef.current.delete(peerId);
     }
   };
 
-  // Attach an incoming audio track to a dedicated HTML5 Audio element
+  // Attach an incoming audio track to a dedicated HTML5 Audio element in persistent DOM container
   const attachRemoteAudio = useCallback((peerId, track) => {
+    if (!track || track.kind !== 'audio') return;
+
+    const container = ensureAudioContainer();
     let audioEl = remoteAudioElementsRef.current.get(peerId);
     if (!audioEl) {
-      audioEl = new Audio();
-      audioEl.autoplay = true;
-      audioEl.playsInline = true;
+      const existing = container ? container.querySelector(`#remote-audio-${peerId}`) : null;
+      if (existing) {
+        audioEl = existing;
+      } else {
+        audioEl = document.createElement('audio');
+        audioEl.id = `remote-audio-${peerId}`;
+        audioEl.autoplay = true;
+        audioEl.playsInline = true;
+        audioEl.muted = false;
+        audioEl.volume = 1.0;
+        if (container) {
+          container.appendChild(audioEl);
+        }
+      }
       remoteAudioElementsRef.current.set(peerId, audioEl);
     }
 
@@ -110,9 +167,11 @@ export const ConnectMeetingProvider = ({ children, user }) => {
     }
 
     const playAudio = () => {
-      audioEl.play().catch((err) => {
-        console.warn(`[ConnectAudio] Autoplay waiting for user gesture for peer ${peerId}:`, err.message);
-      });
+      if (audioEl && audioEl.paused) {
+        audioEl.play().catch((err) => {
+          console.warn(`[ConnectAudio] Autoplay waiting for user gesture for peer ${peerId}:`, err.message);
+        });
+      }
     };
 
     playAudio();
@@ -206,23 +265,38 @@ export const ConnectMeetingProvider = ({ children, user }) => {
     pc = new RTCPeerConnection(configuration);
     peerConnectionsRef.current.set(remoteUserId, pc);
 
-    // Attach local media tracks
-    // Audio track from microphone
-    if (localStreamRef.current) {
-      localStreamRef.current.getAudioTracks().forEach((track) => {
-        try { pc.addTrack(track, localStreamRef.current); } catch (_) {}
-      });
-    }
+    // Attach local media tracks and ensure bidirectional transceivers
+    try {
+      // 1. Microphone Audio
+      let audioSender = null;
+      if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
+        const audioTrack = localStreamRef.current.getAudioTracks()[0];
+        try {
+          audioSender = pc.addTrack(audioTrack, localStreamRef.current);
+        } catch (_) {}
+      }
+      const hasAudioTransceiver = pc.getTransceivers().some((t) => t.sender === audioSender || t.receiver?.track?.kind === 'audio');
+      if (!hasAudioTransceiver) {
+        pc.addTransceiver('audio', { direction: 'sendrecv' });
+      }
 
-    // Video track: use screen share if active, otherwise camera
-    const activeVideoTrack = screenStreamRef.current
-      ? screenStreamRef.current.getVideoTracks()[0]
-      : (localStreamRef.current ? localStreamRef.current.getVideoTracks()[0] : null);
+      // 2. Video (Camera or Screen Share)
+      const activeVideoTrack = screenStreamRef.current
+        ? screenStreamRef.current.getVideoTracks()[0]
+        : (localStreamRef.current ? localStreamRef.current.getVideoTracks()[0] : null);
 
-    const activeVideoStream = screenStreamRef.current || localStreamRef.current;
-    if (activeVideoTrack && activeVideoStream) {
-      try { pc.addTrack(activeVideoTrack, activeVideoStream); } catch (_) {}
-    }
+      const activeVideoStream = screenStreamRef.current || localStreamRef.current;
+      let videoSender = null;
+      if (activeVideoTrack && activeVideoStream) {
+        try {
+          videoSender = pc.addTrack(activeVideoTrack, activeVideoStream);
+        } catch (_) {}
+      }
+      const hasVideoTransceiver = pc.getTransceivers().some((t) => t.sender === videoSender || t.receiver?.track?.kind === 'video');
+      if (!hasVideoTransceiver) {
+        pc.addTransceiver('video', { direction: 'sendrecv' });
+      }
+    } catch (_) {}
 
     // ICE candidate discovery - serialize properly with toJSON
     pc.onicecandidate = (event) => {
@@ -257,10 +331,19 @@ export const ConnectMeetingProvider = ({ children, user }) => {
         stream.addTrack(event.track);
       }
 
-      // If audio track, attach to dedicated audio player immediately
+      // If audio track, attach to dedicated audio player in persistent DOM container
       if (event.track.kind === 'audio') {
         attachRemoteAudio(remoteUserId, event.track);
       }
+
+      // Listen for unmuting or track activation
+      event.track.onunmute = () => {
+        if (event.track.kind === 'audio') {
+          attachRemoteAudio(remoteUserId, event.track);
+        }
+        setRemoteStreams(new Map(remoteStreamsRef.current));
+        setRemoteStreamsTick((t) => t + 1);
+      };
 
       // Update reactive state map for immediate UI re-rendering
       setRemoteStreams(new Map(remoteStreamsRef.current));
@@ -277,6 +360,25 @@ export const ConnectMeetingProvider = ({ children, user }) => {
 
     return pc;
   }, [attachRemoteAudio]);
+
+  // Helper to renegotiate all active peer connections when tracks change
+  const renegotiateWithPeers = useCallback(async (code) => {
+    if (!code) return;
+    for (const [peerId, pc] of peerConnectionsRef.current.entries()) {
+      try {
+        if (pc.signalingState !== 'stable') continue;
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true,
+        });
+        await pc.setLocalDescription(offer);
+        const offerPayload = offer.toJSON ? offer.toJSON() : { type: offer.type, sdp: offer.sdp };
+        await api.sendConnectSignal(code, peerId, offerPayload, 'offer');
+      } catch (err) {
+        console.warn('[ConnectWebRTC] Renegotiation error with peer:', peerId, err.message);
+      }
+    }
+  }, []);
 
   // Process incoming WebRTC signals
   const handleIncomingSignals = useCallback(async (signals, code) => {
@@ -329,7 +431,10 @@ export const ConnectMeetingProvider = ({ children, user }) => {
           }
           pendingCandidatesRef.current.delete(sId);
 
-          const answer = await pc.createAnswer();
+          const answer = await pc.createAnswer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: true,
+          });
           await pc.setLocalDescription(answer);
 
           const answerPayload = answer.toJSON ? answer.toJSON() : { type: answer.type, sdp: answer.sdp };
@@ -550,6 +655,9 @@ export const ConnectMeetingProvider = ({ children, user }) => {
       try {
         audioEl.pause();
         audioEl.srcObject = null;
+        if (audioEl.parentNode) {
+          audioEl.parentNode.removeChild(audioEl);
+        }
       } catch (_) {}
     });
     remoteAudioElementsRef.current.clear();
@@ -597,7 +705,10 @@ export const ConnectMeetingProvider = ({ children, user }) => {
     }
 
     // 2. Register join attendance on server
-    await api.joinConnectRoom(code);
+    const joinRes = await api.joinConnectRoom(code);
+    if (joinRes?.participantId) {
+      setResolvedMyId(String(joinRes.participantId));
+    }
 
     // 3. Acquire local media (mic + camera)
     await initLocalMedia();
@@ -699,17 +810,18 @@ export const ConnectMeetingProvider = ({ children, user }) => {
           localStreamRef.current.addTrack(newVideoTrack);
           setIsCameraOn(true);
           setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
-          peerConnectionsRef.current.forEach((pc) => {
+          for (const [peerId, pc] of peerConnectionsRef.current.entries()) {
             const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
             if (sender) {
-              sender.replaceTrack(newVideoTrack).catch(() => {});
+              await sender.replaceTrack(newVideoTrack).catch(() => {});
             } else {
               try { pc.addTrack(newVideoTrack, localStreamRef.current); } catch (_) {}
             }
-          });
+          }
           const code = currentRoomCode || roomCodeRef.current;
           if (code) {
             api.sendConnectPeerState(code, { cameraOn: true }).catch(() => {});
+            await renegotiateWithPeers(code);
           }
         } catch (e) {
           console.warn('[ConnectWebRTC] Failed to activate camera track:', e.message);
@@ -719,7 +831,7 @@ export const ConnectMeetingProvider = ({ children, user }) => {
   };
 
   // Stop Screen Sharing
-  const stopScreenSharing = () => {
+  const stopScreenSharing = async () => {
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach((t) => t.stop());
       screenStreamRef.current = null;
@@ -729,23 +841,26 @@ export const ConnectMeetingProvider = ({ children, user }) => {
 
     // Revert video track to camera on all peer connections
     const camTrack = localStreamRef.current ? localStreamRef.current.getVideoTracks()[0] : null;
-    peerConnectionsRef.current.forEach((pc) => {
-      const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-      if (sender && camTrack) {
-        sender.replaceTrack(camTrack).catch(() => {});
-      }
-    });
+    for (const [peerId, pc] of peerConnectionsRef.current.entries()) {
+      try {
+        const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+        if (sender) {
+          await sender.replaceTrack(camTrack || null).catch(() => {});
+        }
+      } catch (_) {}
+    }
 
     const code = currentRoomCode || roomCodeRef.current;
     if (code) {
       api.sendConnectPeerState(code, { screenSharing: false }).catch(() => {});
+      await renegotiateWithPeers(code);
     }
   };
 
   // Toggle Screen Sharing
   const toggleScreenShare = async () => {
     if (isScreenSharing) {
-      stopScreenSharing();
+      await stopScreenSharing();
     } else {
       try {
         const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
@@ -756,19 +871,24 @@ export const ConnectMeetingProvider = ({ children, user }) => {
         const screenTrack = displayStream.getVideoTracks()[0];
         screenTrack.onended = () => stopScreenSharing();
 
-        // Replace outgoing video track on all peer connections (preserving audio)
-        peerConnectionsRef.current.forEach((pc) => {
-          const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-          if (sender) {
-            sender.replaceTrack(screenTrack).catch(() => {});
-          } else {
-            try { pc.addTrack(screenTrack, displayStream); } catch (_) {}
+        // Replace outgoing video track on all peer connections
+        for (const [peerId, pc] of peerConnectionsRef.current.entries()) {
+          try {
+            const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+            if (sender) {
+              await sender.replaceTrack(screenTrack);
+            } else {
+              pc.addTrack(screenTrack, displayStream);
+            }
+          } catch (err) {
+            console.warn('[ConnectWebRTC] Screen track attach error:', err.message);
           }
-        });
+        }
 
         const code = currentRoomCode || roomCodeRef.current;
         if (code) {
           api.sendConnectPeerState(code, { screenSharing: true }).catch(() => {});
+          await renegotiateWithPeers(code);
         }
       } catch (err) {
         console.warn('[ConnectWebRTC] Screen sharing cancelled or denied:', err.message);

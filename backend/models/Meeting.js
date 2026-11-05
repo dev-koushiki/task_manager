@@ -134,8 +134,7 @@ const chatMessageSchema = new mongoose.Schema(
   {
     id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
     senderId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      type: mongoose.Schema.Types.Mixed,
       required: true,
     },
     senderName: { type: String, required: true },

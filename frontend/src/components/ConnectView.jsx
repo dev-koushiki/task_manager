@@ -143,8 +143,12 @@ export const ConnectView = ({
   // Video Element Refs
   const localVideoRef = useRef(null);
   const screenShareVideoRef = useRef(null);
+  const remoteScreenVideoRef = useRef(null);
   const chatBottomRef = useRef(null);
   const myId = String(user?.id || user?._id || '');
+
+  const remotePresenter = activePeers.find((p) => String(p.userId) !== myId && p.screenSharing);
+  const isAnyonePresenting = isScreenSharing || Boolean(remotePresenter);
 
   // Synchronize activeTab with call status
   useEffect(() => {
@@ -164,6 +168,30 @@ export const ConnectView = ({
       }
     }
   }, [activeTab, localStream, isCameraOn]);
+
+  // Wire local screen sharing video element reactively
+  useEffect(() => {
+    if (activeTab === 'room' && isScreenSharing && screenStream && screenShareVideoRef.current) {
+      if (screenShareVideoRef.current.srcObject !== screenStream) {
+        screenShareVideoRef.current.srcObject = screenStream;
+        screenShareVideoRef.current.play?.().catch(() => {});
+      }
+    }
+  }, [activeTab, isScreenSharing, screenStream]);
+
+  // Wire remote screen sharing video element reactively
+  useEffect(() => {
+    if (activeTab === 'room' && !isScreenSharing && remotePresenter && remoteScreenVideoRef.current) {
+      const pId = String(remotePresenter.userId);
+      const rStream = remoteStreams.get(pId);
+      if (rStream && remoteScreenVideoRef.current.srcObject !== rStream) {
+        remoteScreenVideoRef.current.srcObject = rStream;
+        remoteScreenVideoRef.current.play?.().catch((err) => {
+          console.warn('[ConnectView] Remote screen video play error:', err);
+        });
+      }
+    }
+  }, [activeTab, isScreenSharing, remotePresenter, remoteStreams, remoteStreamsTick]);
 
   // Load Hub data without automatic joining
   useEffect(() => {
@@ -505,9 +533,6 @@ export const ConnectView = ({
     }
   };
 
-  const remotePresenter = activePeers.find((p) => String(p.userId) !== myId && p.screenSharing);
-  const isAnyonePresenting = isScreenSharing || Boolean(remotePresenter);
-
   return (
     <div className="connect-module-container animate-fade-in">
       {/* ----------------------------------------------------
@@ -560,13 +585,7 @@ export const ConnectView = ({
                 <div className="presentation-screen-tile animate-scale-up">
                   {isScreenSharing ? (
                     <video
-                      ref={(el) => {
-                        screenShareVideoRef.current = el;
-                        if (el && screenStream && el.srcObject !== screenStream) {
-                          el.srcObject = screenStream;
-                          el.play?.().catch(() => {});
-                        }
-                      }}
+                      ref={screenShareVideoRef}
                       autoPlay
                       playsInline
                       muted
@@ -574,13 +593,7 @@ export const ConnectView = ({
                     />
                   ) : (
                     <video
-                      ref={(el) => {
-                        const rStream = remoteStreams.get(String(remotePresenter?.userId));
-                        if (el && rStream && el.srcObject !== rStream) {
-                          el.srcObject = rStream;
-                          el.play?.().catch(() => {});
-                        }
-                      }}
+                      ref={remoteScreenVideoRef}
                       autoPlay
                       playsInline
                       muted
@@ -640,25 +653,6 @@ export const ConnectView = ({
 
                   return (
                     <div key={pId} className="video-tile remote-tile">
-                      {/* Audio playback element - dedicated audio stream for smooth voice */}
-                      {remoteStream && (
-                        <audio
-                          autoPlay
-                          playsInline
-                          ref={(el) => {
-                            if (el) {
-                              const audioTracks = remoteStream.getAudioTracks();
-                              if (audioTracks.length > 0) {
-                                if (!el.srcObject || el.srcObject.getAudioTracks()[0]?.id !== audioTracks[0].id) {
-                                  el.srcObject = new MediaStream([audioTracks[0]]);
-                                }
-                                el.play().catch(() => {});
-                              }
-                            }
-                          }}
-                        />
-                      )}
-
                       {/* Video playback element - muted to allow instant autoplay and prevent audio conflicts */}
                       {isCameraActive ? (
                         <video

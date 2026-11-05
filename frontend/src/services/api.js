@@ -17,12 +17,27 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
-// Helper to get auth header
+// Helper to get auth header with session and guest continuity
 const getHeaders = () => {
-  const token = localStorage.getItem('tm_token');
+  let token = null;
+  let guestId = '';
+  let guestName = '';
+  if (typeof window !== 'undefined') {
+    try {
+      token = localStorage.getItem('tm_token');
+      guestId = localStorage.getItem('tm_guest_id');
+      if (!token && !guestId) {
+        guestId = 'guest_' + Math.random().toString(36).substring(2, 9);
+        localStorage.setItem('tm_guest_id', guestId);
+      }
+      guestName = localStorage.getItem('tm_guest_name') || 'Guest Participant';
+    } catch (_) {}
+  }
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(guestId ? { 'x-guest-id': guestId } : {}),
+    ...(guestName ? { 'x-guest-name': encodeURIComponent(guestName) } : {}),
   };
 };
 
